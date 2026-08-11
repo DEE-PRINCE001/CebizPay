@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CebizPay.Api/CebizPay.Api.csproj" />
+    <Project Path="src/CebizPay.Application/CebizPay.Application.csproj" />
+    <Project Path="src/CebizPay.Domain/CebizPay.Domain.csproj" />
+    <Project Path="src/CebizPay.Infrastructure/CebizPay.Infrastructure.csproj" />
+    <Project Path="src/CebizPay.Workers/CebizPay.Workers.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CebizPay.ApiTests/CebizPay.ApiTests.csproj" />
+    <Project Path="tests/CebizPay.ArchitectureTests/CebizPay.ArchitectureTests.csproj" />
+    <Project Path="tests/CebizPay.IntegrationTests/CebizPay.IntegrationTests.csproj" />
+    <Project Path="tests/CebizPay.UnitTests/CebizPay.UnitTests.csproj" />
+  </Folder>
+</Solution>

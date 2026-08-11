@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-CebizPay.Workers-abb79411-88e6-45ca-84dd-ba39570e9a00</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CebizPay.Application\CebizPay.Application.csproj" />
+    <ProjectReference Include="..\CebizPay.Infrastructure\CebizPay.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
