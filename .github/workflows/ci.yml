@@ -1,0 +1,35 @@
+name: CebizPay CI Workflow
+
+on:
+  push:
+    branches: [ "main", "develop" ]
+  pull_request:
+    branches: [ "main", "develop" ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore CebizPay.slnx
+
+      - name: Build solution
+        run: dotnet build CebizPay.slnx --no-restore --configuration Release
+
+      - name: Run Unit Tests
+        run: dotnet test tests/CebizPay.UnitTests/CebizPay.UnitTests.csproj --no-build --configuration Release
+
+      - name: Run Architecture Tests
+        run: dotnet test tests/CebizPay.ArchitectureTests/CebizPay.ArchitectureTests.csproj --no-build --configuration Release
+
+      - name: Run API Tests
+        run: dotnet test tests/CebizPay.ApiTests/CebizPay.ApiTests.csproj --no-build --configuration Release

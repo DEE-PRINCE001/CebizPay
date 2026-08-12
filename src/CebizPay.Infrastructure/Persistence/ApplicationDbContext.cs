@@ -1,3 +1,4 @@
+using CebizPay.Infrastructure.Persistence.Outbox;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
@@ -5,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace CebizPay.Infrastructure.Persistence;
 
 /// <summary>
-/// Represents the database context for the application, including ASP.NET Core Identity data.
+/// Represents the primary database context for the application, including Identity and Outbox tables.
 /// </summary>
 public class ApplicationDbContext
     : IdentityDbContext<IdentityUser, IdentityRole, string>
@@ -18,5 +19,17 @@ public class ApplicationDbContext
         DbContextOptions<ApplicationDbContext> options)
         : base(options)
     {
+    }
+
+    /// <summary>
+    /// Gets or sets the outbox messages entity set.
+    /// </summary>
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+
+    /// <inheritdoc/>
+    protected override void OnModelCreating(ModelBuilder builder)
+    {
+        base.OnModelCreating(builder);
+        builder.ApplyConfiguration(new OutboxMessageConfiguration());
     }
 }
