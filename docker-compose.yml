@@ -22,5 +22,51 @@ services:
       timeout: 5s
       retries: 10
 
+
+  redis:
+    image: redis:8-alpine
+    container_name: cebizpay-redis
+    restart: unless-stopped
+
+    ports:
+      - "6379:6379"
+
+    volumes:
+      - cebizpay_redis_data:/data
+
+    command: redis-server --appendonly yes
+
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: cebizpay-rabbitmq
+    restart: unless-stopped
+
+    environment:
+      RABBITMQ_DEFAULT_USER: cebizpay
+      RABBITMQ_DEFAULT_PASS: cebizpay_dev
+
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+    volumes:
+      - cebizpay_rabbitmq_data:/var/lib/rabbitmq
+
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+
 volumes:
   cebizpay_postgres_data:
+  cebizpay_redis_data:
+  cebizpay_rabbitmq_data:
