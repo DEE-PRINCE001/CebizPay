@@ -1,9 +1,14 @@
 using CebizPay.Application.Common.Interfaces.Caching;
 using CebizPay.Application.Common.Interfaces.Messaging;
+using CebizPay.Application.Common.Interfaces.Persistence;
+using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Infrastructure.Caching;
+using CebizPay.Infrastructure.Identity;
 using CebizPay.Infrastructure.Messaging;
 using CebizPay.Infrastructure.Options;
 using CebizPay.Infrastructure.Persistence;
+using CebizPay.Infrastructure.Security;
+using CebizPay.Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -70,8 +75,10 @@ public static class DependencyInjection
             });
         });
 
-        // Configure Identity
-        services.AddIdentityCore<IdentityUser>(options =>
+        services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
+
+        // Configure Identity with unified ApplicationUser
+        services.AddIdentityCore<ApplicationUser>(options =>
         {
             options.Password.RequireDigit = true;
             options.Password.RequireLowercase = true;
@@ -82,7 +89,21 @@ public static class DependencyInjection
         })
         .AddRoles<IdentityRole>()
         .AddEntityFrameworkStores<ApplicationDbContext>()
+        .AddSignInManager<SignInManager<ApplicationUser>>()
         .AddDefaultTokenProviders();
+
+        services.AddHttpContextAccessor();
+        services.AddScoped<ICurrentOrganizationContext, CurrentOrganizationContext>();
+        services.AddScoped<IMfaCodeDeliveryService, NoOpMfaCodeDeliveryService>();
+        services.AddScoped<IMfaService, MfaService>();
+        services.AddTransient<IIdentityService, IdentityService>();
+        services.AddTransient<ITransactionPinService, TransactionPinService>();
+        services.AddTransient<IOtpService, RedisOtpService>();
+
+        // Configure Finance services
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IWalletService, CebizPay.Infrastructure.Finance.WalletService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.ILedgerPostingService, CebizPay.Infrastructure.Finance.LedgerPostingService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IIdempotencyService, CebizPay.Infrastructure.Finance.IdempotencyService>();
 
         // Configure Redis
         var redisOptions = configuration.GetSection(RedisOptions.SectionName).Get<RedisOptions>();

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using CebizPay.Application.Common.Exceptions;
 using FluentValidation;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
@@ -47,6 +48,11 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
 
         problemDetails.Extensions["traceId"] = traceId;
 
+        if (exception is IdempotencyConflictException idempotencyEx)
+        {
+            problemDetails.Extensions["code"] = idempotencyEx.Code;
+        }
+
         if (exception is ValidationException validationException)
         {
             var errors = validationException.Errors
@@ -59,10 +65,9 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
         }
 
         httpContext.Response.StatusCode = statusCode;
-        httpContext.Response.ContentType = "application/problem+json";
 
         await httpContext.Response
-            .WriteAsJsonAsync(problemDetails, cancellationToken)
+            .WriteAsJsonAsync(problemDetails, options: (System.Text.Json.JsonSerializerOptions?)null, contentType: "application/problem+json", cancellationToken: cancellationToken)
             .ConfigureAwait(false);
 
         return true;
@@ -85,6 +90,11 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
                 StatusCodes.Status404NotFound,
                 "Resource Not Found",
                 "The requested resource was not found."),
+
+            IdempotencyConflictException idempEx => (
+                StatusCodes.Status409Conflict,
+                "Idempotency Conflict",
+                idempEx.Message),
 
             InvalidOperationException invalidOpEx when invalidOpEx.Message.Contains("Conflict", StringComparison.OrdinalIgnoreCase) => (
                 StatusCodes.Status409Conflict,

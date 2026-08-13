@@ -2,18 +2,21 @@ using System.Threading.RateLimiting;
 using Asp.Versioning;
 using CebizPay.Api.Extensions;
 using CebizPay.Api.Middleware;
+using CebizPay.Application;
 using CebizPay.Infrastructure;
 using CebizPay.Infrastructure.Options;
 using CebizPay.Infrastructure.Security;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Serilog;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Configure Serilog Structured Logging
 builder.ConfigureSerilog();
+
+// Add Application Services (MediatR & Validators)
+builder.Services.AddApplication();
 
 // Add Infrastructure & Security
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -25,6 +28,9 @@ builder.Services.AddObservability(builder.Configuration);
 // Add Global Exception Handling & Problem Details
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
+
+// Add Controllers
+builder.Services.AddControllers();
 
 // Add API Versioning (/api/v1/...)
 builder.Services.AddApiVersioning(options =>
@@ -98,6 +104,8 @@ app.UseRateLimiter();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+app.MapControllers();
 
 // Health Check Endpoints
 app.MapHealthChecks("/health/live", new HealthCheckOptions
