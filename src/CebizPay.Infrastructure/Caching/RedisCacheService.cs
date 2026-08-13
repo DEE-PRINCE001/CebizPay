@@ -47,7 +47,7 @@ public sealed partial class RedisCacheService : ICacheService
                 return default;
             }
 
-            return JsonSerializer.Deserialize<T>((string)redisValue!, SerializerOptions);
+            return JsonSerializer.Deserialize<T>((byte[])redisValue!, SerializerOptions);
         }
         catch (Exception ex)
         {
@@ -65,9 +65,10 @@ public sealed partial class RedisCacheService : ICacheService
         {
             var db = _connectionMultiplexer.GetDatabase();
             var prefixedKey = GetPrefixedKey(key);
-            var serializedValue = JsonSerializer.Serialize(value, SerializerOptions);
 
-            await db.StringSetAsync(prefixedKey, serializedValue, expiration).ConfigureAwait(false);
+            byte[] utf8Bytes = JsonSerializer.SerializeToUtf8Bytes(value, SerializerOptions);
+
+            await db.StringSetAsync(prefixedKey, utf8Bytes, expiration).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
