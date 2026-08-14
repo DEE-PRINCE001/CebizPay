@@ -82,6 +82,13 @@ public class ApplicationDbContext
     public DbSet<CebizPay.Domain.Finance.Entities.IdempotencyRecord> IdempotencyRecords => Set<CebizPay.Domain.Finance.Entities.IdempotencyRecord>();
 
     /// <inheritdoc/>
+    public DbSet<CebizPay.Domain.Finance.Entities.PeerTransferFeePolicy> PeerTransferFeePolicies => Set<CebizPay.Domain.Finance.Entities.PeerTransferFeePolicy>();
+
+    /// <inheritdoc/>
+    public Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default)
+        => Database.BeginTransactionAsync(cancellationToken);
+
+    /// <inheritdoc/>
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);

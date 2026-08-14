@@ -62,8 +62,16 @@ public interface IApplicationDbContext
     /// <summary>Gets the idempotency records entity set.</summary>
     DbSet<CebizPay.Domain.Finance.Entities.IdempotencyRecord> IdempotencyRecords { get; }
 
+    /// <summary>Gets the peer-transfer fee policies entity set.</summary>
+    DbSet<CebizPay.Domain.Finance.Entities.PeerTransferFeePolicy> PeerTransferFeePolicies { get; }
+
     /// <summary>
     /// Saves changes asynchronously to the underlying database.
     /// </summary>
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Begins an explicit database transaction. The caller is responsible for committing or rolling back.
+    /// </summary>
+    Task<Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
 }

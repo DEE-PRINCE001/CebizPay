@@ -99,11 +99,14 @@ public static class DependencyInjection
         services.AddTransient<IIdentityService, IdentityService>();
         services.AddTransient<ITransactionPinService, TransactionPinService>();
         services.AddTransient<IOtpService, RedisOtpService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Security.ICurrentUserService, CurrentUserService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Security.IUserLookupService, UserLookupService>();
 
         // Configure Finance services
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IWalletService, CebizPay.Infrastructure.Finance.WalletService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.ILedgerPostingService, CebizPay.Infrastructure.Finance.LedgerPostingService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IIdempotencyService, CebizPay.Infrastructure.Finance.IdempotencyService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IFeePolicyService, CebizPay.Infrastructure.Finance.FeePolicyService>();
 
         // Configure Redis
         var redisOptions = configuration.GetSection(RedisOptions.SectionName).Get<RedisOptions>();
@@ -114,8 +117,9 @@ public static class DependencyInjection
         services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(redisConnString));
         services.AddSingleton<ICacheService, RedisCacheService>();
 
-        // Configure RabbitMQ
+        // Configure RabbitMQ & Outbox
         services.AddTransient<IEventPublisher, RabbitMQEventPublisher>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Messaging.IOutboxService, CebizPay.Infrastructure.Persistence.Outbox.OutboxService>();
 
         // Configure Health Checks
         var rabbitOptions = configuration.GetSection(RabbitMQOptions.SectionName).Get<RabbitMQOptions>();

@@ -89,6 +89,13 @@ public static class Permissions
     /// <summary>Manage ERP settings and configurations.</summary>
     public const string ErpManage = "Erp.Manage";
 
+    // Platform Fee Policy (Super Admin only)
+    /// <summary>
+    /// Create, activate, or deactivate platform peer-transfer fee policies.
+    /// Super Admin only — not granted to ordinary Admins or Auditors by default.
+    /// </summary>
+    public const string FeesManagePeerTransferPolicy = "Fees.ManagePeerTransferPolicy";
+
     /// <summary>
     /// Default read-only permissions assigned to Read-Only Admin / Auditor role.
     /// </summary>

@@ -48,9 +48,10 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
 
         problemDetails.Extensions["traceId"] = traceId;
 
-        if (exception is IdempotencyConflictException idempotencyEx)
+        var errorCode = GetErrorCode(exception);
+        if (errorCode != null)
         {
-            problemDetails.Extensions["code"] = idempotencyEx.Code;
+            problemDetails.Extensions["code"] = errorCode;
         }
 
         if (exception is ValidationException validationException)
@@ -86,6 +87,11 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
                 "Unauthorized",
                 "Authentication is required to access this resource."),
 
+            TransferNotAuthorizedException => (
+                StatusCodes.Status403Forbidden,
+                "Transfer Not Authorized",
+                exception.Message),
+
             KeyNotFoundException => (
                 StatusCodes.Status404NotFound,
                 "Resource Not Found",
@@ -101,11 +107,60 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
                 "Resource Conflict",
                 invalidOpEx.Message),
 
+            PinLockedException => (
+                423, // HTTP 423 Locked
+                "PIN Locked",
+                exception.Message),
+
+            InsufficientFundsException => (
+                StatusCodes.Status422UnprocessableEntity,
+                "Insufficient Funds",
+                exception.Message),
+
+            WalletNotActiveException => (
+                StatusCodes.Status422UnprocessableEntity,
+                "Wallet Not Active",
+                exception.Message),
+
+            CurrencyMismatchException => (
+                StatusCodes.Status422UnprocessableEntity,
+                "Currency Mismatch",
+                exception.Message),
+
+            SelfTransferException => (
+                StatusCodes.Status422UnprocessableEntity,
+                "Self-Transfer Not Allowed",
+                exception.Message),
+
+            ComplianceRestrictedException => (
+                StatusCodes.Status422UnprocessableEntity,
+                "Compliance Restricted",
+                exception.Message),
+
+            PinRequiredException => (
+                StatusCodes.Status422UnprocessableEntity,
+                "PIN Required",
+                exception.Message),
+
             _ => (
                 StatusCodes.Status500InternalServerError,
                 "An unexpected error occurred",
                 "An error occurred while processing your request. Please try again later.")
         };
+
+    private static string? GetErrorCode(Exception exception) => exception switch
+    {
+        IdempotencyConflictException ex => ex.Code,
+        InsufficientFundsException ex => ex.Code,
+        WalletNotActiveException ex => ex.Code,
+        CurrencyMismatchException ex => ex.Code,
+        SelfTransferException ex => ex.Code,
+        TransferNotAuthorizedException ex => ex.Code,
+        ComplianceRestrictedException ex => ex.Code,
+        PinRequiredException ex => ex.Code,
+        PinLockedException ex => ex.Code,
+        _ => null
+    };
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Error, Message = "Unhandled exception occurred: {Message}")]
     private static partial void LogUnhandledException(ILogger logger, string message, Exception exception);

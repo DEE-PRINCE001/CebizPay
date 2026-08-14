@@ -53,4 +53,27 @@ public sealed class ArchitectureTests
 
         Assert.True(result.IsSuccessful, "Domain layer must remain clean without infrastructure framework references.");
     }
+
+    [Fact]
+    public void Domain_ShouldNotDependOnOutboxPersistenceImplementation()
+    {
+        var result = Types.InAssembly(typeof(Domain.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOn("CebizPay.Infrastructure.Persistence.Outbox")
+            .GetResult();
+
+        Assert.True(result.IsSuccessful, "Domain layer must not depend on Outbox persistence implementation.");
+    }
+
+    [Fact]
+    public void Application_ShouldNotDependOnOutboxPersistenceImplementation()
+    {
+        var result = Types.InAssembly(typeof(Application.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOn("CebizPay.Infrastructure.Persistence.Outbox")
+            .GetResult();
+
+        Assert.True(result.IsSuccessful, "Application layer must not depend on Outbox persistence implementation.");
+    }
 }
+

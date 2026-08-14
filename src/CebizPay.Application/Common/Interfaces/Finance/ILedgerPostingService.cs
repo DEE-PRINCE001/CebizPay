@@ -55,4 +55,36 @@ public interface ILedgerPostingService
         Guid originalTransactionId,
         string reason,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the platform FeeRevenue ledger account for the given currency, creating it if it does not yet exist.
+    /// This is the account that receives platform fee revenue for peer transfers.
+    /// </summary>
+    Task<LedgerAccount> GetOrCreatePlatformFeeAccountAsync(Currency currency, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts a 3-entry peer-transfer ledger transaction within an already-begun ambient database transaction.
+    /// Does NOT start or commit its own transaction — the caller is responsible for the outer transaction boundary.
+    /// Performs deterministic wallet locking (lower GUID first) to prevent deadlocks.
+    /// Re-validates sender balance after acquiring locks (TOCTOU protection).
+    ///
+    /// Ledger entries created:
+    ///   DEBIT  Sender LedgerAccount      transferAmount + feeAmount
+    ///   CREDIT Recipient LedgerAccount   transferAmount
+    ///   CREDIT Platform Fee Account      feeAmount
+    ///
+    /// When feeAmount == 0, only 2 entries are created (no zero-value fee entry).
+    /// </summary>
+    Task<LedgerTransaction> PostPeerTransferCoreAsync(
+        Guid senderWalletId,
+        Guid recipientWalletId,
+        Guid platformFeeAccountId,
+        decimal transferAmount,
+        decimal feeAmount,
+        Currency currency,
+        string reference,
+        string? idempotencyKey,
+        string? description,
+        CancellationToken cancellationToken = default);
+
 }

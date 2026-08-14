@@ -82,4 +82,17 @@ public class OrganizationMembership
     /// Returns true if membership is active.
     /// </summary>
     public bool IsActiveWorkplaceMember() => Status == MembershipStatus.Active;
+
+    /// <summary>
+    /// Checks whether this membership possesses a specific organization-level permission.
+    /// </summary>
+    public bool HasPermission(string permission)
+    {
+        if (Status != MembershipStatus.Active) return false;
+        if (permission == Permissions.Permissions.WalletTransfer)
+        {
+            return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin || Role == MembershipRoleType.PayrollManager;
+        }
+        return Role == MembershipRoleType.Owner;
+    }
 }

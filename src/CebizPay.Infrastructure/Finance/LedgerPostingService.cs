@@ -307,4 +307,119 @@ public sealed class LedgerPostingService : ILedgerPostingService
             throw;
         }
     }
+
+    /// <inheritdoc/>
+    public async Task<LedgerAccount> GetOrCreatePlatformFeeAccountAsync(Currency currency, CancellationToken cancellationToken = default)
+    {
+        var existing = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.FeeRevenue && l.Currency == currency, cancellationToken);
+
+        if (existing != null)
+            return existing;
+
+        var accountName = $"{currency} PLATFORM FEE";
+        var account = LedgerAccount.CreateSystemAccount(accountName, currency, LedgerAccountType.FeeRevenue);
+        _dbContext.LedgerAccounts.Add(account);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return account;
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerTransaction> PostPeerTransferCoreAsync(
+        Guid senderWalletId,
+        Guid recipientWalletId,
+        Guid platformFeeAccountId,
+        decimal transferAmount,
+        decimal feeAmount,
+        Currency currency,
+        string reference,
+        string? idempotencyKey,
+        string? description,
+        CancellationToken cancellationToken = default)
+    {
+        if (transferAmount <= 0)
+            throw new ArgumentException("Transfer amount must be positive.", nameof(transferAmount));
+        if (feeAmount < 0)
+            throw new ArgumentException("Fee amount cannot be negative.", nameof(feeAmount));
+        if (senderWalletId == recipientWalletId)
+            throw new ArgumentException("Sender and recipient wallets must be different.", nameof(recipientWalletId));
+
+        // Deterministic lock order: lower GUID first to prevent deadlocks
+        var firstId = senderWalletId.CompareTo(recipientWalletId) < 0 ? senderWalletId : recipientWalletId;
+        var secondId = senderWalletId.CompareTo(recipientWalletId) < 0 ? recipientWalletId : senderWalletId;
+
+        var firstWallet = await _dbContext.Wallets
+            .FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", firstId)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException($"Wallet '{firstId}' not found.");
+
+        var secondWallet = await _dbContext.Wallets
+            .FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", secondId)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new InvalidOperationException($"Wallet '{secondId}' not found.");
+
+        var senderWallet = senderWalletId == firstId ? firstWallet : secondWallet;
+        var recipientWallet = recipientWalletId == firstId ? firstWallet : secondWallet;
+
+        // Re-validate wallet statuses after locking (TOCTOU protection)
+        if (senderWallet.Status != Domain.Finance.Enums.WalletStatus.Active)
+            throw new InvalidOperationException($"Sender wallet is not active (status: {senderWallet.Status}).");
+        if (recipientWallet.Status != Domain.Finance.Enums.WalletStatus.Active)
+            throw new InvalidOperationException($"Recipient wallet is not active (status: {recipientWallet.Status}).");
+
+        // Re-validate currency
+        if (senderWallet.Currency != currency)
+            throw new InvalidOperationException($"Sender wallet currency ({senderWallet.Currency}) does not match transaction currency ({currency}).");
+        if (recipientWallet.Currency != currency)
+            throw new InvalidOperationException($"Recipient wallet currency ({recipientWallet.Currency}) does not match transaction currency ({currency}).");
+
+        // Re-validate balance after locking (TOCTOU protection)
+        var totalDebit = transferAmount + feeAmount;
+        if (senderWallet.AvailableBalance < totalDebit)
+            throw new InvalidOperationException(
+                $"Insufficient funds after lock. Required: {totalDebit}, Available: {senderWallet.AvailableBalance}.");
+
+        // Retrieve ledger accounts
+        var senderAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == senderWalletId, cancellationToken)
+            ?? throw new InvalidOperationException($"Ledger account for sender wallet '{senderWalletId}' not found.");
+
+        var recipientAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == recipientWalletId, cancellationToken)
+            ?? throw new InvalidOperationException($"Ledger account for recipient wallet '{recipientWalletId}' not found.");
+
+        var feeAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.Id == platformFeeAccountId, cancellationToken)
+            ?? throw new InvalidOperationException($"Platform fee ledger account '{platformFeeAccountId}' not found.");
+
+        // Materialize wallet balances
+        senderWallet.Debit(totalDebit);
+        recipientWallet.Credit(transferAmount);
+
+        // Build ledger transaction
+        var transaction = new LedgerTransaction(LedgerTransactionType.PeerTransfer, reference, idempotencyKey, description);
+        transaction.Complete(DateTime.UtcNow);
+
+        // Double-entry ledger entries
+        var entries = new List<LedgerEntry>
+        {
+            new LedgerEntry(transaction.Id, senderAccount.Id, LedgerEntryDirection.Debit, totalDebit, currency, sequence: 1),
+            new LedgerEntry(transaction.Id, recipientAccount.Id, LedgerEntryDirection.Credit, transferAmount, currency, sequence: 2)
+        };
+
+        // Only create fee entry when there is a non-zero fee (FREE policy produces 0)
+        if (feeAmount > 0)
+        {
+            entries.Add(new LedgerEntry(transaction.Id, feeAccount.Id, LedgerEntryDirection.Credit, feeAmount, currency, sequence: 3));
+        }
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        // SaveChanges within the ambient transaction — no commit here
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return transaction;
+    }
 }

@@ -47,4 +47,14 @@ public static class CurrencyExtensions
             throw new ArgumentException($"Currency '{currency}' is a reporting-only currency and cannot be used for transactional wallets or financial operations in V1.", nameof(currency));
         }
     }
+
+    /// <summary>
+    /// Gets the standard decimal precision for fee calculation and balance materialization in V1.
+    /// NGN, INTERNATIONAL_NGN, and USDT are all rounded to 2 decimal places in V1.
+    /// </summary>
+    public static int GetDecimalPlaces(this Currency currency)
+    {
+        currency.EnsureTransactionalV1();
+        return 2;
+    }
 }
