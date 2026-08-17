@@ -44,11 +44,17 @@ public class Organization
     public Organization(string companyName, string email, string phone)
     {
         if (string.IsNullOrWhiteSpace(companyName))
+        {
             throw new ArgumentException("CompanyName is required.", nameof(companyName));
+        }
         if (string.IsNullOrWhiteSpace(email))
+        {
             throw new ArgumentException("Email is required.", nameof(email));
+        }
         if (string.IsNullOrWhiteSpace(phone))
+        {
             throw new ArgumentException("Phone is required.", nameof(phone));
+        }
 
         Id = Guid.NewGuid();
         CompanyName = companyName.Trim();
@@ -66,11 +72,17 @@ public class Organization
     public void CompleteStep2(string cacNumber, string logoUrl, string cacCertificateUrl)
     {
         if (string.IsNullOrWhiteSpace(cacNumber))
+        {
             throw new ArgumentException("CacNumber is required.", nameof(cacNumber));
+        }
         if (string.IsNullOrWhiteSpace(logoUrl))
+        {
             throw new ArgumentException("LogoUrl is required.", nameof(logoUrl));
+        }
         if (string.IsNullOrWhiteSpace(cacCertificateUrl))
+        {
             throw new ArgumentException("CacCertificateUrl is required.", nameof(cacCertificateUrl));
+        }
 
         CacNumber = cacNumber.Trim();
         LogoUrl = logoUrl.Trim();
@@ -84,7 +96,10 @@ public class Organization
     /// </summary>
     public void TransitionStatus(OrganizationStatus newStatus, string? reason = null)
     {
-        if (Status == newStatus) return;
+        if (Status == newStatus)
+        {
+            return;
+        }
 
         var isValid = (Status, newStatus) switch
         {
