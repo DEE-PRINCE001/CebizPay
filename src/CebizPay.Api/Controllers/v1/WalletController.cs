@@ -36,6 +36,7 @@ public sealed class WalletController : ControllerBase
     /// <param name="idempotencyKeyHeader">Idempotency key from Idempotency-Key header (optional; falls back to body field).</param>
     /// <param name="cancellationToken">Cancellation token.</param>
     [HttpPost("transfer/peer")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("FinancialTransferPolicy")]
     public async Task<IActionResult> PeerTransfer(
         [FromBody] PeerTransferRequest request,
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKeyHeader,

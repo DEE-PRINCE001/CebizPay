@@ -20,9 +20,15 @@ public sealed class IdempotencyRecordConfiguration : IEntityTypeConfiguration<Id
             .HasMaxLength(100)
             .IsRequired();
 
-        // Composite unique index scoped to Actor/User, Organization, Operation, and IdempotencyKey
-        builder.HasIndex(ir => new { ir.UserId, ir.OrganizationId, ir.Operation, ir.IdempotencyKey })
-            .IsUnique();
+        // Composite unique index for individual actor idempotency
+        builder.HasIndex(ir => new { ir.UserId, ir.Operation, ir.IdempotencyKey })
+            .IsUnique()
+            .HasFilter("\"OrganizationId\" IS NULL AND \"UserId\" IS NOT NULL");
+
+        // Composite unique index for organization actor idempotency
+        builder.HasIndex(ir => new { ir.OrganizationId, ir.Operation, ir.IdempotencyKey })
+            .IsUnique()
+            .HasFilter("\"OrganizationId\" IS NOT NULL");
 
         builder.Property(ir => ir.UserId)
             .HasMaxLength(450)

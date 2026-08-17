@@ -31,16 +31,62 @@ public sealed partial class RedisCacheService : ICacheService
         _logger = logger;
     }
 
+    private static DateTime _circuitBreakerUntilUtc = DateTime.MinValue;
+    private static int _consecutiveFailures;
+    private static readonly object LockObj = new();
+
+    private static bool IsCircuitOpen()
+    {
+        lock (LockObj)
+        {
+            if (DateTime.UtcNow < _circuitBreakerUntilUtc)
+            {
+                return true;
+            }
+
+            return false;
+        }
+    }
+
+    private static void RecordSuccess()
+    {
+        lock (LockObj)
+        {
+            _consecutiveFailures = 0;
+            _circuitBreakerUntilUtc = DateTime.MinValue;
+        }
+    }
+
+    private void RecordFailure()
+    {
+        lock (LockObj)
+        {
+            _consecutiveFailures++;
+            if (_consecutiveFailures >= 3)
+            {
+                _circuitBreakerUntilUtc = DateTime.UtcNow.AddSeconds(30);
+                LogCircuitBreakerTripped(_logger, _consecutiveFailures);
+            }
+        }
+    }
+
     /// <inheritdoc/>
     public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
+
+        if (IsCircuitOpen())
+        {
+            return default;
+        }
 
         try
         {
             var db = _connectionMultiplexer.GetDatabase();
             var prefixedKey = GetPrefixedKey(key);
             var redisValue = await db.StringGetAsync(prefixedKey).ConfigureAwait(false);
+
+            RecordSuccess();
 
             if (redisValue.IsNullOrEmpty)
             {
@@ -51,6 +97,7 @@ public sealed partial class RedisCacheService : ICacheService
         }
         catch (Exception ex)
         {
+            RecordFailure();
             LogCacheGetError(_logger, key, ex);
             return default;
         }
@@ -61,6 +108,11 @@ public sealed partial class RedisCacheService : ICacheService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
+        if (IsCircuitOpen())
+        {
+            return;
+        }
+
         try
         {
             var db = _connectionMultiplexer.GetDatabase();
@@ -69,9 +121,12 @@ public sealed partial class RedisCacheService : ICacheService
             byte[] utf8Bytes = JsonSerializer.SerializeToUtf8Bytes(value, SerializerOptions);
 
             await db.StringSetAsync(prefixedKey, utf8Bytes, expiration).ConfigureAwait(false);
+
+            RecordSuccess();
         }
         catch (Exception ex)
         {
+            RecordFailure();
             LogCacheSetError(_logger, key, ex);
         }
     }
@@ -81,15 +136,23 @@ public sealed partial class RedisCacheService : ICacheService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
 
+        if (IsCircuitOpen())
+        {
+            return;
+        }
+
         try
         {
             var db = _connectionMultiplexer.GetDatabase();
             var prefixedKey = GetPrefixedKey(key);
 
             await db.KeyDeleteAsync(prefixedKey).ConfigureAwait(false);
+
+            RecordSuccess();
         }
         catch (Exception ex)
         {
+            RecordFailure();
             LogCacheRemoveError(_logger, key, ex);
         }
     }
@@ -104,4 +167,7 @@ public sealed partial class RedisCacheService : ICacheService
 
     [LoggerMessage(EventId = 3, Level = LogLevel.Error, Message = "Error removing key '{Key}' from Redis cache.")]
     private static partial void LogCacheRemoveError(ILogger logger, string key, Exception exception);
+
+    [LoggerMessage(EventId = 4, Level = LogLevel.Warning, Message = "Redis circuit breaker TRIPPED for 30 seconds due to {Count} consecutive failures.")]
+    private static partial void LogCircuitBreakerTripped(ILogger logger, int count);
 }

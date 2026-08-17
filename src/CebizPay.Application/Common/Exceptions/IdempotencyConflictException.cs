@@ -20,4 +20,13 @@ public sealed class IdempotencyConflictException : Exception
     {
         IdempotencyKey = idempotencyKey;
     }
+
+    /// <summary>
+    /// Initializes a new instance of <see cref="IdempotencyConflictException"/> with inner exception.
+    /// </summary>
+    public IdempotencyConflictException(string idempotencyKey, string message, Exception innerException)
+        : base(message, innerException)
+    {
+        IdempotencyKey = idempotencyKey;
+    }
 }

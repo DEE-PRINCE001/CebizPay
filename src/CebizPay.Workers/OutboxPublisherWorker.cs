@@ -52,15 +52,30 @@ public sealed partial class OutboxPublisherWorker : BackgroundService
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var eventPublisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
 
-        var messages = await dbContext.OutboxMessages
-            .Where(m => m.ProcessedOnUtc == null && m.RetryCount < 5)
-            .OrderBy(m => m.OccurredOnUtc)
-            .Take(20)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
+        List<Infrastructure.Persistence.Outbox.OutboxMessage> messages;
+
+        if (dbContext.Database.IsNpgsql())
+        {
+            messages = await dbContext.OutboxMessages
+                .FromSqlRaw("SELECT * FROM \"OutboxMessages\" WHERE \"ProcessedOnUtc\" IS NULL AND \"RetryCount\" < 5 ORDER BY \"OccurredOnUtc\" LIMIT 20 FOR UPDATE SKIP LOCKED")
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            messages = await dbContext.OutboxMessages
+                .Where(m => m.ProcessedOnUtc == null && m.RetryCount < 5)
+                .OrderBy(m => m.OccurredOnUtc)
+                .Take(20)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         if (messages.Count == 0)
         {
+            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -83,6 +98,7 @@ public sealed partial class OutboxPublisherWorker : BackgroundService
         }
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "OutboxPublisherWorker started.")]

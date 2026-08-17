@@ -201,8 +201,7 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
         if (sourceWallet.AvailableBalance < totalDebit)
             throw new InsufficientFundsException(sourceWallet.AvailableBalance, totalDebit);
 
-        // ─── 14. Idempotency check ─────────────────────────────────────────────
-        // Hash covers the fields that define the financial operation uniquely
+        // ─── 14. Idempotency check & payload hash calculation ────────────────
         var requestPayload = JsonSerializer.Serialize(new
         {
             RecipientId = recipientUser.UserId,
@@ -211,29 +210,34 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
             SourceWalletId = sourceWallet.Id,
             FeePolicyVersion = feePolicyVersion
         });
+        var requestHash = CebizPay.Application.Common.Security.HashUtility.ComputeSha256(requestPayload);
 
+        // Pre-transaction check: Return cached response if completed
         var existingRecord = await _idempotencyService.GetRecordAsync(
             request.IdempotencyKey, OperationName, userId, orgId, cancellationToken);
 
         if (existingRecord != null)
         {
+            if (existingRecord.RequestHash != requestHash)
+            {
+                throw new IdempotencyConflictException(request.IdempotencyKey,
+                    $"Idempotency key '{request.IdempotencyKey}' was previously used with a different request payload.");
+            }
+
             if (existingRecord.Status == IdempotencyStatus.Completed && existingRecord.ResponseJson != null)
             {
-                // Idempotent replay: return original result
                 return JsonSerializer.Deserialize<PeerTransferResponseDto>(existingRecord.ResponseJson)
                     ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
             }
 
-            // Same key, different payload → conflict
-            if (existingRecord.RequestHash != ComputeHash(requestPayload))
+            if (existingRecord.Status == IdempotencyStatus.Processing)
+            {
                 throw new IdempotencyConflictException(request.IdempotencyKey,
-                    $"Idempotency key '{request.IdempotencyKey}' was previously used with a different request payload.");
+                    $"A request with idempotency key '{request.IdempotencyKey}' is currently being processed.");
+            }
         }
 
-        var idempotencyRecord = await _idempotencyService.CreateRecordAsync(
-            request.IdempotencyKey, OperationName, requestPayload, userId, orgId, cancellationToken);
-
-        // ─── 15. Ensure platform fee ledger account exists (before transaction) ─
+        // ─── 15. Ensure platform fee ledger account exists ─────────────────
         var feeAccount = await _ledgerService.GetOrCreatePlatformFeeAccountAsync(currency, cancellationToken);
 
         // ─── 16. Generate stable financial reference ───────────────────────────
@@ -244,6 +248,47 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
 
         try
         {
+            // Atomically retrieve or initialize IdempotencyRecord inside the transaction
+            var recordInTx = await _dbContext.IdempotencyRecords
+                .FirstOrDefaultAsync(r =>
+                    r.IdempotencyKey == request.IdempotencyKey.Trim() &&
+                    r.Operation == OperationName &&
+                    r.UserId == userId &&
+                    r.OrganizationId == orgId, cancellationToken);
+
+            Domain.Finance.Entities.IdempotencyRecord idempotencyRecord;
+
+            if (recordInTx != null)
+            {
+                if (recordInTx.RequestHash != requestHash)
+                {
+                    throw new IdempotencyConflictException(request.IdempotencyKey,
+                        $"Idempotency key '{request.IdempotencyKey}' was previously used with a different request payload.");
+                }
+
+                if (recordInTx.Status == IdempotencyStatus.Completed && recordInTx.ResponseJson != null)
+                {
+                    await dbTx.RollbackAsync(cancellationToken);
+                    return JsonSerializer.Deserialize<PeerTransferResponseDto>(recordInTx.ResponseJson)
+                        ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
+                }
+
+                if (recordInTx.Status == IdempotencyStatus.Processing)
+                {
+                    throw new IdempotencyConflictException(request.IdempotencyKey,
+                        $"A request with idempotency key '{request.IdempotencyKey}' is currently being processed.");
+                }
+
+                recordInTx.MarkProcessing();
+                idempotencyRecord = recordInTx;
+            }
+            else
+            {
+                idempotencyRecord = new Domain.Finance.Entities.IdempotencyRecord(
+                    request.IdempotencyKey.Trim(), OperationName, requestHash, userId, orgId);
+                _dbContext.IdempotencyRecords.Add(idempotencyRecord);
+            }
+
             // PostPeerTransferCoreAsync: acquires row-level locks on wallets in deterministic order,
             // re-validates balance and wallet status inside the lock (TOCTOU protection),
             // creates 3-entry ledger transaction, and materializes wallet balances.
@@ -319,17 +364,38 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
 
             return response;
         }
+        catch (DbUpdateException ex)
+        {
+            await dbTx.RollbackAsync(cancellationToken);
+
+            // Re-check after potential unique index race condition
+            var recheck = await _idempotencyService.GetRecordAsync(
+                request.IdempotencyKey, OperationName, userId, orgId, cancellationToken);
+
+            if (recheck != null && recheck.Status == IdempotencyStatus.Completed && recheck.ResponseJson != null)
+            {
+                if (recheck.RequestHash != requestHash)
+                {
+                    throw new IdempotencyConflictException(request.IdempotencyKey,
+                        $"Idempotency key '{request.IdempotencyKey}' was previously used with a different request payload.");
+                }
+
+                return JsonSerializer.Deserialize<PeerTransferResponseDto>(recheck.ResponseJson)
+                    ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
+            }
+
+            throw new IdempotencyConflictException(request.IdempotencyKey,
+                $"Idempotency key '{request.IdempotencyKey}' was concurrently locked or processed.", ex);
+        }
         catch (InvalidOperationException ex) when (
             ex.Message.StartsWith("Insufficient funds after lock", StringComparison.OrdinalIgnoreCase))
         {
             await dbTx.RollbackAsync(cancellationToken);
-            await _idempotencyService.FailRecordAsync(idempotencyRecord.Id, ex.Message, cancellationToken);
             throw new InsufficientFundsException(sourceWallet.AvailableBalance, totalDebit);
         }
         catch
         {
             await dbTx.RollbackAsync(cancellationToken);
-            await _idempotencyService.FailRecordAsync(idempotencyRecord.Id, null, cancellationToken);
             throw;
         }
     }
@@ -338,12 +404,5 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
     {
         var shortId = Guid.NewGuid().ToString("N")[..12].ToUpperInvariant();
         return $"CBZPT-{shortId}";
-    }
-
-    private static string ComputeHash(string payload)
-    {
-        var bytes = System.Security.Cryptography.SHA256.HashData(
-            System.Text.Encoding.UTF8.GetBytes(payload));
-        return Convert.ToHexString(bytes);
     }
 }

@@ -34,7 +34,8 @@ public sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outbox
         builder.Property(x => x.RetryCount)
             .HasDefaultValue(0);
 
-        builder.HasIndex(x => x.ProcessedOnUtc)
+        builder.HasIndex(x => new { x.OccurredOnUtc })
+            .HasDatabaseName("IX_OutboxMessages_Unprocessed")
             .HasFilter("\"ProcessedOnUtc\" IS NULL");
     }
 }

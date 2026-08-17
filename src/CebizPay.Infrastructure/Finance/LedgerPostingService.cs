@@ -26,7 +26,9 @@ public sealed class LedgerPostingService : ILedgerPostingService
     public async Task<LedgerAccount> GetOrCreateSystemSettlementAccountAsync(Currency currency, CancellationToken cancellationToken = default)
     {
         var existing = await _dbContext.LedgerAccounts
-            .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.SystemSettlement && l.Currency == currency, cancellationToken);
+            .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.SystemSettlement && l.Currency == currency, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.AccountType == LedgerAccountType.SystemSettlement && l.Currency == currency);
 
         if (existing != null)
         {
@@ -36,7 +38,24 @@ public sealed class LedgerPostingService : ILedgerPostingService
         var accountName = $"{currency} FX SETTLEMENT";
         var account = LedgerAccount.CreateSystemAccount(accountName, currency, LedgerAccountType.SystemSettlement);
         _dbContext.LedgerAccounts.Add(account);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        if (_dbContext.Database.CurrentTransaction == null)
+        {
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                var concurrentAccount = await _dbContext.LedgerAccounts
+                    .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.SystemSettlement && l.Currency == currency, cancellationToken);
+                if (concurrentAccount != null)
+                {
+                    return concurrentAccount;
+                }
+                throw;
+            }
+        }
 
         return account;
     }
@@ -73,30 +92,62 @@ public sealed class LedgerPostingService : ILedgerPostingService
                 throw new InvalidOperationException($"Currency mismatch. Transaction currency is {currency}, source is {sourceAccount.Currency}, target is {targetAccount.Currency}.");
             }
 
-            // Lock and update source wallet if customer wallet
             Wallet? sourceWallet = null;
-            if (sourceAccount.WalletId.HasValue)
-            {
-                sourceWallet = await _dbContext.Wallets
-                    .FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", sourceAccount.WalletId.Value)
-                    .FirstOrDefaultAsync(cancellationToken)
-                    ?? throw new InvalidOperationException($"Source wallet '{sourceAccount.WalletId.Value}' not found.");
+            Wallet? targetWallet = null;
 
+            // Deterministic row locking: lock wallets in lower-GUID order first to eliminate deadlocks
+            if (sourceAccount.WalletId.HasValue && targetAccount.WalletId.HasValue)
+            {
+                var idA = sourceAccount.WalletId.Value;
+                var idB = targetAccount.WalletId.Value;
+
+                var firstId = idA.CompareTo(idB) < 0 ? idA : idB;
+                var secondId = idA.CompareTo(idB) < 0 ? idB : idA;
+
+                var firstWallet = _dbContext.Database.IsNpgsql()
+                    ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", firstId).FirstOrDefaultAsync(cancellationToken)
+                    : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == firstId, cancellationToken);
+                if (firstWallet == null)
+                    throw new InvalidOperationException($"Wallet '{firstId}' not found.");
+
+                var secondWallet = _dbContext.Database.IsNpgsql()
+                    ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", secondId).FirstOrDefaultAsync(cancellationToken)
+                    : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == secondId, cancellationToken);
+                if (secondWallet == null)
+                    throw new InvalidOperationException($"Wallet '{secondId}' not found.");
+
+                sourceWallet = idA == firstId ? firstWallet : secondWallet;
+                targetWallet = idB == firstId ? firstWallet : secondWallet;
+            }
+            else if (sourceAccount.WalletId.HasValue)
+            {
+                var id = sourceAccount.WalletId.Value;
+                sourceWallet = _dbContext.Database.IsNpgsql()
+                    ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", id).FirstOrDefaultAsync(cancellationToken)
+                    : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
+                if (sourceWallet == null)
+                    throw new InvalidOperationException($"Source wallet '{id}' not found.");
+            }
+            else if (targetAccount.WalletId.HasValue)
+            {
+                var id = targetAccount.WalletId.Value;
+                targetWallet = _dbContext.Database.IsNpgsql()
+                    ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", id).FirstOrDefaultAsync(cancellationToken)
+                    : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == id, cancellationToken);
+                if (targetWallet == null)
+                    throw new InvalidOperationException($"Target wallet '{id}' not found.");
+            }
+
+            if (sourceWallet != null)
+            {
                 if (sourceWallet.Currency != currency)
                     throw new InvalidOperationException("Source wallet currency does not match transaction currency.");
 
                 sourceWallet.Debit(amount);
             }
 
-            // Lock and update target wallet if customer wallet
-            Wallet? targetWallet = null;
-            if (targetAccount.WalletId.HasValue)
+            if (targetWallet != null)
             {
-                targetWallet = await _dbContext.Wallets
-                    .FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", targetAccount.WalletId.Value)
-                    .FirstOrDefaultAsync(cancellationToken)
-                    ?? throw new InvalidOperationException($"Target wallet '{targetAccount.WalletId.Value}' not found.");
-
                 if (targetWallet.Currency != currency)
                     throw new InvalidOperationException("Target wallet currency does not match transaction currency.");
 
@@ -150,16 +201,24 @@ public sealed class LedgerPostingService : ILedgerPostingService
 
         try
         {
-            // Row-lock source and target wallets
-            var sourceWallet = await _dbContext.Wallets
-                .FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", sourceWalletId)
-                .FirstOrDefaultAsync(cancellationToken)
-                ?? throw new InvalidOperationException($"Source wallet '{sourceWalletId}' not found.");
+            // Deterministic row locking for cross-currency wallets
+            var firstId = sourceWalletId.CompareTo(targetWalletId) < 0 ? sourceWalletId : targetWalletId;
+            var secondId = sourceWalletId.CompareTo(targetWalletId) < 0 ? targetWalletId : sourceWalletId;
 
-            var targetWallet = await _dbContext.Wallets
-                .FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", targetWalletId)
-                .FirstOrDefaultAsync(cancellationToken)
-                ?? throw new InvalidOperationException($"Target wallet '{targetWalletId}' not found.");
+            var firstWallet = _dbContext.Database.IsNpgsql()
+                ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", firstId).FirstOrDefaultAsync(cancellationToken)
+                : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == firstId, cancellationToken);
+            if (firstWallet == null)
+                throw new InvalidOperationException($"Wallet '{firstId}' not found.");
+
+            var secondWallet = _dbContext.Database.IsNpgsql()
+                ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", secondId).FirstOrDefaultAsync(cancellationToken)
+                : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == secondId, cancellationToken);
+            if (secondWallet == null)
+                throw new InvalidOperationException($"Wallet '{secondId}' not found.");
+
+            var sourceWallet = sourceWalletId == firstId ? firstWallet : secondWallet;
+            var targetWallet = targetWalletId == firstId ? firstWallet : secondWallet;
 
             if (sourceWallet.Currency == targetWallet.Currency)
             {
@@ -269,10 +328,11 @@ public sealed class LedgerPostingService : ILedgerPostingService
                 // Adjust wallet balance if customer wallet
                 if (account.WalletId.HasValue)
                 {
-                    var wallet = await _dbContext.Wallets
-                        .FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", account.WalletId.Value)
-                        .FirstOrDefaultAsync(cancellationToken)
-                        ?? throw new InvalidOperationException($"Wallet '{account.WalletId.Value}' not found.");
+                    var wallet = _dbContext.Database.IsNpgsql()
+                        ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", account.WalletId.Value).FirstOrDefaultAsync(cancellationToken)
+                        : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == account.WalletId.Value, cancellationToken);
+                    if (wallet == null)
+                        throw new InvalidOperationException($"Wallet '{account.WalletId.Value}' not found.");
 
                     if (reversalDirection == LedgerEntryDirection.Credit)
                     {
@@ -312,7 +372,9 @@ public sealed class LedgerPostingService : ILedgerPostingService
     public async Task<LedgerAccount> GetOrCreatePlatformFeeAccountAsync(Currency currency, CancellationToken cancellationToken = default)
     {
         var existing = await _dbContext.LedgerAccounts
-            .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.FeeRevenue && l.Currency == currency, cancellationToken);
+            .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.FeeRevenue && l.Currency == currency, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.AccountType == LedgerAccountType.FeeRevenue && l.Currency == currency);
 
         if (existing != null)
             return existing;
@@ -320,7 +382,24 @@ public sealed class LedgerPostingService : ILedgerPostingService
         var accountName = $"{currency} PLATFORM FEE";
         var account = LedgerAccount.CreateSystemAccount(accountName, currency, LedgerAccountType.FeeRevenue);
         _dbContext.LedgerAccounts.Add(account);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        if (_dbContext.Database.CurrentTransaction == null)
+        {
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                var concurrentAccount = await _dbContext.LedgerAccounts
+                    .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.FeeRevenue && l.Currency == currency, cancellationToken);
+                if (concurrentAccount != null)
+                {
+                    return concurrentAccount;
+                }
+                throw;
+            }
+        }
 
         return account;
     }
@@ -349,15 +428,17 @@ public sealed class LedgerPostingService : ILedgerPostingService
         var firstId = senderWalletId.CompareTo(recipientWalletId) < 0 ? senderWalletId : recipientWalletId;
         var secondId = senderWalletId.CompareTo(recipientWalletId) < 0 ? recipientWalletId : senderWalletId;
 
-        var firstWallet = await _dbContext.Wallets
-            .FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", firstId)
-            .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new InvalidOperationException($"Wallet '{firstId}' not found.");
+        var firstWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", firstId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == firstId, cancellationToken);
+        if (firstWallet == null)
+            throw new InvalidOperationException($"Wallet '{firstId}' not found.");
 
-        var secondWallet = await _dbContext.Wallets
-            .FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", secondId)
-            .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new InvalidOperationException($"Wallet '{secondId}' not found.");
+        var secondWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", secondId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == secondId, cancellationToken);
+        if (secondWallet == null)
+            throw new InvalidOperationException($"Wallet '{secondId}' not found.");
 
         var senderWallet = senderWalletId == firstId ? firstWallet : secondWallet;
         var recipientWallet = recipientWalletId == firstId ? firstWallet : secondWallet;

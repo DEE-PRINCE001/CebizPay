@@ -42,5 +42,10 @@ public sealed class LedgerAccountConfiguration : IEntityTypeConfiguration<Ledger
         builder.HasIndex(l => l.WalletId)
             .IsUnique()
             .HasFilter("\"WalletId\" IS NOT NULL");
+
+        // Unique system accounts per AccountType + Currency
+        builder.HasIndex(l => new { l.AccountType, l.Currency })
+            .IsUnique()
+            .HasFilter("\"WalletId\" IS NULL");
     }
 }

@@ -44,6 +44,6 @@ public sealed class LedgerEntryConfiguration : IEntityTypeConfiguration<LedgerEn
             .IsRequired();
 
         builder.HasIndex(le => le.LedgerTransactionId);
-        builder.HasIndex(le => le.LedgerAccountId);
+        builder.HasIndex(le => new { le.LedgerAccountId, le.CreatedAtUtc });
     }
 }

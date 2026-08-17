@@ -1,8 +1,7 @@
-using System.Security.Cryptography;
-using System.Text;
 using CebizPay.Application.Common.Exceptions;
 using CebizPay.Application.Common.Interfaces.Finance;
 using CebizPay.Application.Common.Interfaces.Persistence;
+using CebizPay.Application.Common.Security;
 using CebizPay.Domain.Finance.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -52,6 +51,7 @@ public sealed class IdempotencyService : IIdempotencyService
         string requestPayload,
         string? userId = null,
         Guid? organizationId = null,
+        bool autoSave = true,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(idempotencyKey))
@@ -61,7 +61,7 @@ public sealed class IdempotencyService : IIdempotencyService
 
         var key = idempotencyKey.Trim();
         var op = operation.Trim();
-        var requestHash = ComputeHash(requestPayload);
+        var requestHash = HashUtility.ComputeSha256(requestPayload);
 
         var existing = await _dbContext.IdempotencyRecords
             .FirstOrDefaultAsync(r =>
@@ -82,7 +82,33 @@ public sealed class IdempotencyService : IIdempotencyService
 
         var record = new IdempotencyRecord(key, op, requestHash, userId, organizationId);
         _dbContext.IdempotencyRecords.Add(record);
-        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        if (autoSave)
+        {
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                var existingRetry = await _dbContext.IdempotencyRecords
+                    .FirstOrDefaultAsync(r =>
+                        r.IdempotencyKey == key &&
+                        r.Operation == op &&
+                        r.UserId == userId &&
+                        r.OrganizationId == organizationId, cancellationToken);
+
+                if (existingRetry != null)
+                {
+                    if (existingRetry.RequestHash != requestHash)
+                    {
+                        throw new IdempotencyConflictException(key, $"Idempotency key conflict: key '{key}' was previously used with a different request payload.");
+                    }
+                    return existingRetry;
+                }
+                throw;
+            }
+        }
 
         return record;
     }
@@ -108,10 +134,5 @@ public sealed class IdempotencyService : IIdempotencyService
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
     }
-
-    private static string ComputeHash(string payload)
-    {
-        var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(payload ?? string.Empty));
-        return Convert.ToHexString(bytes);
-    }
 }
+

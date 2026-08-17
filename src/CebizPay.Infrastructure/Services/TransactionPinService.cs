@@ -1,6 +1,8 @@
 using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Infrastructure.Identity;
+using CebizPay.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Infrastructure.Services;
 
@@ -11,13 +13,17 @@ namespace CebizPay.Infrastructure.Services;
 public sealed class TransactionPinService : ITransactionPinService
 {
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly ApplicationDbContext? _dbContext;
 
     /// <summary>
     /// Initializes a new instance of <see cref="TransactionPinService"/>.
     /// </summary>
-    public TransactionPinService(UserManager<ApplicationUser> userManager)
+    public TransactionPinService(
+        UserManager<ApplicationUser> userManager,
+        ApplicationDbContext? dbContext = null)
     {
         _userManager = userManager;
+        _dbContext = dbContext;
     }
 
     /// <inheritdoc/>
@@ -50,56 +56,121 @@ public sealed class TransactionPinService : ITransactionPinService
     /// <inheritdoc/>
     public async Task<(bool Succeeded, bool IsLocked, string? Error)> VerifyPinAsync(string userId, string pin, CancellationToken cancellationToken = default)
     {
-        var user = await _userManager.FindByIdAsync(userId);
-        if (user == null)
+        // 1. Fetch user to verify hash & current lockout status
+        ApplicationUser? initialUser = null;
+        if (_dbContext != null)
+        {
+            initialUser = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        }
+        else
+        {
+            initialUser = await _userManager.FindByIdAsync(userId);
+        }
+
+        if (initialUser == null)
         {
             return (false, false, "User not found.");
         }
 
-        if (string.IsNullOrEmpty(user.TransactionPinHash))
+        if (string.IsNullOrEmpty(initialUser.TransactionPinHash))
         {
             return (false, false, "Transaction PIN has not been set.");
         }
 
         // Check if currently locked out
-        if (user.PinLockoutEndUtc.HasValue && user.PinLockoutEndUtc.Value > DateTime.UtcNow)
+        if (initialUser.PinLockoutEndUtc.HasValue && initialUser.PinLockoutEndUtc.Value > DateTime.UtcNow)
         {
-            var remaining = Math.Ceiling((user.PinLockoutEndUtc.Value - DateTime.UtcNow).TotalMinutes);
+            var remaining = Math.Ceiling((initialUser.PinLockoutEndUtc.Value - DateTime.UtcNow).TotalMinutes);
             return (false, true, $"Transaction PIN debit lock active due to 3 failed attempts. Try again in {remaining} minutes.");
         }
 
+        // 2. Perform BCrypt hash verification in memory BEFORE row lock
         bool isValid = false;
         try
         {
-            isValid = BCrypt.Net.BCrypt.Verify(pin, user.TransactionPinHash);
+            isValid = BCrypt.Net.BCrypt.Verify(pin, initialUser.TransactionPinHash);
         }
         catch (BCrypt.Net.SaltParseException)
         {
             isValid = false;
         }
 
-        if (!isValid)
+        // 3. Atomically update counter / lockout status in database
+        if (_dbContext != null)
         {
-            user.FailedPinAttempts++;
-            if (user.FailedPinAttempts >= 3)
+            await using var tx = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+
+            var user = _dbContext.Database.IsNpgsql()
+                ? await _dbContext.Users.FromSqlRaw("SELECT * FROM \"AspNetUsers\" WHERE \"Id\" = {0} FOR UPDATE", userId).FirstOrDefaultAsync(cancellationToken)
+                : await _dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+
+            if (user == null)
             {
-                user.PinLockoutEndUtc = DateTime.UtcNow.AddMinutes(15);
-                await _userManager.UpdateAsync(user);
-                return (false, true, "Transaction PIN debit lock activated for 15 minutes due to 3 failed attempts.");
+                await tx.RollbackAsync(cancellationToken);
+                return (false, false, "User not found.");
             }
 
-            await _userManager.UpdateAsync(user);
-            return (false, false, $"Invalid transaction PIN. Attempts remaining: {3 - user.FailedPinAttempts}.");
-        }
+            if (user.PinLockoutEndUtc.HasValue && user.PinLockoutEndUtc.Value > DateTime.UtcNow)
+            {
+                var remaining = Math.Ceiling((user.PinLockoutEndUtc.Value - DateTime.UtcNow).TotalMinutes);
+                await tx.RollbackAsync(cancellationToken);
+                return (false, true, $"Transaction PIN debit lock active due to 3 failed attempts. Try again in {remaining} minutes.");
+            }
 
-        // Reset failed PIN attempts on clean match
-        if (user.FailedPinAttempts > 0 || user.PinLockoutEndUtc.HasValue)
+            if (!isValid)
+            {
+                user.FailedPinAttempts++;
+                if (user.FailedPinAttempts >= 3)
+                {
+                    user.PinLockoutEndUtc = DateTime.UtcNow.AddMinutes(15);
+                    _dbContext.Update(user);
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+                    await tx.CommitAsync(cancellationToken);
+                    return (false, true, "Transaction PIN debit lock activated for 15 minutes due to 3 failed attempts.");
+                }
+
+                _dbContext.Update(user);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                await tx.CommitAsync(cancellationToken);
+                return (false, false, $"Invalid transaction PIN. Attempts remaining: {3 - user.FailedPinAttempts}.");
+            }
+
+            // Reset failed PIN attempts on clean match
+            if (user.FailedPinAttempts > 0 || user.PinLockoutEndUtc.HasValue)
+            {
+                user.FailedPinAttempts = 0;
+                user.PinLockoutEndUtc = null;
+                _dbContext.Update(user);
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            await tx.CommitAsync(cancellationToken);
+            return (true, false, null);
+        }
+        else
         {
-            user.FailedPinAttempts = 0;
-            user.PinLockoutEndUtc = null;
-            await _userManager.UpdateAsync(user);
-        }
+            if (!isValid)
+            {
+                initialUser.FailedPinAttempts++;
+                if (initialUser.FailedPinAttempts >= 3)
+                {
+                    initialUser.PinLockoutEndUtc = DateTime.UtcNow.AddMinutes(15);
+                    await _userManager.UpdateAsync(initialUser);
+                    return (false, true, "Transaction PIN debit lock activated for 15 minutes due to 3 failed attempts.");
+                }
 
-        return (true, false, null);
+                await _userManager.UpdateAsync(initialUser);
+                return (false, false, $"Invalid transaction PIN. Attempts remaining: {3 - initialUser.FailedPinAttempts}.");
+            }
+
+            if (initialUser.FailedPinAttempts > 0 || initialUser.PinLockoutEndUtc.HasValue)
+            {
+                initialUser.FailedPinAttempts = 0;
+                initialUser.PinLockoutEndUtc = null;
+                await _userManager.UpdateAsync(initialUser);
+            }
+
+            return (true, false, null);
+        }
     }
 }

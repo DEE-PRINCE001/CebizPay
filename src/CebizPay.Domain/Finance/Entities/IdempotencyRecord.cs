@@ -62,6 +62,16 @@ public class IdempotencyRecord
     }
 
     /// <summary>
+    /// Marks the idempotency record back to processing state for retry.
+    /// </summary>
+    public void MarkProcessing()
+    {
+        Status = IdempotencyStatus.Processing;
+        ResponseJson = null;
+        CompletedAtUtc = null;
+    }
+
+    /// <summary>
     /// Completes the idempotency record with serialized response JSON.
     /// </summary>
     public void Complete(string responseJson)

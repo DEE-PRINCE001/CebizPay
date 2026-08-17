@@ -26,6 +26,7 @@ public interface IIdempotencyService
         string requestPayload,
         string? userId = null,
         Guid? organizationId = null,
+        bool autoSave = true,
         CancellationToken cancellationToken = default);
 
     /// <summary>
