@@ -24,6 +24,7 @@ coverage/
 .env.*
 !.env.example
 implementation/
+prompts/
 
 # OS
 .DS_Store
