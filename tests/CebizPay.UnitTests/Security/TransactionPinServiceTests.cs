@@ -1,14 +1,17 @@
 using CebizPay.Infrastructure.Identity;
+using CebizPay.Infrastructure.Persistence;
 using CebizPay.Infrastructure.Services;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
 using NSubstitute;
 using Xunit;
 
 namespace CebizPay.UnitTests.Security;
 
-public sealed class TransactionPinServiceTests
+public sealed class TransactionPinServiceTests : IDisposable
 {
     private readonly UserManager<ApplicationUser> _userManager;
+    private readonly ApplicationDbContext _dbContext;
     private readonly TransactionPinService _service;
 
     public TransactionPinServiceTests()
@@ -17,7 +20,17 @@ public sealed class TransactionPinServiceTests
         _userManager = Substitute.For<UserManager<ApplicationUser>>(
             store, null, null, null, null, null, null, null, null);
 
-        _service = new TransactionPinService(_userManager);
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        _dbContext = new ApplicationDbContext(options);
+
+        _service = new TransactionPinService(_userManager, _dbContext);
+    }
+
+    public void Dispose()
+    {
+        _dbContext.Dispose();
     }
 
     [Fact]
@@ -27,6 +40,8 @@ public sealed class TransactionPinServiceTests
         var user = new ApplicationUser { Id = "user-123" };
         _userManager.FindByIdAsync("user-123").Returns(Task.FromResult<ApplicationUser?>(user));
         _userManager.UpdateAsync(user).Returns(Task.FromResult(IdentityResult.Success));
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
 
         // Act
         var result = await _service.SetPinAsync("user-123", "1234");
@@ -68,8 +83,11 @@ public sealed class TransactionPinServiceTests
         var user = new ApplicationUser { Id = "user-123" };
         _userManager.FindByIdAsync("user-123").Returns(Task.FromResult<ApplicationUser?>(user));
         _userManager.UpdateAsync(user).Returns(Task.FromResult(IdentityResult.Success));
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
 
         await _service.SetPinAsync("user-123", "4321");
+        await _dbContext.SaveChangesAsync();
 
         // Act
         var verifyResult = await _service.VerifyPinAsync("user-123", "4321");
@@ -87,8 +105,11 @@ public sealed class TransactionPinServiceTests
         var user = new ApplicationUser { Id = "user-123" };
         _userManager.FindByIdAsync("user-123").Returns(Task.FromResult<ApplicationUser?>(user));
         _userManager.UpdateAsync(user).Returns(Task.FromResult(IdentityResult.Success));
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
 
         await _service.SetPinAsync("user-123", "4321");
+        await _dbContext.SaveChangesAsync();
 
         // Act
         var verifyResult = await _service.VerifyPinAsync("user-123", "9999");
@@ -106,21 +127,27 @@ public sealed class TransactionPinServiceTests
         var user = new ApplicationUser { Id = "user-123" };
         _userManager.FindByIdAsync("user-123").Returns(Task.FromResult<ApplicationUser?>(user));
         _userManager.UpdateAsync(user).Returns(Task.FromResult(IdentityResult.Success));
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
 
         await _service.SetPinAsync("user-123", "1234");
+        await _dbContext.SaveChangesAsync();
 
         // Act - Attempt 1 (Wrong PIN)
         var attempt1 = await _service.VerifyPinAsync("user-123", "0000");
+        await _dbContext.SaveChangesAsync();
         Assert.False(attempt1.Succeeded);
         Assert.False(attempt1.IsLocked);
 
         // Act - Attempt 2 (Wrong PIN)
         var attempt2 = await _service.VerifyPinAsync("user-123", "0000");
+        await _dbContext.SaveChangesAsync();
         Assert.False(attempt2.Succeeded);
         Assert.False(attempt2.IsLocked);
 
         // Act - Attempt 3 (Wrong PIN) -> triggers lockout
         var attempt3 = await _service.VerifyPinAsync("user-123", "0000");
+        await _dbContext.SaveChangesAsync();
 
         // Assert
         Assert.False(attempt3.Succeeded);
@@ -142,6 +169,8 @@ public sealed class TransactionPinServiceTests
             FailedPinAttempts = 3
         };
         _userManager.FindByIdAsync("user-123").Returns(Task.FromResult<ApplicationUser?>(user));
+        _dbContext.Users.Add(user);
+        await _dbContext.SaveChangesAsync();
 
         // Act - Attempt verification while locked out
         var result = await _service.VerifyPinAsync("user-123", "1234");

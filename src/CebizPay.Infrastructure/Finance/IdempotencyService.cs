@@ -89,7 +89,9 @@ public sealed class IdempotencyService : IIdempotencyService
             {
                 await _dbContext.SaveChangesAsync(cancellationToken);
             }
-            catch (DbUpdateException)
+            catch (DbUpdateException ex) when (
+                ex.InnerException is Npgsql.PostgresException pgEx &&
+                pgEx.SqlState == Npgsql.PostgresErrorCodes.UniqueViolation)
             {
                 var existingRetry = await _dbContext.IdempotencyRecords
                     .FirstOrDefaultAsync(r =>

@@ -464,14 +464,20 @@ public sealed class LedgerPostingService : ILedgerPostingService
         // Retrieve ledger accounts
         var senderAccount = await _dbContext.LedgerAccounts
             .FirstOrDefaultAsync(l => l.WalletId == senderWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.WalletId == senderWalletId)
             ?? throw new InvalidOperationException($"Ledger account for sender wallet '{senderWalletId}' not found.");
 
         var recipientAccount = await _dbContext.LedgerAccounts
             .FirstOrDefaultAsync(l => l.WalletId == recipientWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.WalletId == recipientWalletId)
             ?? throw new InvalidOperationException($"Ledger account for recipient wallet '{recipientWalletId}' not found.");
 
         var feeAccount = await _dbContext.LedgerAccounts
             .FirstOrDefaultAsync(l => l.Id == platformFeeAccountId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.Id == platformFeeAccountId)
             ?? throw new InvalidOperationException($"Platform fee ledger account '{platformFeeAccountId}' not found.");
 
         // Materialize wallet balances

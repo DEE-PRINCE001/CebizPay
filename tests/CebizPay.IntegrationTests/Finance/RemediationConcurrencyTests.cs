@@ -267,8 +267,12 @@ public sealed class RemediationConcurrencyTests : IClassFixture<InfrastructureFi
         var tasks = Enumerable.Range(0, 10).Select(_ => Task.Run(async () =>
         {
             await using var db = CreateDbContext();
+            await using var tx = await db.Database.BeginTransactionAsync();
             var pinSvc = new TransactionPinService(userManagerMock, db);
-            return await pinSvc.VerifyPinAsync(userId, "0000");
+            var res = await pinSvc.VerifyPinAsync(userId, "0000");
+            await db.SaveChangesAsync();
+            await tx.CommitAsync();
+            return res;
         })).ToArray();
 
         var results = await Task.WhenAll(tasks);
@@ -305,5 +309,57 @@ public sealed class RemediationConcurrencyTests : IClassFixture<InfrastructureFi
             .CountAsync(l => l.AccountType == LedgerAccountType.FeeRevenue && l.Currency == Currency.NGN);
 
         Assert.Equal(1, feeAccountCount);
+    }
+
+    [Fact]
+    public async Task Test7_CrossCurrencyConcurrency_OpposingTransfers_ShouldNotDeadlock()
+    {
+        // Arrange: Wallet USDT = 10,000, Wallet NGN = 10,000
+        var userUSDT = $"fx_user_usdt_{Guid.NewGuid():N}";
+        var userNGN = $"fx_user_ngn_{Guid.NewGuid():N}";
+
+        await using var initDb = CreateDbContext();
+        var walletService = new WalletService(initDb);
+
+        var walletUSDT = await walletService.GetOrCreateIndividualWalletAsync(userUSDT, Currency.USDT);
+        var walletNGN = await walletService.GetOrCreateIndividualWalletAsync(userNGN, Currency.NGN);
+
+        walletUSDT.Credit(10000m);
+        walletNGN.Credit(10000m);
+        await initDb.SaveChangesAsync();
+
+        // Act: 10 concurrent opposing cross-currency FX conversions
+        var tasks = Enumerable.Range(0, 10).Select(i => Task.Run(async () =>
+        {
+            await using var db = CreateDbContext();
+            var postingService = new LedgerPostingService(db);
+            var isUsdtToNgn = i % 2 == 0;
+            var src = isUsdtToNgn ? walletUSDT.Id : walletNGN.Id;
+            var tgt = isUsdtToNgn ? walletNGN.Id : walletUSDT.Id;
+            var srcAmt = isUsdtToNgn ? 10m : 1500m;
+            var tgtAmt = isUsdtToNgn ? 1500m : 10m;
+            var rate = 150m;
+
+            return await postingService.PostCrossCurrencyTransactionAsync(
+                sourceWalletId: src,
+                targetWalletId: tgt,
+                sourceAmount: srcAmt,
+                targetAmount: tgtAmt,
+                rate: rate,
+                rateProvider: "TestProvider",
+                rateTimestamp: DateTime.UtcNow);
+        })).ToArray();
+
+        var results = await Task.WhenAll(tasks);
+
+        // Assert: All 10 FX conversions succeeded without deadlocks
+        Assert.Equal(10, results.Length);
+        Assert.All(results, r => Assert.Equal(LedgerTransactionStatus.Completed, r.Transaction.Status));
+
+        await using var verifyDb = CreateDbContext();
+        var ledgerEntries = await verifyDb.LedgerEntries.ToListAsync();
+        var totalDebitsUSDT = ledgerEntries.Where(e => e.Currency == Currency.USDT && e.Direction == LedgerEntryDirection.Debit).Sum(e => e.Amount);
+        var totalCreditsUSDT = ledgerEntries.Where(e => e.Currency == Currency.USDT && e.Direction == LedgerEntryDirection.Credit).Sum(e => e.Amount);
+        Assert.Equal(totalDebitsUSDT, totalCreditsUSDT);
     }
 }

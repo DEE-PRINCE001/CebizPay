@@ -31,22 +31,24 @@ public sealed partial class OutboxPublisherWorker : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            int processedCount = 0;
             try
             {
-                await ProcessOutboxMessagesAsync(stoppingToken).ConfigureAwait(false);
+                processedCount = await ProcessOutboxMessagesAsync(stoppingToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 LogWorkerLoopError(_logger, ex);
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            var delay = processedCount > 0 ? TimeSpan.FromMilliseconds(50) : TimeSpan.FromSeconds(2);
+            await Task.Delay(delay, stoppingToken);
         }
 
         LogWorkerStopped(_logger);
     }
 
-    private async Task ProcessOutboxMessagesAsync(CancellationToken cancellationToken)
+    private async Task<int> ProcessOutboxMessagesAsync(CancellationToken cancellationToken)
     {
         using var scope = _scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -76,7 +78,7 @@ public sealed partial class OutboxPublisherWorker : BackgroundService
         if (messages.Count == 0)
         {
             await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return;
+            return 0;
         }
 
         LogProcessingBatch(_logger, messages.Count);
@@ -99,6 +101,7 @@ public sealed partial class OutboxPublisherWorker : BackgroundService
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return messages.Count;
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "OutboxPublisherWorker started.")]

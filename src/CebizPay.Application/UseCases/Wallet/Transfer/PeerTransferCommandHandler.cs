@@ -4,8 +4,10 @@ using CebizPay.Application.Common.Interfaces.Finance;
 using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Interfaces.Security;
+using CebizPay.Application.Common.Security;
 using CebizPay.Domain.Entities;
 using CebizPay.Domain.Enums;
+using CebizPay.Domain.Finance.Entities;
 using CebizPay.Domain.Finance.Enums;
 using CebizPay.Domain.Finance.Events;
 using MediatR;
@@ -26,17 +28,18 @@ namespace CebizPay.Application.UseCases.Wallet.Transfer;
 ///   7. Self-transfer check
 ///   8. Validate wallet statuses (pre-check)
 ///   9. Validate currency match
-///  10. Verify transaction PIN via ITransactionPinService (3 failures → 15-min debit lock)
-///  11. Resolve active fee policy and calculate fee
-///  12. Pre-validate balance (optimistic check before locking)
-///  13. Idempotency check / create record
-///  14. Ensure platform fee account exists
-///  15. Begin DB transaction → PostPeerTransferCoreAsync (deterministic locking, re-validation, ledger, balance)
-///  16. Create AuditLog (who performed the action)
-///  17. Publish PeerTransferCompletedEvent via Outbox
-///  18. Complete IdempotencyRecord
-///  19. Commit
-///  20. Return stable response DTO
+///  10. Begin DB transaction (handler owns transaction boundary)
+///  11. Verify transaction PIN via ITransactionPinService (if invalid, commit failed attempt state &amp; throw)
+///  12. Resolve active fee policy and calculate fee
+///  13. Pre-validate balance (optimistic check before locking)
+///  14. Early Idempotency Check &amp; Processing Record Insert (with Npgsql SQLSTATE 23505 detection)
+///  15. Ensure platform fee account exists
+///  16. PostPeerTransferCoreAsync (deterministic locking, re-validation, ledger, balance)
+///  17. Create AuditLog (who performed the action)
+///  18. Publish PeerTransferCompletedEvent via Outbox
+///  19. Mark IdempotencyRecord completed
+///  20. Save &amp; Commit transaction
+///  21. Return stable response DTO
 /// </summary>
 public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCommand, PeerTransferResponseDto>
 {
@@ -175,123 +178,79 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
         if (sourceWallet.Currency != recipientWallet.Currency)
             throw new CurrencyMismatchException(sourceWallet.Currency.ToString(), recipientWallet.Currency.ToString());
 
-        // ─── 11. Verify transaction PIN ────────────────────────────────────────
-        // Do NOT log the raw PIN value
-        var pinResult = await _pinService.VerifyPinAsync(userId, request.TransactionPin, cancellationToken);
-
-        if (pinResult.IsLocked)
-            throw new PinLockedException(pinResult.Error ?? "Transaction PIN debit lock is active.");
-
-        if (!pinResult.Succeeded)
-        {
-            if (string.IsNullOrEmpty(pinResult.Error)
-                || pinResult.Error.Contains("has not been set", StringComparison.OrdinalIgnoreCase))
-                throw new PinRequiredException();
-
-            throw new InvalidOperationException(pinResult.Error ?? "Invalid transaction PIN.");
-        }
-
-        // ─── 12. Resolve active fee policy and calculate fee ──────────────────
-        var feePolicy = await _feePolicyService.GetActivePolicyAsync(cancellationToken);
-        var feeAmount = feePolicy?.CalculateFee(request.Amount, currency) ?? 0m;
-        var feePolicyVersion = feePolicy?.Version;
-        var totalDebit = request.Amount + feeAmount;
-
-        // ─── 13. Pre-validate balance (optimistic, before acquiring DB lock) ──
-        if (sourceWallet.AvailableBalance < totalDebit)
-            throw new InsufficientFundsException(sourceWallet.AvailableBalance, totalDebit);
-
-        // ─── 14. Idempotency check & payload hash calculation ────────────────
-        var requestPayload = JsonSerializer.Serialize(new
-        {
-            RecipientId = recipientUser.UserId,
-            request.Amount,
-            Currency = currency.ToString(),
-            SourceWalletId = sourceWallet.Id,
-            FeePolicyVersion = feePolicyVersion
-        });
-        var requestHash = CebizPay.Application.Common.Security.HashUtility.ComputeSha256(requestPayload);
-
-        // Pre-transaction check: Return cached response if completed
-        var existingRecord = await _idempotencyService.GetRecordAsync(
-            request.IdempotencyKey, OperationName, userId, orgId, cancellationToken);
-
-        if (existingRecord != null)
-        {
-            if (existingRecord.RequestHash != requestHash)
-            {
-                throw new IdempotencyConflictException(request.IdempotencyKey,
-                    $"Idempotency key '{request.IdempotencyKey}' was previously used with a different request payload.");
-            }
-
-            if (existingRecord.Status == IdempotencyStatus.Completed && existingRecord.ResponseJson != null)
-            {
-                return JsonSerializer.Deserialize<PeerTransferResponseDto>(existingRecord.ResponseJson)
-                    ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
-            }
-
-            if (existingRecord.Status == IdempotencyStatus.Processing)
-            {
-                throw new IdempotencyConflictException(request.IdempotencyKey,
-                    $"A request with idempotency key '{request.IdempotencyKey}' is currently being processed.");
-            }
-        }
-
-        // ─── 15. Ensure platform fee ledger account exists ─────────────────
-        var feeAccount = await _ledgerService.GetOrCreatePlatformFeeAccountAsync(currency, cancellationToken);
-
-        // ─── 16. Generate stable financial reference ───────────────────────────
-        var reference = GenerateTransferReference();
-
-        // ─── 17. Begin DB transaction and execute atomic operations ──────────────
+        // ─── 11. Handler owns the single database transaction ───────────────
         await using var dbTx = await _dbContext.BeginTransactionAsync(cancellationToken);
+
+        decimal totalDebit = 0m;
 
         try
         {
-            // Atomically retrieve or initialize IdempotencyRecord inside the transaction
-            var recordInTx = await _dbContext.IdempotencyRecords
-                .FirstOrDefaultAsync(r =>
-                    r.IdempotencyKey == request.IdempotencyKey.Trim() &&
-                    r.Operation == OperationName &&
-                    r.UserId == userId &&
-                    r.OrganizationId == orgId, cancellationToken);
+            // Verify transaction PIN (service updates tracked user entity in memory)
+            var pinResult = await _pinService.VerifyPinAsync(userId, request.TransactionPin, cancellationToken);
 
-            Domain.Finance.Entities.IdempotencyRecord idempotencyRecord;
-
-            if (recordInTx != null)
+            if (!pinResult.Succeeded)
             {
-                if (recordInTx.RequestHash != requestHash)
-                {
-                    throw new IdempotencyConflictException(request.IdempotencyKey,
-                        $"Idempotency key '{request.IdempotencyKey}' was previously used with a different request payload.");
-                }
+                // Commit failed attempt / lockout state independently BEFORE throwing PIN exception
+                await _dbContext.SaveChangesAsync(cancellationToken);
+                await dbTx.CommitAsync(cancellationToken);
 
-                if (recordInTx.Status == IdempotencyStatus.Completed && recordInTx.ResponseJson != null)
-                {
-                    await dbTx.RollbackAsync(cancellationToken);
-                    return JsonSerializer.Deserialize<PeerTransferResponseDto>(recordInTx.ResponseJson)
-                        ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
-                }
+                if (pinResult.IsLocked)
+                    throw new PinLockedException(pinResult.Error ?? "Transaction PIN debit lock is active.");
 
-                if (recordInTx.Status == IdempotencyStatus.Processing)
-                {
-                    throw new IdempotencyConflictException(request.IdempotencyKey,
-                        $"A request with idempotency key '{request.IdempotencyKey}' is currently being processed.");
-                }
+                if (string.IsNullOrEmpty(pinResult.Error)
+                    || pinResult.Error.Contains("has not been set", StringComparison.OrdinalIgnoreCase))
+                    throw new PinRequiredException();
 
-                recordInTx.MarkProcessing();
-                idempotencyRecord = recordInTx;
-            }
-            else
-            {
-                idempotencyRecord = new Domain.Finance.Entities.IdempotencyRecord(
-                    request.IdempotencyKey.Trim(), OperationName, requestHash, userId, orgId);
-                _dbContext.IdempotencyRecords.Add(idempotencyRecord);
+                throw new InvalidOperationException(pinResult.Error ?? "Invalid transaction PIN.");
             }
 
-            // PostPeerTransferCoreAsync: acquires row-level locks on wallets in deterministic order,
-            // re-validates balance and wallet status inside the lock (TOCTOU protection),
-            // creates 3-entry ledger transaction, and materializes wallet balances.
+            // ─── 12. Resolve active fee policy and calculate fee ──────────────
+            var feePolicy = await _feePolicyService.GetActivePolicyAsync(cancellationToken);
+            var feeAmount = feePolicy?.CalculateFee(request.Amount, currency) ?? 0m;
+            var feePolicyVersion = feePolicy?.Version;
+            totalDebit = request.Amount + feeAmount;
+
+            // ─── 13. Pre-validate balance (optimistic check before locking) ──
+            if (sourceWallet.AvailableBalance < totalDebit)
+                throw new InsufficientFundsException(sourceWallet.AvailableBalance, totalDebit);
+
+            // ─── 14. Early Idempotency Check & Processing Record Insert ──────
+            var requestPayload = JsonSerializer.Serialize(new
+            {
+                RecipientId = recipientUser.UserId,
+                request.Amount,
+                Currency = currency.ToString(),
+                SourceWalletId = sourceWallet.Id,
+                FeePolicyVersion = feePolicyVersion
+            });
+
+            // CreateRecordAsync (with autoSave: true) inserts the Processing idempotency record
+            // and flushes it immediately to PostgreSQL inside dbTx. Under high concurrency,
+            // losing duplicate requests block at PostgreSQL unique index constraint (SQLSTATE 23505)
+            // BEFORE executing any wallet locking, fee calculation, or ledger postings.
+            var idempotencyRecord = await _idempotencyService.CreateRecordAsync(
+                request.IdempotencyKey, OperationName, requestPayload, userId, orgId, autoSave: true, cancellationToken);
+
+            if (idempotencyRecord.Status == IdempotencyStatus.Completed && idempotencyRecord.ResponseJson != null)
+            {
+                await dbTx.RollbackAsync(cancellationToken);
+                return JsonSerializer.Deserialize<PeerTransferResponseDto>(idempotencyRecord.ResponseJson)
+                    ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
+            }
+
+            if (idempotencyRecord.Status == IdempotencyStatus.Processing)
+            {
+                await dbTx.RollbackAsync(cancellationToken);
+                throw new IdempotencyConflictException(request.IdempotencyKey,
+                    $"A request with idempotency key '{request.IdempotencyKey}' is currently being processed.");
+            }
+
+            // ─── 15. Ensure platform fee ledger account exists ─────────────────
+            var feeAccount = await _ledgerService.GetOrCreatePlatformFeeAccountAsync(currency, cancellationToken);
+
+            // ─── 16. Generate stable financial reference & execute core transfer ─
+            var reference = GenerateTransferReference();
+
             var ledgerTxn = await _ledgerService.PostPeerTransferCoreAsync(
                 senderWalletId: sourceWallet.Id,
                 recipientWalletId: recipientWallet.Id,
@@ -304,7 +263,7 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
                 description: $"Peer transfer: {request.Amount} {currency}",
                 cancellationToken: cancellationToken);
 
-            // ─── 18. Create AuditLog (who performed the action) ───────────────
+            // ─── 17. Create AuditLog (who performed the action) ───────────────
             var auditLog = new AuditLog(
                 actorUserId: userId,
                 action: "Wallet.PeerTransfer",
@@ -324,8 +283,7 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
 
             _dbContext.AuditLogs.Add(auditLog);
 
-            // ─── 19. Publish PeerTransferCompletedEvent via Outbox ────────────
-            // Outbox ensures the event is reliably published after the transaction commits.
+            // ─── 18. Publish PeerTransferCompletedEvent via Outbox ────────────
             var domainEvent = new PeerTransferCompletedEvent(
                 TransactionId: ledgerTxn.Id,
                 TransactionReference: ledgerTxn.Reference,
@@ -340,7 +298,7 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
 
             _outboxService.Write(domainEvent);
 
-            // ─── 20. Build response DTO ────────────────────────────────────────
+            // ─── 19. Build response DTO & Mark IdempotencyRecord complete ─────
             var recipientDisplay = !string.IsNullOrWhiteSpace(recipientUser.Email)
                 ? recipientUser.Email
                 : request.RecipientIdentifier;
@@ -356,36 +314,13 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
                 AppliedFeePolicyVersion: feePolicyVersion,
                 CreatedAtUtc: ledgerTxn.CreatedAtUtc);
 
-            // ─── 21. Mark idempotency record complete (within same transaction) ─
             idempotencyRecord.Complete(JsonSerializer.Serialize(response));
 
+            // ─── 20. Save & Commit transaction ───────────────────────────────
             await _dbContext.SaveChangesAsync(cancellationToken);
             await dbTx.CommitAsync(cancellationToken);
 
             return response;
-        }
-        catch (DbUpdateException ex)
-        {
-            await dbTx.RollbackAsync(cancellationToken);
-
-            // Re-check after potential unique index race condition
-            var recheck = await _idempotencyService.GetRecordAsync(
-                request.IdempotencyKey, OperationName, userId, orgId, cancellationToken);
-
-            if (recheck != null && recheck.Status == IdempotencyStatus.Completed && recheck.ResponseJson != null)
-            {
-                if (recheck.RequestHash != requestHash)
-                {
-                    throw new IdempotencyConflictException(request.IdempotencyKey,
-                        $"Idempotency key '{request.IdempotencyKey}' was previously used with a different request payload.");
-                }
-
-                return JsonSerializer.Deserialize<PeerTransferResponseDto>(recheck.ResponseJson)
-                    ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
-            }
-
-            throw new IdempotencyConflictException(request.IdempotencyKey,
-                $"Idempotency key '{request.IdempotencyKey}' was concurrently locked or processed.", ex);
         }
         catch (InvalidOperationException ex) when (
             ex.Message.StartsWith("Insufficient funds after lock", StringComparison.OrdinalIgnoreCase))

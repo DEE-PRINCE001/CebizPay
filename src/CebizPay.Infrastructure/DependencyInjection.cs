@@ -97,7 +97,7 @@ public static class DependencyInjection
         services.AddScoped<IMfaCodeDeliveryService, NoOpMfaCodeDeliveryService>();
         services.AddScoped<IMfaService, MfaService>();
         services.AddTransient<IIdentityService, IdentityService>();
-        services.AddTransient<ITransactionPinService, TransactionPinService>();
+        services.AddScoped<ITransactionPinService, TransactionPinService>();
         services.AddTransient<IOtpService, RedisOtpService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Security.ICurrentUserService, CurrentUserService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Security.IUserLookupService, UserLookupService>();
