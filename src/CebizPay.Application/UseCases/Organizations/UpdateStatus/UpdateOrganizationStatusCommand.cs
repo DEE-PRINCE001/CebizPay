@@ -9,10 +9,12 @@ namespace CebizPay.Application.UseCases.Organizations.UpdateStatus;
 /// <param name="OrganizationId">Organization ID.</param>
 /// <param name="NewStatus">New lifecycle status.</param>
 /// <param name="Reason">Optional reason for status change.</param>
+/// <param name="AdminUserId">Optional Admin User ID performing the status change.</param>
 public sealed record UpdateOrganizationStatusCommand(
     Guid OrganizationId,
     OrganizationStatus NewStatus,
-    string? Reason) : IRequest<UpdateOrganizationStatusResponseDto>;
+    string? Reason,
+    string? AdminUserId = null) : IRequest<UpdateOrganizationStatusResponseDto>;
 
 /// <summary>
 /// Response DTO for organization status update.

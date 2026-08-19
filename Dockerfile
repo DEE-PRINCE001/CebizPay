@@ -28,6 +28,10 @@ RUN dotnet publish "CebizPay.Api.csproj" -c Release -o /app/publish /p:UseAppHos
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
 
+# Install curl for reliable container health checking
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
+
 # Run as non-root user
 USER $APP_UID
 

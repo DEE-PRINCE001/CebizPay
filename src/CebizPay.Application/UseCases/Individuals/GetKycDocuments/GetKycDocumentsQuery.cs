@@ -1,6 +1,5 @@
 using CebizPay.Application.Common.Interfaces.Persistence;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Application.UseCases.Individuals.GetKycDocuments;
 

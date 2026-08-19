@@ -71,6 +71,20 @@ namespace CebizPay.Infrastructure.Persistence.Migrations
                 name: "IX_LedgerAccounts_AccountType_Currency",
                 table: "LedgerAccounts");
 
+            migrationBuilder.DropIndex(
+                name: "IX_IdempotencyRecords_UserId_Operation_IdempotencyKey",
+                table: "IdempotencyRecords");
+
+            migrationBuilder.DropIndex(
+                name: "IX_IdempotencyRecords_OrganizationId_Operation_IdempotencyKey",
+                table: "IdempotencyRecords");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_IdempotencyRecords_UserId_OrganizationId_Operation_Idempote~",
+                table: "IdempotencyRecords",
+                columns: new[] { "UserId", "OrganizationId", "Operation", "IdempotencyKey" },
+                unique: true);
+
             migrationBuilder.CreateIndex(
                 name: "IX_OutboxMessages_ProcessedOnUtc",
                 table: "OutboxMessages",

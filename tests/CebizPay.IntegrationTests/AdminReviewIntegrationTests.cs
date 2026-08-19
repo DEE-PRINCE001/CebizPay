@@ -68,7 +68,7 @@ public sealed class AdminReviewIntegrationTests : IClassFixture<InfrastructureFi
         Assert.Equal(KycStatus.Verified, updatedProfile.KycStatus);
 
         var audit = await db.AuditLogs.FirstOrDefaultAsync(a =>
-            a.ActorUserId == adminId && a.Action == "Kyc.Verify");
+            a.ActorId == adminId && a.Action == Domain.Auditing.AuditActions.KycVerified);
         Assert.NotNull(audit);
     }
 
@@ -99,7 +99,7 @@ public sealed class AdminReviewIntegrationTests : IClassFixture<InfrastructureFi
         Assert.Equal(rejectionReason, result.Reason);
 
         var audit = await db.AuditLogs.FirstOrDefaultAsync(a =>
-            a.ActorUserId == adminId && a.Action == "Kyc.Reject");
+            a.ActorId == adminId && a.Action == Domain.Auditing.AuditActions.KycRejected);
         Assert.NotNull(audit);
     }
 
@@ -167,7 +167,7 @@ public sealed class AdminReviewIntegrationTests : IClassFixture<InfrastructureFi
         Assert.Equal(OrganizationStatus.Verified, updatedOrg.Status);
 
         var audit = await db.AuditLogs.FirstOrDefaultAsync(a =>
-            a.ActorUserId == adminId && a.Action == "Kyb.Verify");
+            a.ActorId == adminId && a.Action == Domain.Auditing.AuditActions.KybVerified);
         Assert.NotNull(audit);
     }
 
@@ -193,7 +193,7 @@ public sealed class AdminReviewIntegrationTests : IClassFixture<InfrastructureFi
         Assert.Equal("CAC certificate invalid.", result.Reason);
 
         var audit = await db.AuditLogs.FirstOrDefaultAsync(a =>
-            a.ActorUserId == adminId && a.Action == "Kyb.Reject");
+            a.ActorId == adminId && a.Action == Domain.Auditing.AuditActions.KybRejected);
         Assert.NotNull(audit);
     }
 
@@ -240,7 +240,7 @@ public sealed class AdminReviewIntegrationTests : IClassFixture<InfrastructureFi
         Assert.True(updatedAdmin.HasPermission(Permissions.KycReview));
 
         var audit = await db.AuditLogs.FirstOrDefaultAsync(a =>
-            a.ActorUserId == superAdminUserId && a.Action == "Admin.GrantPermission");
+            a.ActorId == superAdminUserId && a.Action == Domain.Auditing.AuditActions.AdminPermissionGranted);
         Assert.NotNull(audit);
     }
 
@@ -267,7 +267,7 @@ public sealed class AdminReviewIntegrationTests : IClassFixture<InfrastructureFi
         Assert.DoesNotContain(Permissions.KycReview, result.Permissions);
 
         var audit = await db.AuditLogs.FirstOrDefaultAsync(a =>
-            a.ActorUserId == superAdminUserId && a.Action == "Admin.RevokePermission");
+            a.ActorId == superAdminUserId && a.Action == Domain.Auditing.AuditActions.AdminPermissionRevoked);
         Assert.NotNull(audit);
     }
 

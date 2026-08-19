@@ -4,7 +4,6 @@ using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Domain.Entities;
 using CebizPay.Domain.Enums;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Application.UseCases.Admin.Fees;
 
@@ -49,18 +48,19 @@ public sealed class CreateFeePolicyCommandHandler : IRequestHandler<CreateFeePol
             cancellationToken);
 
         // Audit log the policy change
-        var auditLog = new AuditLog(
-            actorUserId: request.CreatedByUserId,
-            action: "Fees.CreatePeerTransferPolicy",
-            entityType: "PeerTransferFeePolicy",
-            entityId: policy.Id.ToString(),
-            detailsJson: System.Text.Json.JsonSerializer.Serialize(new
+        var auditLog = Domain.Entities.AuditLog.Create(
+            actorId: request.CreatedByUserId,
+            action: Domain.Auditing.AuditActions.FeePolicyCreated,
+            resourceType: Domain.Auditing.AuditResourceTypes.FeePolicy,
+            resourceId: policy.Id.ToString(),
+            afterJson: System.Text.Json.JsonSerializer.Serialize(new
             {
                 Version = policy.Version,
                 Mode = policy.Mode.ToString(),
                 policy.PercentageRate,
                 policy.MinimumFee,
-                policy.MaximumFee
+                policy.MaximumFee,
+                policy.EffectiveFrom
             }));
 
         _dbContext.AuditLogs.Add(auditLog);

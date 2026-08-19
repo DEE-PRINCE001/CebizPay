@@ -74,34 +74,57 @@ namespace CebizPay.Infrastructure.Persistence.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<string>("ActorUserId")
+                    b.Property<string>("ActorId")
                         .IsRequired()
                         .HasMaxLength(450)
                         .HasColumnType("character varying(450)");
 
-                    b.Property<DateTime>("CreatedAtUtc")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("DetailsJson")
+                    b.Property<string>("AfterJson")
                         .HasColumnType("text");
 
-                    b.Property<string>("EntityId")
-                        .IsRequired()
+                    b.Property<string>("BeforeJson")
+                        .HasColumnType("text");
+
+                    b.Property<string>("CorrelationId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)");
+
+                    b.Property<DateTime>("OccurredAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ResourceId")
                         .HasMaxLength(450)
                         .HasColumnType("character varying(450)");
 
-                    b.Property<string>("EntityType")
+                    b.Property<string>("ResourceType")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("Action");
 
-                    b.HasIndex("ActorUserId");
+                    b.HasIndex("ActorId");
 
-                    b.HasIndex("CreatedAtUtc");
+                    b.HasIndex("CorrelationId");
+
+                    b.HasIndex("OccurredAtUtc");
+
+                    b.HasIndex("OrganizationId");
+
+                    b.HasIndex("ResourceType", "ResourceId");
 
                     b.ToTable("AuditLogs", (string)null);
                 });
@@ -634,8 +657,13 @@ namespace CebizPay.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("UserId", "OrganizationId", "Operation", "IdempotencyKey")
-                        .IsUnique();
+                    b.HasIndex("OrganizationId", "Operation", "IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("\"OrganizationId\" IS NOT NULL");
+
+                    b.HasIndex("UserId", "Operation", "IdempotencyKey")
+                        .IsUnique()
+                        .HasFilter("\"OrganizationId\" IS NULL AND \"UserId\" IS NOT NULL");
 
                     b.ToTable("IdempotencyRecords", (string)null);
                 });
@@ -946,9 +974,15 @@ namespace CebizPay.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb");
 
+                    b.Property<DateTime?>("DeadLetteredOnUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Error")
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<DateTime?>("LastAttemptedOnUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime>("OccurredOnUtc")
                         .HasColumnType("timestamp with time zone");
@@ -970,7 +1004,7 @@ namespace CebizPay.Infrastructure.Persistence.Migrations
 
                     b.HasIndex("OccurredOnUtc")
                         .HasDatabaseName("IX_OutboxMessages_Unprocessed")
-                        .HasFilter("\"ProcessedOnUtc\" IS NULL");
+                        .HasFilter("\"ProcessedOnUtc\" IS NULL AND \"DeadLetteredOnUtc\" IS NULL");
 
                     b.ToTable("OutboxMessages", (string)null);
                 });

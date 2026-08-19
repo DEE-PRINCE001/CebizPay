@@ -29,13 +29,17 @@ public sealed class OutboxMessageConfiguration : IEntityTypeConfiguration<Outbox
         builder.Property(x => x.ProcessedOnUtc);
 
         builder.Property(x => x.Error)
-            .HasMaxLength(2000);
+            .HasMaxLength(4000);
 
         builder.Property(x => x.RetryCount)
             .HasDefaultValue(0);
 
+        builder.Property(x => x.LastAttemptedOnUtc);
+
+        builder.Property(x => x.DeadLetteredOnUtc);
+
         builder.HasIndex(x => new { x.OccurredOnUtc })
             .HasDatabaseName("IX_OutboxMessages_Unprocessed")
-            .HasFilter("\"ProcessedOnUtc\" IS NULL");
+            .HasFilter("\"ProcessedOnUtc\" IS NULL AND \"DeadLetteredOnUtc\" IS NULL");
     }
 }

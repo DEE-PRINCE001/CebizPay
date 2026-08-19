@@ -4,7 +4,6 @@ using CebizPay.Domain.Entities;
 using CebizPay.Domain.Enums;
 using FluentValidation;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Application.UseCases.Admins.RevokePermission;
 
@@ -66,12 +65,12 @@ public sealed class RevokeAdminPermissionCommandHandler : IRequestHandler<Revoke
         targetAdmin.RevokePermission(request.Permission);
 
         // Add audit log entry
-        _dbContext.AuditLogs.Add(new AuditLog(
-            request.SuperAdminUserId,
-            "Admin.RevokePermission",
-            "AdminProfile",
-            targetAdmin.Id.ToString(),
-            $"Revoked permission: {request.Permission}"));
+        _dbContext.AuditLogs.Add(Domain.Entities.AuditLog.Create(
+            actorId: request.SuperAdminUserId,
+            action: Domain.Auditing.AuditActions.AdminPermissionRevoked,
+            resourceType: Domain.Auditing.AuditResourceTypes.AdminProfile,
+            resourceId: targetAdmin.Id.ToString(),
+            afterJson: System.Text.Json.JsonSerializer.Serialize(new { Permission = request.Permission, TargetUserId = targetAdmin.UserId })));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

@@ -5,7 +5,6 @@ using CebizPay.Domain.Enums;
 using CebizPay.Domain.Events;
 using FluentValidation;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Application.UseCases.Individuals.UpdateKycStatus;
 
@@ -102,8 +101,13 @@ public sealed class UpdateKycStatusCommandHandler : IRequestHandler<UpdateKycSta
         }
 
         // Add audit log entry
-        var action = request.NewStatus == KycStatus.Verified ? "Kyc.Verify" : "Kyc.Reject";
-        _dbContext.AuditLogs.Add(new AuditLog(request.AdminUserId, action, "IndividualProfile", profile.UserId, request.Reason));
+        var action = request.NewStatus == KycStatus.Verified ? Domain.Auditing.AuditActions.KycVerified : Domain.Auditing.AuditActions.KycRejected;
+        _dbContext.AuditLogs.Add(Domain.Entities.AuditLog.Create(
+            actorId: request.AdminUserId,
+            action: action,
+            resourceType: Domain.Auditing.AuditResourceTypes.KycDocument,
+            resourceId: profile.UserId,
+            afterJson: request.Reason != null ? System.Text.Json.JsonSerializer.Serialize(new { Reason = request.Reason, KycStatus = profile.KycStatus.ToString() }) : null));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

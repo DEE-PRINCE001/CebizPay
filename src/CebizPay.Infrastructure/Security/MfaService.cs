@@ -54,7 +54,11 @@ public sealed class MfaService : IMfaService
         if (admin != null)
         {
             admin.SetMfaStatus(true);
-            _dbContext.AuditLogs.Add(new AuditLog(userId, "Mfa.Enable", "AdminProfile", admin.Id.ToString()));
+            _dbContext.AuditLogs.Add(Domain.Entities.AuditLog.Create(
+                actorId: userId,
+                action: Domain.Auditing.AuditActions.MfaEnabled,
+                resourceType: Domain.Auditing.AuditResourceTypes.AdminProfile,
+                resourceId: admin.Id.ToString()));
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
     }
@@ -68,7 +72,11 @@ public sealed class MfaService : IMfaService
         if (admin != null)
         {
             admin.SetMfaStatus(false);
-            _dbContext.AuditLogs.Add(new AuditLog(userId, "Mfa.Disable", "AdminProfile", admin.Id.ToString()));
+            _dbContext.AuditLogs.Add(Domain.Entities.AuditLog.Create(
+                actorId: userId,
+                action: Domain.Auditing.AuditActions.MfaDisabled,
+                resourceType: Domain.Auditing.AuditResourceTypes.AdminProfile,
+                resourceId: admin.Id.ToString()));
             await _dbContext.SaveChangesAsync(cancellationToken);
         }
     }

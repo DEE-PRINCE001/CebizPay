@@ -8,11 +8,12 @@ using CebizPay.Application.UseCases.Auth.VerifyOtp;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace CebizPay.Api.Controllers.v1;
 
 /// <summary>
-/// Authentication endpoints.
+/// Authentication endpoints protected by targeted ASP.NET Core rate limiting policies.
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
@@ -31,9 +32,11 @@ public sealed class AuthController : ControllerBase
 
     /// <summary>
     /// Authenticates a user with email and password.
+    /// Rate limited by AuthLoginPolicy.
     /// </summary>
     [HttpPost("login")]
     [AllowAnonymous]
+    [EnableRateLimiting("AuthLoginPolicy")]
     public async Task<IActionResult> Login([FromBody] LoginCommand command, CancellationToken cancellationToken)
     {
         var response = await _sender.Send(command, cancellationToken);
@@ -46,9 +49,11 @@ public sealed class AuthController : ControllerBase
 
     /// <summary>
     /// Verifies short-lived MFA challenge code to obtain JWT tokens.
+    /// Rate limited by MfaVerificationPolicy.
     /// </summary>
     [HttpPost("mfa/verify")]
     [AllowAnonymous]
+    [EnableRateLimiting("MfaVerificationPolicy")]
     public async Task<IActionResult> VerifyMfa([FromBody] VerifyMfaCommand command, CancellationToken cancellationToken)
     {
         var response = await _sender.Send(command, cancellationToken);
@@ -61,9 +66,11 @@ public sealed class AuthController : ControllerBase
 
     /// <summary>
     /// Enables or disables MFA for the authenticated user/admin profile.
+    /// Rate limited by AuthPolicy.
     /// </summary>
     [HttpPost("mfa/toggle")]
     [Authorize]
+    [EnableRateLimiting("AuthPolicy")]
     public async Task<IActionResult> ToggleMfa([FromBody] ToggleMfaCommand command, CancellationToken cancellationToken)
     {
         var response = await _sender.Send(command, cancellationToken);
@@ -72,9 +79,11 @@ public sealed class AuthController : ControllerBase
 
     /// <summary>
     /// Initiates phone registration via OTP.
+    /// Rate limited by OtpRequestPolicy.
     /// </summary>
     [HttpPost("register/phone")]
     [AllowAnonymous]
+    [EnableRateLimiting("OtpRequestPolicy")]
     public async Task<IActionResult> RegisterPhone([FromBody] RegisterPhoneCommand command, CancellationToken cancellationToken)
     {
         var response = await _sender.Send(command, cancellationToken);
@@ -87,9 +96,11 @@ public sealed class AuthController : ControllerBase
 
     /// <summary>
     /// Verifies mobile OTP and completes registration.
+    /// Rate limited by OtpVerificationPolicy.
     /// </summary>
     [HttpPost("register/otp/verify")]
     [AllowAnonymous]
+    [EnableRateLimiting("OtpVerificationPolicy")]
     public async Task<IActionResult> VerifyOtp([FromBody] VerifyOtpCommand command, CancellationToken cancellationToken)
     {
         var response = await _sender.Send(command, cancellationToken);
@@ -102,9 +113,11 @@ public sealed class AuthController : ControllerBase
 
     /// <summary>
     /// Changes password for the authenticated user.
+    /// Rate limited by AuthPolicy.
     /// </summary>
     [HttpPost("change-password")]
     [Authorize]
+    [EnableRateLimiting("AuthPolicy")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordCommand command, CancellationToken cancellationToken)
     {
         var response = await _sender.Send(command, cancellationToken);

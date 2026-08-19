@@ -75,5 +75,21 @@ public sealed class ArchitectureTests
 
         Assert.True(result.IsSuccessful, "Application layer must not depend on Outbox persistence implementation.");
     }
+
+    [Fact]
+    public void Application_ShouldNotDependOnExternalFrameworks()
+    {
+        var result = Types.InAssembly(typeof(Application.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "Microsoft.EntityFrameworkCore",
+                "Npgsql",
+                "StackExchange.Redis",
+                "RabbitMQ.Client")
+            .GetResult();
+
+        Assert.True(result.IsSuccessful, "Application layer must not depend on EF Core, Npgsql, Redis, or RabbitMQ framework references.");
+    }
 }
+
 

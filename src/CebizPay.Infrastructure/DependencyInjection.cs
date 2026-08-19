@@ -76,6 +76,8 @@ public static class DependencyInjection
         });
 
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
+        services.AddSingleton<IAsyncQueryExecutor, EfCoreAsyncQueryExecutor>();
+        CebizPay.Application.Common.Extensions.AsyncQueryableExtensions.SetExecutor(new EfCoreAsyncQueryExecutor());
 
         // Configure Identity with unified ApplicationUser
         services.AddIdentityCore<ApplicationUser>(options =>
@@ -101,6 +103,9 @@ public static class DependencyInjection
         services.AddTransient<IOtpService, RedisOtpService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Security.ICurrentUserService, CurrentUserService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Security.IUserLookupService, UserLookupService>();
+        services.AddSingleton<CebizPay.Application.Common.Interfaces.Security.IAuditSanitizer, CebizPay.Application.Common.Security.AuditSanitizer>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Security.IAuditContextAccessor, AuditContextAccessor>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Security.IAuditLogService, AuditLogService>();
 
         // Configure Finance services
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IWalletService, CebizPay.Infrastructure.Finance.WalletService>();
@@ -118,7 +123,8 @@ public static class DependencyInjection
         services.AddSingleton<ICacheService, RedisCacheService>();
 
         // Configure RabbitMQ & Outbox
-        services.AddTransient<IEventPublisher, RabbitMQEventPublisher>();
+        services.AddSingleton<IRabbitMqConnectionProvider, RabbitMqConnectionProvider>();
+        services.AddSingleton<IEventPublisher, RabbitMQEventPublisher>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Messaging.IOutboxService, CebizPay.Infrastructure.Persistence.Outbox.OutboxService>();
 
         // Configure Health Checks

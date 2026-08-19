@@ -22,4 +22,14 @@ public sealed class HealthCheckApiTests : IClassFixture<WebApplicationFactory<Pr
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
     }
+
+    [Fact]
+    public async Task GetReadinessEndpoint_ShouldReturnResponse()
+    {
+        // Act
+        var response = await _client.GetAsync("/health/ready");
+
+        // Assert
+        Assert.NotNull(response);
+    }
 }

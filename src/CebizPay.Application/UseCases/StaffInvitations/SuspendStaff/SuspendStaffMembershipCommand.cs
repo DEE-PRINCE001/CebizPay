@@ -5,7 +5,6 @@ using CebizPay.Domain.Enums;
 using CebizPay.Domain.Events;
 using FluentValidation;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Application.UseCases.StaffInvitations.SuspendStaff;
 

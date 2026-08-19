@@ -261,7 +261,7 @@ public sealed class MfaIntegrationTests : IClassFixture<InfrastructureFixture>
         var stored = await db.AdminProfiles.FirstAsync(a => a.UserId == userId);
         Assert.True(stored.IsMfaEnabled);
 
-        var audit = await db.AuditLogs.FirstOrDefaultAsync(a => a.ActorUserId == userId && a.Action == "Mfa.Enable");
+        var audit = await db.AuditLogs.FirstOrDefaultAsync(a => a.ActorId == userId && a.Action == Domain.Auditing.AuditActions.MfaEnabled);
         Assert.NotNull(audit);
 
         await db.DisposeAsync();
@@ -282,7 +282,7 @@ public sealed class MfaIntegrationTests : IClassFixture<InfrastructureFixture>
         var stored = await db.AdminProfiles.FirstAsync(a => a.UserId == userId);
         Assert.False(stored.IsMfaEnabled);
 
-        var audit = await db.AuditLogs.FirstOrDefaultAsync(a => a.ActorUserId == userId && a.Action == "Mfa.Disable");
+        var audit = await db.AuditLogs.FirstOrDefaultAsync(a => a.ActorId == userId && a.Action == Domain.Auditing.AuditActions.MfaDisabled);
         Assert.NotNull(audit);
 
         await db.DisposeAsync();

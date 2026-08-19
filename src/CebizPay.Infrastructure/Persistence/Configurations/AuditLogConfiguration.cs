@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace CebizPay.Infrastructure.Persistence.Configurations;
 
 /// <summary>
-/// EF Core configuration for AuditLog entity.
+/// EF Core configuration for the immutable AuditLog entity.
 /// </summary>
 public sealed class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
 {
@@ -16,31 +16,53 @@ public sealed class AuditLogConfiguration : IEntityTypeConfiguration<AuditLog>
 
         builder.HasKey(x => x.Id);
 
-        builder.Property(x => x.ActorUserId)
+        builder.Property(x => x.ActorId)
             .HasMaxLength(450)
             .IsRequired();
+
+        builder.Property(x => x.OrganizationId)
+            .IsRequired(false);
 
         builder.Property(x => x.Action)
             .HasMaxLength(100)
             .IsRequired();
 
-        builder.Property(x => x.EntityType)
+        builder.Property(x => x.ResourceType)
             .HasMaxLength(100)
             .IsRequired();
 
-        builder.Property(x => x.EntityId)
+        builder.Property(x => x.ResourceId)
             .HasMaxLength(450)
-            .IsRequired();
-
-        builder.Property(x => x.DetailsJson)
             .IsRequired(false);
 
-        builder.Property(x => x.CreatedAtUtc)
+        builder.Property(x => x.BeforeJson)
+            .IsRequired(false);
+
+        builder.Property(x => x.AfterJson)
+            .IsRequired(false);
+
+        builder.Property(x => x.IpAddress)
+            .HasMaxLength(45)
+            .IsRequired(false);
+
+        builder.Property(x => x.UserAgent)
+            .HasMaxLength(500)
+            .IsRequired(false);
+
+        builder.Property(x => x.CorrelationId)
+            .HasMaxLength(100)
+            .IsRequired(false);
+
+        builder.Property(x => x.OccurredAtUtc)
             .HasColumnType("timestamp with time zone")
             .IsRequired();
 
-        builder.HasIndex(x => x.ActorUserId);
+        // Query performance indexes
+        builder.HasIndex(x => x.OccurredAtUtc);
+        builder.HasIndex(x => x.ActorId);
+        builder.HasIndex(x => x.OrganizationId);
         builder.HasIndex(x => x.Action);
-        builder.HasIndex(x => x.CreatedAtUtc);
+        builder.HasIndex(x => x.CorrelationId);
+        builder.HasIndex(x => new { x.ResourceType, x.ResourceId });
     }
 }

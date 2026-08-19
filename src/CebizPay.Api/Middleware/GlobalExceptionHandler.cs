@@ -112,6 +112,11 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
                 "PIN Locked",
                 exception.Message),
 
+            InvalidPinException => (
+                StatusCodes.Status400BadRequest,
+                "Invalid Transaction PIN",
+                exception.Message),
+
             InsufficientFundsException => (
                 StatusCodes.Status422UnprocessableEntity,
                 "Insufficient Funds",
@@ -159,6 +164,7 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
         ComplianceRestrictedException ex => ex.Code,
         PinRequiredException ex => ex.Code,
         PinLockedException ex => ex.Code,
+        InvalidPinException ex => ex.Code,
         _ => null
     };
 

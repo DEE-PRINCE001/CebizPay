@@ -4,7 +4,6 @@ using CebizPay.Domain.Entities;
 using CebizPay.Domain.Enums;
 using CebizPay.Domain.Events;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Application.UseCases.Organizations.RegisterStep1;
 

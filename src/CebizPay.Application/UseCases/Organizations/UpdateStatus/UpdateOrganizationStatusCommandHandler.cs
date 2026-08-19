@@ -2,7 +2,6 @@ using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Domain.Events;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Application.UseCases.Organizations.UpdateStatus;
 
@@ -32,6 +31,20 @@ public sealed class UpdateOrganizationStatusCommandHandler : IRequestHandler<Upd
 
         var oldStatus = org.Status;
         org.TransitionStatus(request.NewStatus, request.Reason);
+
+        var action = request.NewStatus == Domain.Enums.OrganizationStatus.Suspended
+            ? Domain.Auditing.AuditActions.OrganizationSuspended
+            : Domain.Auditing.AuditActions.OrganizationReactivated;
+
+        var actorId = request.AdminUserId ?? "SYSTEM";
+
+        _dbContext.AuditLogs.Add(Domain.Entities.AuditLog.Create(
+            actorId: actorId,
+            action: action,
+            resourceType: Domain.Auditing.AuditResourceTypes.Organization,
+            resourceId: org.Id.ToString(),
+            organizationId: org.Id,
+            afterJson: request.Reason != null ? System.Text.Json.JsonSerializer.Serialize(new { Reason = request.Reason, OldStatus = oldStatus.ToString(), NewStatus = request.NewStatus.ToString() }) : null));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

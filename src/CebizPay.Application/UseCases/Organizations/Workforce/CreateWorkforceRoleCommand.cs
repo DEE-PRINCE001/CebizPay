@@ -3,7 +3,6 @@ using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Domain.Entities;
 using FluentValidation;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Application.UseCases.Organizations.Workforce;
 

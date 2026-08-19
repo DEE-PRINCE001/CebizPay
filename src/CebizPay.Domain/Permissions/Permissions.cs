@@ -40,6 +40,8 @@ public static class Permissions
     public const string TransactionsView = "Transactions.View";
     /// <summary>View platform payroll logs.</summary>
     public const string PayrollLogsView = "PayrollLogs.View";
+    /// <summary>View platform and organization audit logs.</summary>
+    public const string AuditView = "Audit.View";
 
     // Staff & Workforce Management (Org-scoped)
     /// <summary>View organization staff list and profiles.</summary>
@@ -101,7 +103,7 @@ public static class Permissions
     /// </summary>
     public static readonly IReadOnlySet<string> ReadOnlyAdminPermissions = new HashSet<string>
     {
-        KycView, KybView, OrganizationsView, TransactionsView, PayrollLogsView,
+        KycView, KybView, OrganizationsView, TransactionsView, PayrollLogsView, AuditView,
         StaffView, PayrollView, WalletView, ErpView
     };
 

@@ -5,7 +5,6 @@ using CebizPay.Domain.Enums;
 using CebizPay.Domain.Events;
 using FluentValidation;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Application.UseCases.Organizations.ReviewKyb;
 
@@ -106,8 +105,14 @@ public sealed class ReviewKybCommandHandler : IRequestHandler<ReviewKybCommand, 
         }
 
         // Add audit log entry
-        var action = request.NewStatus == KybStatus.Verified ? "Kyb.Verify" : "Kyb.Reject";
-        _dbContext.AuditLogs.Add(new AuditLog(request.AdminUserId, action, "Organization", org.Id.ToString(), request.Reason));
+        var action = request.NewStatus == KybStatus.Verified ? Domain.Auditing.AuditActions.KybVerified : Domain.Auditing.AuditActions.KybRejected;
+        _dbContext.AuditLogs.Add(Domain.Entities.AuditLog.Create(
+            actorId: request.AdminUserId,
+            action: action,
+            resourceType: Domain.Auditing.AuditResourceTypes.KybApplication,
+            resourceId: org.Id.ToString(),
+            organizationId: org.Id,
+            afterJson: request.Reason != null ? System.Text.Json.JsonSerializer.Serialize(new { Reason = request.Reason, KybStatus = org.KybStatus.ToString() }) : null));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

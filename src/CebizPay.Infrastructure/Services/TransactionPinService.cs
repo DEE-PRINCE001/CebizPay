@@ -50,6 +50,14 @@ public sealed class TransactionPinService : ITransactionPinService
             return (false, string.Join("; ", result.Errors.Select(e => e.Description)));
         }
 
+        _dbContext.AuditLogs.Add(Domain.Entities.AuditLog.Create(
+            actorId: userId,
+            action: Domain.Auditing.AuditActions.PinSet,
+            resourceType: Domain.Auditing.AuditResourceTypes.User,
+            resourceId: userId,
+            afterJson: "{\"status\":\"PIN set successfully\"}"));
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
         return (true, null);
     }
 
@@ -109,6 +117,12 @@ public sealed class TransactionPinService : ITransactionPinService
             {
                 user.PinLockoutEndUtc = DateTime.UtcNow.AddMinutes(15);
                 _dbContext.Update(user);
+                _dbContext.AuditLogs.Add(Domain.Entities.AuditLog.Create(
+                    actorId: userId,
+                    action: Domain.Auditing.AuditActions.PinLocked,
+                    resourceType: Domain.Auditing.AuditResourceTypes.User,
+                    resourceId: userId,
+                    afterJson: "{\"reason\":\"3 consecutive failed PIN attempts\",\"lockoutMinutes\":15}"));
                 await _dbContext.SaveChangesAsync(cancellationToken);
                 return (false, true, "Transaction PIN debit lock activated for 15 minutes due to 3 failed attempts.");
             }

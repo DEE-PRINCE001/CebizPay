@@ -22,6 +22,7 @@
     <ProjectReference Include="..\..\src\CebizPay.Domain\CebizPay.Domain.csproj" />
     <ProjectReference Include="..\..\src\CebizPay.Application\CebizPay.Application.csproj" />
     <ProjectReference Include="..\..\src\CebizPay.Infrastructure\CebizPay.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\CebizPay.Workers\CebizPay.Workers.csproj" />
   </ItemGroup>
 
   <ItemGroup>

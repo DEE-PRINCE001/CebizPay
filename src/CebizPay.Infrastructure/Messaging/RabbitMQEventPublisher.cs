@@ -10,10 +10,11 @@ namespace CebizPay.Infrastructure.Messaging;
 
 /// <summary>
 /// RabbitMQ-backed implementation of the <see cref="IEventPublisher"/> interface.
-/// Encapsulates connection lifecycle, serialization, and exchange publishing.
+/// Reuses persistent IConnection from <see cref="IRabbitMqConnectionProvider"/> and safely manages channel lifecycles.
 /// </summary>
 public sealed partial class RabbitMQEventPublisher : IEventPublisher
 {
+    private readonly IRabbitMqConnectionProvider _connectionProvider;
     private readonly RabbitMQOptions _options;
     private readonly ILogger<RabbitMQEventPublisher> _logger;
     private static readonly JsonSerializerOptions SerializerOptions = new(JsonSerializerDefaults.Web);
@@ -22,9 +23,11 @@ public sealed partial class RabbitMQEventPublisher : IEventPublisher
     /// Initializes a new instance of the <see cref="RabbitMQEventPublisher"/> class.
     /// </summary>
     public RabbitMQEventPublisher(
+        IRabbitMqConnectionProvider connectionProvider,
         IOptions<RabbitMQOptions> options,
         ILogger<RabbitMQEventPublisher> logger)
     {
+        _connectionProvider = connectionProvider ?? throw new ArgumentNullException(nameof(connectionProvider));
         _options = options.Value;
         _logger = logger;
     }
@@ -36,17 +39,8 @@ public sealed partial class RabbitMQEventPublisher : IEventPublisher
 
         try
         {
-            var factory = new ConnectionFactory
-            {
-                HostName = _options.HostName,
-                Port = _options.Port,
-                UserName = _options.UserName,
-                Password = _options.Password,
-                VirtualHost = _options.VirtualHost
-            };
-
-            using var connection = await factory.CreateConnectionAsync(cancellationToken).ConfigureAwait(false);
-            using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
+            var connection = await _connectionProvider.GetConnectionAsync(cancellationToken).ConfigureAwait(false);
+            await using var channel = await connection.CreateChannelAsync(cancellationToken: cancellationToken).ConfigureAwait(false);
 
             await channel.ExchangeDeclareAsync(
                 exchange: _options.ExchangeName,
@@ -64,7 +58,8 @@ public sealed partial class RabbitMQEventPublisher : IEventPublisher
             {
                 Persistent = true,
                 ContentType = "application/json",
-                MessageId = Guid.NewGuid().ToString()
+                MessageId = Guid.NewGuid().ToString(),
+                Timestamp = new AmqpTimestamp(DateTimeOffset.UtcNow.ToUnixTimeSeconds())
             };
 
             await channel.BasicPublishAsync(

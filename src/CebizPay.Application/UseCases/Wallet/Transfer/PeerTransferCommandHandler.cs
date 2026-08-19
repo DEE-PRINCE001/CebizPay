@@ -11,7 +11,6 @@ using CebizPay.Domain.Finance.Entities;
 using CebizPay.Domain.Finance.Enums;
 using CebizPay.Domain.Finance.Events;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Application.UseCases.Wallet.Transfer;
 
@@ -178,41 +177,35 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
         if (sourceWallet.Currency != recipientWallet.Currency)
             throw new CurrencyMismatchException(sourceWallet.Currency.ToString(), recipientWallet.Currency.ToString());
 
-        // ─── 11. Handler owns the single database transaction ───────────────
-        await using var dbTx = await _dbContext.BeginTransactionAsync(cancellationToken);
+        // ─── 11. Verify transaction PIN (updates and persists lockout counter independently) ───
+        var pinResult = await _pinService.VerifyPinAsync(userId, request.TransactionPin, cancellationToken);
+        if (!pinResult.Succeeded)
+        {
+            if (pinResult.IsLocked)
+                throw new PinLockedException(pinResult.Error ?? "Transaction PIN debit lock is active.");
 
-        decimal totalDebit = 0m;
+            if (string.IsNullOrEmpty(pinResult.Error)
+                || pinResult.Error.Contains("has not been set", StringComparison.OrdinalIgnoreCase))
+                throw new PinRequiredException();
+
+            throw new InvalidPinException(pinResult.Error ?? "Invalid transaction PIN.");
+        }
+
+        // ─── 12. Resolve active fee policy and calculate fee ──────────────
+        var feePolicy = await _feePolicyService.GetActivePolicyAsync(cancellationToken);
+        var feeAmount = feePolicy?.CalculateFee(request.Amount, currency) ?? 0m;
+        var feePolicyVersion = feePolicy?.Version;
+        var totalDebit = request.Amount + feeAmount;
+
+        // ─── 13. Pre-validate balance (optimistic check before locking) ──
+        if (sourceWallet.AvailableBalance < totalDebit)
+            throw new InsufficientFundsException(sourceWallet.AvailableBalance, totalDebit);
+
+        // ─── 14. Handler owns the single database transaction for the transfer ───
+        await using var dbTx = await _dbContext.BeginTransactionAsync(cancellationToken);
 
         try
         {
-            // Verify transaction PIN (service updates tracked user entity in memory)
-            var pinResult = await _pinService.VerifyPinAsync(userId, request.TransactionPin, cancellationToken);
-
-            if (!pinResult.Succeeded)
-            {
-                // Commit failed attempt / lockout state independently BEFORE throwing PIN exception
-                await _dbContext.SaveChangesAsync(cancellationToken);
-                await dbTx.CommitAsync(cancellationToken);
-
-                if (pinResult.IsLocked)
-                    throw new PinLockedException(pinResult.Error ?? "Transaction PIN debit lock is active.");
-
-                if (string.IsNullOrEmpty(pinResult.Error)
-                    || pinResult.Error.Contains("has not been set", StringComparison.OrdinalIgnoreCase))
-                    throw new PinRequiredException();
-
-                throw new InvalidOperationException(pinResult.Error ?? "Invalid transaction PIN.");
-            }
-
-            // ─── 12. Resolve active fee policy and calculate fee ──────────────
-            var feePolicy = await _feePolicyService.GetActivePolicyAsync(cancellationToken);
-            var feeAmount = feePolicy?.CalculateFee(request.Amount, currency) ?? 0m;
-            var feePolicyVersion = feePolicy?.Version;
-            totalDebit = request.Amount + feeAmount;
-
-            // ─── 13. Pre-validate balance (optimistic check before locking) ──
-            if (sourceWallet.AvailableBalance < totalDebit)
-                throw new InsufficientFundsException(sourceWallet.AvailableBalance, totalDebit);
 
             // ─── 14. Early Idempotency Check & Processing Record Insert ──────
             var requestPayload = JsonSerializer.Serialize(new
@@ -264,12 +257,13 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
                 cancellationToken: cancellationToken);
 
             // ─── 17. Create AuditLog (who performed the action) ───────────────
-            var auditLog = new AuditLog(
-                actorUserId: userId,
-                action: "Wallet.PeerTransfer",
-                entityType: "LedgerTransaction",
-                entityId: ledgerTxn.Id.ToString(),
-                detailsJson: JsonSerializer.Serialize(new
+            var auditLog = Domain.Entities.AuditLog.Create(
+                actorId: userId,
+                action: Domain.Auditing.AuditActions.PeerTransferCompleted,
+                resourceType: Domain.Auditing.AuditResourceTypes.PeerTransfer,
+                resourceId: ledgerTxn.Id.ToString(),
+                organizationId: orgId,
+                afterJson: JsonSerializer.Serialize(new
                 {
                     Reference = ledgerTxn.Reference,
                     Amount = request.Amount,
@@ -278,6 +272,7 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
                     TotalDebited = totalDebit,
                     SenderWalletId = sourceWallet.Id,
                     RecipientWalletId = recipientWallet.Id,
+                    AppliedFeePolicyVersion = feePolicyVersion,
                     OrganizationId = orgId
                 }));
 

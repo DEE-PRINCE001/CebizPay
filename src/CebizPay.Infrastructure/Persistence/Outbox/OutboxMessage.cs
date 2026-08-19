@@ -39,4 +39,14 @@ public sealed class OutboxMessage
     /// Gets or sets the number of processing retry attempts.
     /// </summary>
     public int RetryCount { get; set; }
+
+    /// <summary>
+    /// Gets or sets the UTC timestamp of the most recent publish attempt.
+    /// </summary>
+    public DateTime? LastAttemptedOnUtc { get; set; }
+
+    /// <summary>
+    /// Gets or sets the UTC timestamp when the message was marked dead-lettered/poisoned after exhausting retries.
+    /// </summary>
+    public DateTime? DeadLetteredOnUtc { get; set; }
 }

@@ -3,6 +3,7 @@ using CebizPay.Application.Common.Interfaces.Finance;
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Security;
 using CebizPay.Domain.Finance.Entities;
+using CebizPay.Domain.Finance.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Infrastructure.Finance;
@@ -44,6 +45,11 @@ public sealed class IdempotencyService : IIdempotencyService
                 r.OrganizationId == organizationId, cancellationToken);
     }
 
+    /// <summary>
+    /// Duration after which an abandoned in-flight processing record is considered stale and recoverable.
+    /// </summary>
+    public static readonly TimeSpan ProcessingTimeout = TimeSpan.FromMinutes(2);
+
     /// <inheritdoc/>
     public async Task<IdempotencyRecord> CreateRecordAsync(
         string idempotencyKey,
@@ -77,6 +83,17 @@ public sealed class IdempotencyService : IIdempotencyService
                 throw new IdempotencyConflictException(key, $"Idempotency key conflict: key '{key}' was previously used with a different request payload.");
             }
 
+            // Recover stale in-flight operations that exceeded timeout or previously failed attempts
+            if (existing.Status == IdempotencyStatus.Failed ||
+                (existing.Status == IdempotencyStatus.Processing && (DateTime.UtcNow - existing.CreatedAtUtc) > ProcessingTimeout))
+            {
+                existing.MarkProcessing();
+                if (autoSave)
+                {
+                    await _dbContext.SaveChangesAsync(cancellationToken);
+                }
+            }
+
             return existing;
         }
 
@@ -106,6 +123,14 @@ public sealed class IdempotencyService : IIdempotencyService
                     {
                         throw new IdempotencyConflictException(key, $"Idempotency key conflict: key '{key}' was previously used with a different request payload.");
                     }
+
+                    if (existingRetry.Status == IdempotencyStatus.Failed ||
+                        (existingRetry.Status == IdempotencyStatus.Processing && (DateTime.UtcNow - existingRetry.CreatedAtUtc) > ProcessingTimeout))
+                    {
+                        existingRetry.MarkProcessing();
+                        await _dbContext.SaveChangesAsync(cancellationToken);
+                    }
+
                     return existingRetry;
                 }
                 throw;
@@ -118,7 +143,7 @@ public sealed class IdempotencyService : IIdempotencyService
     /// <inheritdoc/>
     public async Task CompleteRecordAsync(Guid recordId, string responseJson, CancellationToken cancellationToken = default)
     {
-        var record = await _dbContext.IdempotencyRecords.FindAsync(new object[] { recordId }, cancellationToken);
+        var record = await _dbContext.IdempotencyRecords.FirstOrDefaultAsync(r => r.Id == recordId, cancellationToken);
         if (record != null)
         {
             record.Complete(responseJson);
@@ -129,7 +154,7 @@ public sealed class IdempotencyService : IIdempotencyService
     /// <inheritdoc/>
     public async Task FailRecordAsync(Guid recordId, string? errorJson = null, CancellationToken cancellationToken = default)
     {
-        var record = await _dbContext.IdempotencyRecords.FindAsync(new object[] { recordId }, cancellationToken);
+        var record = await _dbContext.IdempotencyRecords.FirstOrDefaultAsync(r => r.Id == recordId, cancellationToken);
         if (record != null)
         {
             record.Fail(errorJson);

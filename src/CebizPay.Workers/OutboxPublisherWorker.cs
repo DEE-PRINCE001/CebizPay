@@ -1,5 +1,6 @@
 using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Infrastructure.Persistence;
+using CebizPay.Infrastructure.Persistence.Outbox;
 using Microsoft.EntityFrameworkCore;
 
 namespace CebizPay.Workers;
@@ -12,6 +13,11 @@ public sealed partial class OutboxPublisherWorker : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OutboxPublisherWorker> _logger;
+
+    /// <summary>
+    /// Maximum allowed consecutive retry attempts before a message is marked as dead-lettered.
+    /// </summary>
+    public const int MaxRetryLimit = 5;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OutboxPublisherWorker"/> class.
@@ -56,19 +62,19 @@ public sealed partial class OutboxPublisherWorker : BackgroundService
 
         await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
-        List<Infrastructure.Persistence.Outbox.OutboxMessage> messages;
+        List<OutboxMessage> messages;
 
         if (dbContext.Database.IsNpgsql())
         {
             messages = await dbContext.OutboxMessages
-                .FromSqlRaw("SELECT * FROM \"OutboxMessages\" WHERE \"ProcessedOnUtc\" IS NULL AND \"RetryCount\" < 5 ORDER BY \"OccurredOnUtc\" LIMIT 20 FOR UPDATE SKIP LOCKED")
+                .FromSqlRaw("SELECT * FROM \"OutboxMessages\" WHERE \"ProcessedOnUtc\" IS NULL AND \"DeadLetteredOnUtc\" IS NULL ORDER BY \"OccurredOnUtc\" LIMIT 20 FOR UPDATE SKIP LOCKED")
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
         }
         else
         {
             messages = await dbContext.OutboxMessages
-                .Where(m => m.ProcessedOnUtc == null && m.RetryCount < 5)
+                .Where(m => m.ProcessedOnUtc == null && m.DeadLetteredOnUtc == null)
                 .OrderBy(m => m.OccurredOnUtc)
                 .Take(20)
                 .ToListAsync(cancellationToken)
@@ -89,13 +95,24 @@ public sealed partial class OutboxPublisherWorker : BackgroundService
             {
                 await eventPublisher.PublishAsync(message.Content, cancellationToken).ConfigureAwait(false);
                 message.ProcessedOnUtc = DateTime.UtcNow;
+                message.LastAttemptedOnUtc = DateTime.UtcNow;
                 message.Error = null;
             }
             catch (Exception ex)
             {
                 message.RetryCount++;
+                message.LastAttemptedOnUtc = DateTime.UtcNow;
                 message.Error = ex.Message;
-                LogMessageProcessingError(_logger, message.Id, message.Type, ex);
+
+                if (message.RetryCount >= MaxRetryLimit)
+                {
+                    message.DeadLetteredOnUtc = DateTime.UtcNow;
+                    LogMessageDeadLettered(_logger, message.Id, message.Type, message.RetryCount, ex);
+                }
+                else
+                {
+                    LogMessageProcessingError(_logger, message.Id, message.Type, message.RetryCount, ex);
+                }
             }
         }
 
@@ -113,9 +130,12 @@ public sealed partial class OutboxPublisherWorker : BackgroundService
     [LoggerMessage(EventId = 3, Level = LogLevel.Information, Message = "Processing batch of {Count} outbox messages.")]
     private static partial void LogProcessingBatch(ILogger logger, int count);
 
-    [LoggerMessage(EventId = 4, Level = LogLevel.Error, Message = "Error occurred while processing outbox message '{MessageId}' of type '{MessageType}'.")]
-    private static partial void LogMessageProcessingError(ILogger logger, Guid messageId, string messageType, Exception exception);
+    [LoggerMessage(EventId = 4, Level = LogLevel.Warning, Message = "Failed attempt {RetryCount} processing outbox message '{MessageId}' of type '{MessageType}'.")]
+    private static partial void LogMessageProcessingError(ILogger logger, Guid messageId, string messageType, int retryCount, Exception exception);
 
-    [LoggerMessage(EventId = 5, Level = LogLevel.Error, Message = "Unhandled exception in OutboxPublisherWorker loop.")]
+    [LoggerMessage(EventId = 5, Level = LogLevel.Error, Message = "Outbox message '{MessageId}' of type '{MessageType}' dead-lettered after reaching max retry count {RetryCount}.")]
+    private static partial void LogMessageDeadLettered(ILogger logger, Guid messageId, string messageType, int retryCount, Exception exception);
+
+    [LoggerMessage(EventId = 6, Level = LogLevel.Error, Message = "Unhandled exception in OutboxPublisherWorker loop.")]
     private static partial void LogWorkerLoopError(ILogger logger, Exception exception);
 }
