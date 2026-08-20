@@ -93,6 +93,9 @@ public class ApplicationDbContext
     /// <summary>Gets the payment provider attempts entity set.</summary>
     public DbSet<CebizPay.Domain.Payments.Entities.PaymentAttempt> PaymentAttempts => Set<CebizPay.Domain.Payments.Entities.PaymentAttempt>();
 
+    /// <summary>Gets the provider webhook events entity set.</summary>
+    public DbSet<CebizPay.Domain.Payments.Entities.WebhookEvent> WebhookEvents => Set<CebizPay.Domain.Payments.Entities.WebhookEvent>();
+
     // Explicit IApplicationDbContext implementations returning IEntitySet<T>
     IEntitySet<IndividualProfile> IApplicationDbContext.IndividualProfiles => new EntitySet<IndividualProfile>(IndividualProfiles);
     IEntitySet<AdminProfile> IApplicationDbContext.AdminProfiles => new EntitySet<AdminProfile>(AdminProfiles);
@@ -116,6 +119,7 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Finance.Entities.BankTransfer> IApplicationDbContext.BankTransfers => new EntitySet<CebizPay.Domain.Finance.Entities.BankTransfer>(BankTransfers);
     IEntitySet<CebizPay.Domain.Finance.Entities.BankTransferFeePolicy> IApplicationDbContext.BankTransferFeePolicies => new EntitySet<CebizPay.Domain.Finance.Entities.BankTransferFeePolicy>(BankTransferFeePolicies);
     IEntitySet<CebizPay.Domain.Payments.Entities.PaymentAttempt> IApplicationDbContext.PaymentAttempts => new EntitySet<CebizPay.Domain.Payments.Entities.PaymentAttempt>(PaymentAttempts);
+    IEntitySet<CebizPay.Domain.Payments.Entities.WebhookEvent> IApplicationDbContext.WebhookEvents => new EntitySet<CebizPay.Domain.Payments.Entities.WebhookEvent>(WebhookEvents);
 
     /// <inheritdoc/>
     async Task<IDbTransaction> IApplicationDbContext.BeginTransactionAsync(CancellationToken cancellationToken)

@@ -76,6 +76,9 @@ public interface IApplicationDbContext
     /// <summary>Gets the payment provider attempts entity set.</summary>
     IEntitySet<PaymentAttempt> PaymentAttempts { get; }
 
+    /// <summary>Gets the provider webhook events entity set.</summary>
+    IEntitySet<WebhookEvent> WebhookEvents { get; }
+
     /// <summary>
     /// Saves changes asynchronously to the underlying database.
     /// </summary>

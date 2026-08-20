@@ -31,4 +31,8 @@ public static class AuditResourceTypes
     public const string BankTransferFeePolicy = "BANK_TRANSFER_FEE_POLICY";
     /// <summary>Payment provider attempt resource type.</summary>
     public const string PaymentAttempt = "PAYMENT_ATTEMPT";
+    /// <summary>Webhook event resource type.</summary>
+    public const string WebhookEvent = "WEBHOOK_EVENT";
+    /// <summary>Payment failover resource type.</summary>
+    public const string PaymentFailover = "PAYMENT_FAILOVER";
 }

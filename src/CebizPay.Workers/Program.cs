@@ -21,6 +21,7 @@ builder.Services.AddSerilog((services, loggerConfig) =>
 builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddHostedService<OutboxPublisherWorker>();
+builder.Services.AddHostedService<PaymentReconciliationWorker>();
 
 var host = builder.Build();
 host.Run();

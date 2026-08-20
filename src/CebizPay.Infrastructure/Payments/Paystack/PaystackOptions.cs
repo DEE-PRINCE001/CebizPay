@@ -22,4 +22,7 @@ public sealed class PaystackOptions
 
     /// <summary>Environment name ("Sandbox" or "Live").</summary>
     public string Environment { get; set; } = "Sandbox";
+
+    /// <summary>Secret key used for HMAC-SHA512 webhook signature verification (defaults to SecretKey if not specified).</summary>
+    public string WebhookSecret { get; set; } = string.Empty;
 }

@@ -28,4 +28,7 @@ public sealed class FlutterwaveOptions
 
     /// <summary>Environment name ("Sandbox" or "Live").</summary>
     public string Environment { get; set; } = "Sandbox";
+
+    /// <summary>Secret hash expected in Flutterwave webhook header ("verif-hash").</summary>
+    public string WebhookSecretHash { get; set; } = string.Empty;
 }

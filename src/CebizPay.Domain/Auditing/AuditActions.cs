@@ -104,4 +104,24 @@ public static class AuditActions
     public const string PaymentAttemptUnknown = "PAYMENT_ATTEMPT_UNKNOWN";
     /// <summary>Audit action when a payment provider attempt is cancelled.</summary>
     public const string PaymentAttemptCancelled = "PAYMENT_ATTEMPT_CANCELLED";
+
+    // Webhooks & Reconciliation
+    /// <summary>Audit action when a provider webhook is received.</summary>
+    public const string WebhookReceived = "WEBHOOK_RECEIVED";
+    /// <summary>Audit action when a provider webhook is processed.</summary>
+    public const string WebhookProcessed = "WEBHOOK_PROCESSED";
+    /// <summary>Audit action when a provider webhook is rejected (invalid signature/payload).</summary>
+    public const string WebhookRejected = "WEBHOOK_REJECTED";
+    /// <summary>Audit action when a duplicate provider webhook is safely acknowledged.</summary>
+    public const string WebhookDuplicate = "WEBHOOK_DUPLICATE";
+    /// <summary>Audit action when a payment attempt is reconciled via webhook or query.</summary>
+    public const string PaymentAttemptReconciled = "PAYMENT_ATTEMPT_RECONCILED";
+
+    // Provider Failover
+    /// <summary>Audit action when provider failover is initiated.</summary>
+    public const string ProviderFailoverInitiated = "PROVIDER_FAILOVER_INITIATED";
+    /// <summary>Audit action when provider failover succeeds.</summary>
+    public const string ProviderFailoverSucceeded = "PROVIDER_FAILOVER_SUCCEEDED";
+    /// <summary>Audit action when provider failover fails.</summary>
+    public const string ProviderFailoverFailed = "PROVIDER_FAILOVER_FAILED";
 }

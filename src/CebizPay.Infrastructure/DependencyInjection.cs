@@ -128,6 +128,10 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentProviderFactory, CebizPay.Infrastructure.Payments.Common.PaymentProviderFactory>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IBankAccountResolver, CebizPay.Infrastructure.Payments.Common.PaymentProviderBankAccountResolver>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IBankTransferExecutor, CebizPay.Infrastructure.Payments.Common.PaymentProviderBankTransferExecutor>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IWebhookSignatureVerifier, CebizPay.Infrastructure.Payments.Common.WebhookSignatureVerifier>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IWebhookProcessor, CebizPay.Infrastructure.Payments.Common.WebhookProcessor>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentReconciliationService, CebizPay.Infrastructure.Payments.Common.PaymentReconciliationService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentFailoverService, CebizPay.Infrastructure.Payments.Common.PaymentFailoverService>();
 
         // Configure Redis
         var redisOptions = configuration.GetSection(RedisOptions.SectionName).Get<RedisOptions>();
