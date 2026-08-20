@@ -90,6 +90,9 @@ public class ApplicationDbContext
     /// <summary>Gets the bank-transfer fee policies entity set.</summary>
     public DbSet<CebizPay.Domain.Finance.Entities.BankTransferFeePolicy> BankTransferFeePolicies => Set<CebizPay.Domain.Finance.Entities.BankTransferFeePolicy>();
 
+    /// <summary>Gets the payment provider attempts entity set.</summary>
+    public DbSet<CebizPay.Domain.Payments.Entities.PaymentAttempt> PaymentAttempts => Set<CebizPay.Domain.Payments.Entities.PaymentAttempt>();
+
     // Explicit IApplicationDbContext implementations returning IEntitySet<T>
     IEntitySet<IndividualProfile> IApplicationDbContext.IndividualProfiles => new EntitySet<IndividualProfile>(IndividualProfiles);
     IEntitySet<AdminProfile> IApplicationDbContext.AdminProfiles => new EntitySet<AdminProfile>(AdminProfiles);
@@ -112,6 +115,7 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Finance.Entities.PeerTransferFeePolicy> IApplicationDbContext.PeerTransferFeePolicies => new EntitySet<CebizPay.Domain.Finance.Entities.PeerTransferFeePolicy>(PeerTransferFeePolicies);
     IEntitySet<CebizPay.Domain.Finance.Entities.BankTransfer> IApplicationDbContext.BankTransfers => new EntitySet<CebizPay.Domain.Finance.Entities.BankTransfer>(BankTransfers);
     IEntitySet<CebizPay.Domain.Finance.Entities.BankTransferFeePolicy> IApplicationDbContext.BankTransferFeePolicies => new EntitySet<CebizPay.Domain.Finance.Entities.BankTransferFeePolicy>(BankTransferFeePolicies);
+    IEntitySet<CebizPay.Domain.Payments.Entities.PaymentAttempt> IApplicationDbContext.PaymentAttempts => new EntitySet<CebizPay.Domain.Payments.Entities.PaymentAttempt>(PaymentAttempts);
 
     /// <inheritdoc/>
     async Task<IDbTransaction> IApplicationDbContext.BeginTransactionAsync(CancellationToken cancellationToken)

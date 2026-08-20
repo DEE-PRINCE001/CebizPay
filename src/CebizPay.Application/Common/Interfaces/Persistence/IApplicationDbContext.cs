@@ -1,5 +1,6 @@
 using CebizPay.Domain.Entities;
 using CebizPay.Domain.Finance.Entities;
+using CebizPay.Domain.Payments.Entities;
 
 namespace CebizPay.Application.Common.Interfaces.Persistence;
 
@@ -71,6 +72,9 @@ public interface IApplicationDbContext
 
     /// <summary>Gets the bank-transfer fee policies entity set.</summary>
     IEntitySet<BankTransferFeePolicy> BankTransferFeePolicies { get; }
+
+    /// <summary>Gets the payment provider attempts entity set.</summary>
+    IEntitySet<PaymentAttempt> PaymentAttempts { get; }
 
     /// <summary>
     /// Saves changes asynchronously to the underlying database.

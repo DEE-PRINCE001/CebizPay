@@ -90,4 +90,18 @@ public static class AuditActions
     public const string BankTransferUnknown = "BANK_TRANSFER_UNKNOWN";
     /// <summary>Audit action when a bank transfer is reversed and funds are refunded to sender.</summary>
     public const string BankTransferReversed = "BANK_TRANSFER_REVERSED";
+
+    // Payments & Provider Attempts
+    /// <summary>Audit action when a payment provider attempt is created.</summary>
+    public const string PaymentAttemptCreated = "PAYMENT_ATTEMPT_CREATED";
+    /// <summary>Audit action when a payment provider attempt begins processing.</summary>
+    public const string PaymentAttemptProcessing = "PAYMENT_ATTEMPT_PROCESSING";
+    /// <summary>Audit action when a payment provider attempt succeeds.</summary>
+    public const string PaymentAttemptSucceeded = "PAYMENT_ATTEMPT_SUCCEEDED";
+    /// <summary>Audit action when a payment provider attempt fails.</summary>
+    public const string PaymentAttemptFailed = "PAYMENT_ATTEMPT_FAILED";
+    /// <summary>Audit action when a payment provider attempt outcome is unknown.</summary>
+    public const string PaymentAttemptUnknown = "PAYMENT_ATTEMPT_UNKNOWN";
+    /// <summary>Audit action when a payment provider attempt is cancelled.</summary>
+    public const string PaymentAttemptCancelled = "PAYMENT_ATTEMPT_CANCELLED";
 }

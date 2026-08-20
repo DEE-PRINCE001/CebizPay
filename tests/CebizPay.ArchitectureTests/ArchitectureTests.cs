@@ -90,6 +90,29 @@ public sealed class ArchitectureTests
 
         Assert.True(result.IsSuccessful, "Application layer must not depend on EF Core, Npgsql, Redis, or RabbitMQ framework references.");
     }
+
+    [Fact]
+    public void DomainAndApplication_ShouldNotDependOnPaymentProviderSDKs()
+    {
+        var domainResult = Types.InAssembly(typeof(Domain.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "Flutterwave",
+                "Paystack",
+                "Stripe")
+            .GetResult();
+
+        var appResult = Types.InAssembly(typeof(Application.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "Flutterwave",
+                "Paystack",
+                "Stripe")
+            .GetResult();
+
+        Assert.True(domainResult.IsSuccessful, "Domain layer must not reference payment provider SDKs.");
+        Assert.True(appResult.IsSuccessful, "Application layer must not reference payment provider SDKs.");
+    }
 }
 
 

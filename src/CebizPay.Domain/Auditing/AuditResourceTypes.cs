@@ -29,4 +29,6 @@ public static class AuditResourceTypes
     public const string BankTransfer = "BANK_TRANSFER";
     /// <summary>Bank transfer fee policy resource type.</summary>
     public const string BankTransferFeePolicy = "BANK_TRANSFER_FEE_POLICY";
+    /// <summary>Payment provider attempt resource type.</summary>
+    public const string PaymentAttempt = "PAYMENT_ATTEMPT";
 }
