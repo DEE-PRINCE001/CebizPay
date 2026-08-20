@@ -84,6 +84,12 @@ public class ApplicationDbContext
     /// <summary>Gets the peer-transfer fee policies entity set.</summary>
     public DbSet<CebizPay.Domain.Finance.Entities.PeerTransferFeePolicy> PeerTransferFeePolicies => Set<CebizPay.Domain.Finance.Entities.PeerTransferFeePolicy>();
 
+    /// <summary>Gets the bank transfers entity set.</summary>
+    public DbSet<CebizPay.Domain.Finance.Entities.BankTransfer> BankTransfers => Set<CebizPay.Domain.Finance.Entities.BankTransfer>();
+
+    /// <summary>Gets the bank-transfer fee policies entity set.</summary>
+    public DbSet<CebizPay.Domain.Finance.Entities.BankTransferFeePolicy> BankTransferFeePolicies => Set<CebizPay.Domain.Finance.Entities.BankTransferFeePolicy>();
+
     // Explicit IApplicationDbContext implementations returning IEntitySet<T>
     IEntitySet<IndividualProfile> IApplicationDbContext.IndividualProfiles => new EntitySet<IndividualProfile>(IndividualProfiles);
     IEntitySet<AdminProfile> IApplicationDbContext.AdminProfiles => new EntitySet<AdminProfile>(AdminProfiles);
@@ -104,6 +110,8 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Finance.Entities.FxConversion> IApplicationDbContext.FxConversions => new EntitySet<CebizPay.Domain.Finance.Entities.FxConversion>(FxConversions);
     IEntitySet<CebizPay.Domain.Finance.Entities.IdempotencyRecord> IApplicationDbContext.IdempotencyRecords => new EntitySet<CebizPay.Domain.Finance.Entities.IdempotencyRecord>(IdempotencyRecords);
     IEntitySet<CebizPay.Domain.Finance.Entities.PeerTransferFeePolicy> IApplicationDbContext.PeerTransferFeePolicies => new EntitySet<CebizPay.Domain.Finance.Entities.PeerTransferFeePolicy>(PeerTransferFeePolicies);
+    IEntitySet<CebizPay.Domain.Finance.Entities.BankTransfer> IApplicationDbContext.BankTransfers => new EntitySet<CebizPay.Domain.Finance.Entities.BankTransfer>(BankTransfers);
+    IEntitySet<CebizPay.Domain.Finance.Entities.BankTransferFeePolicy> IApplicationDbContext.BankTransferFeePolicies => new EntitySet<CebizPay.Domain.Finance.Entities.BankTransferFeePolicy>(BankTransferFeePolicies);
 
     /// <inheritdoc/>
     async Task<IDbTransaction> IApplicationDbContext.BeginTransactionAsync(CancellationToken cancellationToken)

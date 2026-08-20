@@ -509,4 +509,231 @@ public sealed class LedgerPostingService : ILedgerPostingService
 
         return transaction;
     }
+
+    /// <inheritdoc/>
+    public async Task<LedgerAccount> GetOrCreateBankTransferClearingAccountAsync(Currency currency, CancellationToken cancellationToken = default)
+    {
+        var existing = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency);
+
+        if (existing != null)
+            return existing;
+
+        var accountName = $"{currency} BANK TRANSFER CLEARING";
+        var account = LedgerAccount.CreateSystemAccount(accountName, currency, LedgerAccountType.PlatformClearing);
+        _dbContext.LedgerAccounts.Add(account);
+
+        if (_dbContext.Database.CurrentTransaction == null)
+        {
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                var concurrentAccount = await _dbContext.LedgerAccounts
+                    .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency, cancellationToken);
+                if (concurrentAccount != null)
+                {
+                    return concurrentAccount;
+                }
+                throw;
+            }
+        }
+
+        return account;
+    }
+
+    /// <inheritdoc/>
+    public async Task<(LedgerTransaction Transaction, BankTransfer Transfer)> PostBankTransferDebitCoreAsync(
+        Guid senderWalletId,
+        Guid clearingAccountId,
+        Guid platformFeeAccountId,
+        decimal transferAmount,
+        decimal feeAmount,
+        Currency currency,
+        string destinationBankCode,
+        string destinationAccountNumber,
+        string? destinationAccountName,
+        Guid? feePolicyId,
+        int? feePolicyVersion,
+        string reference,
+        string? idempotencyKey,
+        string? description,
+        CancellationToken cancellationToken = default)
+    {
+        if (transferAmount <= 0)
+            throw new ArgumentException("Transfer amount must be positive.", nameof(transferAmount));
+        if (feeAmount < 0)
+            throw new ArgumentException("Fee amount cannot be negative.", nameof(feeAmount));
+        if (string.IsNullOrWhiteSpace(destinationBankCode))
+            throw new ArgumentException("DestinationBankCode is required.", nameof(destinationBankCode));
+        if (string.IsNullOrWhiteSpace(destinationAccountNumber))
+            throw new ArgumentException("DestinationAccountNumber is required.", nameof(destinationAccountNumber));
+
+        // Lock sender wallet with row-level lock
+        var senderWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", senderWalletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == senderWalletId, cancellationToken);
+
+        if (senderWallet == null)
+            throw new InvalidOperationException($"Sender wallet '{senderWalletId}' not found.");
+
+        // Re-validate wallet status after acquiring lock
+        if (senderWallet.Status != Domain.Finance.Enums.WalletStatus.Active)
+            throw new InvalidOperationException($"Sender wallet is not active (status: {senderWallet.Status}).");
+
+        // Re-validate currency
+        if (senderWallet.Currency != currency)
+            throw new InvalidOperationException($"Sender wallet currency ({senderWallet.Currency}) does not match transaction currency ({currency}).");
+
+        // Re-validate available balance
+        var totalDebit = transferAmount + feeAmount;
+        if (senderWallet.AvailableBalance < totalDebit)
+            throw new InvalidOperationException($"Insufficient funds after lock. Required: {totalDebit}, Available: {senderWallet.AvailableBalance}.");
+
+        // Retrieve ledger accounts
+        var senderAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == senderWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.WalletId == senderWalletId)
+            ?? throw new InvalidOperationException($"Ledger account for sender wallet '{senderWalletId}' not found.");
+
+        var clearingAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.Id == clearingAccountId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.Id == clearingAccountId)
+            ?? throw new InvalidOperationException($"Bank transfer clearing ledger account '{clearingAccountId}' not found.");
+
+        var feeAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.Id == platformFeeAccountId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.Id == platformFeeAccountId)
+            ?? throw new InvalidOperationException($"Platform fee ledger account '{platformFeeAccountId}' not found.");
+
+        // Materialize sender wallet balance debit
+        senderWallet.Debit(totalDebit);
+
+        // Build central ledger transaction in PENDING status
+        var transaction = new LedgerTransaction(LedgerTransactionType.BankTransfer, reference, idempotencyKey, description);
+
+        // Double-entry ledger entries:
+        // DEBIT  Sender Ledger Account               (Amount + Fee)
+        // CREDIT Bank Transfer Clearing Account       (Amount)
+        // CREDIT Platform Fee Revenue Account         (Fee, if > 0)
+        var entries = new List<LedgerEntry>
+        {
+            new LedgerEntry(transaction.Id, senderAccount.Id, LedgerEntryDirection.Debit, totalDebit, currency, sequence: 1),
+            new LedgerEntry(transaction.Id, clearingAccount.Id, LedgerEntryDirection.Credit, transferAmount, currency, sequence: 2)
+        };
+
+        if (feeAmount > 0)
+        {
+            entries.Add(new LedgerEntry(transaction.Id, feeAccount.Id, LedgerEntryDirection.Credit, feeAmount, currency, sequence: 3));
+        }
+
+        // Build BankTransfer aggregate
+        var bankTransfer = BankTransfer.CreatePending(
+            ledgerTransactionId: transaction.Id,
+            senderWalletId: senderWalletId,
+            destinationBankCode: destinationBankCode,
+            destinationAccountNumber: destinationAccountNumber,
+            destinationAccountName: destinationAccountName,
+            amount: transferAmount,
+            currency: currency,
+            feeAmount: feeAmount,
+            feePolicyId: feePolicyId,
+            feePolicyVersion: feePolicyVersion,
+            reference: reference);
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+        _dbContext.BankTransfers.Add(bankTransfer);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return (transaction, bankTransfer);
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerTransaction> PostBankTransferReversalCoreAsync(
+        Guid bankTransferId,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("Reversal reason is required.", nameof(reason));
+
+        var transfer = await _dbContext.BankTransfers
+            .FirstOrDefaultAsync(t => t.Id == bankTransferId, cancellationToken)
+            ?? throw new InvalidOperationException($"Bank transfer '{bankTransferId}' not found.");
+
+        if (transfer.Status == BankTransferStatus.Completed)
+            throw new InvalidOperationException("Cannot reverse a completed bank transfer.");
+        if (transfer.Status == BankTransferStatus.Failed)
+            throw new InvalidOperationException("Bank transfer has already been marked failed and reversed.");
+
+        // Lock sender wallet
+        var senderWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", transfer.SenderWalletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == transfer.SenderWalletId, cancellationToken);
+
+        if (senderWallet == null)
+            throw new InvalidOperationException($"Sender wallet '{transfer.SenderWalletId}' not found.");
+
+        // Fetch original transaction and entries
+        var originalTxn = await _dbContext.LedgerTransactions
+            .FirstOrDefaultAsync(t => t.Id == transfer.LedgerTransactionId, cancellationToken)
+            ?? throw new InvalidOperationException($"Original ledger transaction '{transfer.LedgerTransactionId}' not found.");
+
+        var originalEntries = await _dbContext.LedgerEntries
+            .Where(e => e.LedgerTransactionId == transfer.LedgerTransactionId)
+            .OrderBy(e => e.Sequence)
+            .ToListAsync(cancellationToken);
+
+        if (originalEntries.Count == 0)
+            throw new InvalidOperationException($"No ledger entries found for transaction '{transfer.LedgerTransactionId}'.");
+
+        // Restore sender wallet balance
+        senderWallet.Credit(transfer.TotalDebited);
+
+        // Mark transfer FAILED
+        transfer.MarkFailed(reason);
+
+        // Build reversal transaction
+        var reversalReference = $"REV-{transfer.Reference}";
+        var reversalTxn = new LedgerTransaction(
+            LedgerTransactionType.Reversal,
+            reversalReference,
+            idempotencyKey: null,
+            description: $"Reversal of bank transfer {transfer.Reference}: {reason}");
+        reversalTxn.Complete(DateTime.UtcNow);
+
+        // Build offsetting entries (reversing debit and credit sides)
+        var reversalEntries = new List<LedgerEntry>();
+        var seq = 1;
+        foreach (var entry in originalEntries)
+        {
+            var reversalDirection = entry.Direction == LedgerEntryDirection.Debit
+                ? LedgerEntryDirection.Credit
+                : LedgerEntryDirection.Debit;
+
+            reversalEntries.Add(new LedgerEntry(
+                reversalTxn.Id,
+                entry.LedgerAccountId,
+                reversalDirection,
+                entry.Amount,
+                entry.Currency,
+                seq++));
+        }
+
+        _dbContext.LedgerTransactions.Add(reversalTxn);
+        _dbContext.LedgerEntries.AddRange(reversalEntries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        return reversalTxn;
+    }
 }

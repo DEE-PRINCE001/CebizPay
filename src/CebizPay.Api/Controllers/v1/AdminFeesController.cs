@@ -75,6 +75,54 @@ public sealed class AdminFeesController : ControllerBase
         var result = await _sender.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetActivePolicy), null, result);
     }
+
+    /// <summary>
+    /// Returns the currently active bank-transfer fee policy.
+    /// </summary>
+    [HttpGet("bank-transfer/active")]
+    public async Task<IActionResult> GetActiveBankTransferPolicy(CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetActiveBankTransferFeePolicyQuery(), cancellationToken);
+        if (result == null)
+            return NotFound(new { message = "No active bank-transfer fee policy is configured." });
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Returns all historical bank-transfer fee policies ordered by version descending.
+    /// </summary>
+    [HttpGet("bank-transfer")]
+    public async Task<IActionResult> GetAllBankTransferPolicies(CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetAllBankTransferFeePoliciesQuery(), cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Creates and activates a new bank-transfer fee policy. Deactivates the previous active policy.
+    /// Super Admin only — authorization is enforced within the command handler.
+    /// Every policy change is audit-logged.
+    /// </summary>
+    [HttpPost("bank-transfer")]
+    public async Task<IActionResult> CreateBankTransferPolicy(
+        [FromBody] CreateBankTransferFeePolicyRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
+
+        var command = new CreateBankTransferFeePolicyCommand(
+            Mode: request.Mode,
+            PercentageRate: request.PercentageRate,
+            MinimumFee: request.MinimumFee,
+            MaximumFee: request.MaximumFee,
+            CreatedByUserId: userId);
+
+        var result = await _sender.Send(command, cancellationToken);
+        return CreatedAtAction(nameof(GetActiveBankTransferPolicy), null, result);
+    }
 }
 
 /// <summary>
@@ -89,3 +137,17 @@ public sealed record CreateFeePolicyRequest(
     decimal? PercentageRate = null,
     decimal? MinimumFee = null,
     decimal? MaximumFee = null);
+
+/// <summary>
+/// Request body DTO for creating a bank-transfer fee policy.
+/// </summary>
+/// <param name="Mode">Fee mode: Free or Percentage.</param>
+/// <param name="PercentageRate">Decimal rate (e.g. 0.015 = 1.5%). Required for Percentage mode.</param>
+/// <param name="MinimumFee">Minimum fee floor. Required for Percentage mode.</param>
+/// <param name="MaximumFee">Maximum fee ceiling. Required for Percentage mode.</param>
+public sealed record CreateBankTransferFeePolicyRequest(
+    FeePolicyMode Mode,
+    decimal? PercentageRate = null,
+    decimal? MinimumFee = null,
+    decimal? MaximumFee = null);
+

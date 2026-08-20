@@ -61,6 +61,43 @@ public sealed class WalletController : ControllerBase
         var response = await _sender.Send(command, cancellationToken);
         return Ok(response);
     }
+
+    /// <summary>
+    /// Executes an outbound bank transfer from the authenticated user's wallet to an external commercial bank account.
+    ///
+    /// Funds and applicable fees are debited immediately into the platform bank transfer clearing account in PENDING status.
+    /// The canonical Idempotency-Key header (or idempotencyKey body field) must be unique per logical transfer.
+    /// Repeated requests with the same key return the initial result without duplicate debits.
+    /// </summary>
+    /// <param name="request">Bank transfer request body.</param>
+    /// <param name="idempotencyKeyHeader">Idempotency key from Idempotency-Key header (optional; falls back to body field).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPost("transfer/bank")]
+    [Microsoft.AspNetCore.RateLimiting.EnableRateLimiting("FinancialTransferPolicy")]
+    public async Task<IActionResult> BankTransfer(
+        [FromBody] BankTransferRequest request,
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKeyHeader,
+        CancellationToken cancellationToken)
+    {
+        var idempotencyKey = idempotencyKeyHeader ?? request.IdempotencyKey;
+
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+        {
+            return BadRequest(new { code = "IDEMPOTENCY_KEY_REQUIRED", message = "Idempotency-Key header or idempotencyKey body field is required." });
+        }
+
+        var command = new BankTransferCommand(
+            DestinationBankCode: request.DestinationBankCode,
+            DestinationAccountNumber: request.DestinationAccountNumber,
+            Amount: request.Amount,
+            Currency: request.Currency,
+            TransactionPin: request.TransactionPin,
+            IdempotencyKey: idempotencyKey,
+            OrganizationContext: request.OrganizationContext);
+
+        var response = await _sender.Send(command, cancellationToken);
+        return Ok(response);
+    }
 }
 
 /// <summary>
@@ -82,3 +119,23 @@ public sealed record PeerTransferRequest(
     string TransactionPin,
     string? IdempotencyKey = null,
     Guid? OrganizationContext = null);
+
+/// <summary>
+/// Request body DTO for bank transfer.
+/// </summary>
+/// <param name="DestinationBankCode">Destination bank institution code (e.g. "058", "044").</param>
+/// <param name="DestinationAccountNumber">10-digit NUBAN destination account number.</param>
+/// <param name="Amount">Transfer amount (positive decimal).</param>
+/// <param name="Currency">V1 transactional currency: NGN, INTERNATIONAL_NGN, or USDT.</param>
+/// <param name="TransactionPin">4-digit numeric transaction PIN.</param>
+/// <param name="IdempotencyKey">Client-supplied idempotency key (also accepted as Idempotency-Key header).</param>
+/// <param name="OrganizationContext">Optional organization ID if transferring from corporate wallet.</param>
+public sealed record BankTransferRequest(
+    string DestinationBankCode,
+    string DestinationAccountNumber,
+    decimal Amount,
+    string Currency,
+    string TransactionPin,
+    string? IdempotencyKey = null,
+    Guid? OrganizationContext = null);
+

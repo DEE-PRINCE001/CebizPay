@@ -66,6 +66,12 @@ public interface IApplicationDbContext
     /// <summary>Gets the peer-transfer fee policies entity set.</summary>
     IEntitySet<PeerTransferFeePolicy> PeerTransferFeePolicies { get; }
 
+    /// <summary>Gets the bank transfers entity set.</summary>
+    IEntitySet<BankTransfer> BankTransfers { get; }
+
+    /// <summary>Gets the bank-transfer fee policies entity set.</summary>
+    IEntitySet<BankTransferFeePolicy> BankTransferFeePolicies { get; }
+
     /// <summary>
     /// Saves changes asynchronously to the underlying database.
     /// </summary>

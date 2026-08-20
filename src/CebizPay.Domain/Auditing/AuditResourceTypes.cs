@@ -25,4 +25,8 @@ public static class AuditResourceTypes
     public const string LedgerTransaction = "LEDGER_TRANSACTION";
     /// <summary>Peer transfer resource type.</summary>
     public const string PeerTransfer = "PEER_TRANSFER";
+    /// <summary>Bank transfer resource type.</summary>
+    public const string BankTransfer = "BANK_TRANSFER";
+    /// <summary>Bank transfer fee policy resource type.</summary>
+    public const string BankTransferFeePolicy = "BANK_TRANSFER_FEE_POLICY";
 }

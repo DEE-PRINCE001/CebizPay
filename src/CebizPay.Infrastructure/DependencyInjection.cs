@@ -112,6 +112,8 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.ILedgerPostingService, CebizPay.Infrastructure.Finance.LedgerPostingService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IIdempotencyService, CebizPay.Infrastructure.Finance.IdempotencyService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IFeePolicyService, CebizPay.Infrastructure.Finance.FeePolicyService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IBankTransferFeePolicyService, CebizPay.Infrastructure.Finance.BankTransferFeePolicyService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IBankAccountResolver, CebizPay.Infrastructure.Services.DefaultBankAccountResolver>();
 
         // Configure Redis
         var redisOptions = configuration.GetSection(RedisOptions.SectionName).Get<RedisOptions>();

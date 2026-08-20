@@ -87,4 +87,49 @@ public interface ILedgerPostingService
         string? description,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Returns the platform PlatformClearing ledger account for bank transfers for the given currency, creating it if it does not yet exist.
+    /// This is the internal clearing account that temporarily holds debited bank transfer funds prior to external settlement.
+    /// </summary>
+    Task<LedgerAccount> GetOrCreateBankTransferClearingAccountAsync(Currency currency, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts a bank transfer debit within an already-begun ambient database transaction.
+    /// Does NOT start or commit its own transaction — the caller is responsible for the outer transaction boundary.
+    /// Performs row-level locking on the sender wallet.
+    /// Re-validates sender balance and status after acquiring lock (TOCTOU protection).
+    ///
+    /// Ledger entries created:
+    ///   DEBIT  Sender LedgerAccount               transferAmount + feeAmount
+    ///   CREDIT Bank Transfer Clearing Account     transferAmount
+    ///   CREDIT Platform Fee Account               feeAmount (if feeAmount > 0)
+    ///
+    /// Creates a LedgerTransaction (Type: BankTransfer, Status: Pending) and BankTransfer (Status: Pending).
+    /// </summary>
+    Task<(LedgerTransaction Transaction, BankTransfer Transfer)> PostBankTransferDebitCoreAsync(
+        Guid senderWalletId,
+        Guid clearingAccountId,
+        Guid platformFeeAccountId,
+        decimal transferAmount,
+        decimal feeAmount,
+        Currency currency,
+        string destinationBankCode,
+        string destinationAccountNumber,
+        string? destinationAccountName,
+        Guid? feePolicyId,
+        int? feePolicyVersion,
+        string reference,
+        string? idempotencyKey,
+        string? description,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an atomic reversal of a pending/processing bank transfer upon definitive external failure.
+    /// Creates a new reversal LedgerTransaction with offsetting double-entry ledger entries and restores sender balance.
+    /// Marks the BankTransfer aggregate as FAILED.
+    /// </summary>
+    Task<LedgerTransaction> PostBankTransferReversalCoreAsync(
+        Guid bankTransferId,
+        string reason,
+        CancellationToken cancellationToken = default);
 }

@@ -66,10 +66,28 @@ public static class AuditActions
     public const string FeePolicyActivated = "FEE_POLICY_ACTIVATED";
     /// <summary>Audit action when a fee policy is deactivated.</summary>
     public const string FeePolicyDeactivated = "FEE_POLICY_DEACTIVATED";
+    /// <summary>Audit action when a bank transfer fee policy is created.</summary>
+    public const string BankTransferFeePolicyCreated = "BANK_TRANSFER_FEE_POLICY_CREATED";
+    /// <summary>Audit action when a bank transfer fee policy is activated.</summary>
+    public const string BankTransferFeePolicyActivated = "BANK_TRANSFER_FEE_POLICY_ACTIVATED";
+    /// <summary>Audit action when a bank transfer fee policy is deactivated.</summary>
+    public const string BankTransferFeePolicyDeactivated = "BANK_TRANSFER_FEE_POLICY_DEACTIVATED";
 
     // Transfers & Financial Operations
     /// <summary>Audit action when a peer wallet transfer completes.</summary>
     public const string PeerTransferCompleted = "PEER_TRANSFER_COMPLETED";
     /// <summary>Audit action when a peer wallet transfer is reversed.</summary>
     public const string PeerTransferReversed = "PEER_TRANSFER_REVERSED";
+    /// <summary>Audit action when a bank transfer is created (immediate debit committed in PENDING status).</summary>
+    public const string BankTransferCreated = "BANK_TRANSFER_CREATED";
+    /// <summary>Audit action when a bank transfer is marked processing.</summary>
+    public const string BankTransferProcessing = "BANK_TRANSFER_PROCESSING";
+    /// <summary>Audit action when a bank transfer is confirmed completed.</summary>
+    public const string BankTransferCompleted = "BANK_TRANSFER_COMPLETED";
+    /// <summary>Audit action when a bank transfer definitively fails.</summary>
+    public const string BankTransferFailed = "BANK_TRANSFER_FAILED";
+    /// <summary>Audit action when a bank transfer status is marked unknown.</summary>
+    public const string BankTransferUnknown = "BANK_TRANSFER_UNKNOWN";
+    /// <summary>Audit action when a bank transfer is reversed and funds are refunded to sender.</summary>
+    public const string BankTransferReversed = "BANK_TRANSFER_REVERSED";
 }

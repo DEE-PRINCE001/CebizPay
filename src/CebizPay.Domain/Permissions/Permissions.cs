@@ -72,6 +72,8 @@ public static class Permissions
     public const string WalletFund = "Wallet.Fund";
     /// <summary>Execute outbound wallet transfers.</summary>
     public const string WalletTransfer = "Wallet.Transfer";
+    /// <summary>Execute outbound bank transfers.</summary>
+    public const string WalletTransferBank = "Wallet.TransferBank";
 
     // Loan & PIN Management
     /// <summary>Approve or decline organization loan applications.</summary>
@@ -97,6 +99,11 @@ public static class Permissions
     /// Super Admin only — not granted to ordinary Admins or Auditors by default.
     /// </summary>
     public const string FeesManagePeerTransferPolicy = "Fees.ManagePeerTransferPolicy";
+    /// <summary>
+    /// Create, activate, or deactivate platform bank-transfer fee policies.
+    /// Super Admin only — not granted to ordinary Admins or Auditors by default.
+    /// </summary>
+    public const string FeesManageBankTransferPolicy = "Fees.ManageBankTransferPolicy";
 
     /// <summary>
     /// Default read-only permissions assigned to Read-Only Admin / Auditor role.
@@ -113,7 +120,7 @@ public static class Permissions
     public static readonly IReadOnlySet<string> OrgSuperAdminPermissions = new HashSet<string>
     {
         KybView, StaffView, StaffManage, StaffInvite, DepartmentsManage, RolesManage,
-        SalaryLevelsManage, PayrollView, PayrollExecute, WalletView, WalletFund, WalletTransfer,
+        SalaryLevelsManage, PayrollView, PayrollExecute, WalletView, WalletFund, WalletTransfer, WalletTransferBank,
         LoanDecide, PinManage, AnnouncementsPublishWorkplace, ErpView, ErpManage
     };
 
@@ -122,7 +129,7 @@ public static class Permissions
     /// </summary>
     public static readonly IReadOnlySet<string> FinanceManagerPermissions = new HashSet<string>
     {
-        WalletView, WalletFund, WalletTransfer, PayrollView, PayrollExecute, ErpView, TransactionsView
+        WalletView, WalletFund, WalletTransfer, WalletTransferBank, PayrollView, PayrollExecute, ErpView, TransactionsView
     };
 
     /// <summary>
