@@ -1,6 +1,8 @@
 using CebizPay.Application.Common.Interfaces.Finance;
 using CebizPay.Domain.Finance.Entities;
 using CebizPay.Domain.Finance.Enums;
+using CebizPay.Domain.Payments.Entities;
+using CebizPay.Domain.Payments.Enums;
 using CebizPay.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
@@ -736,4 +738,138 @@ public sealed class LedgerPostingService : ILedgerPostingService
 
         return reversalTxn;
     }
+
+    /// <inheritdoc/>
+    public async Task<LedgerAccount> GetOrCreateInboundClearingAccountAsync(Currency currency, CancellationToken cancellationToken = default)
+    {
+        var existing = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency && l.AccountName.Contains("INBOUND"), cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency && l.AccountName.Contains("INBOUND"));
+
+        if (existing != null)
+            return existing;
+
+        var accountName = $"{currency} INBOUND FUNDING CLEARING";
+        var account = LedgerAccount.CreateSystemAccount(accountName, currency, LedgerAccountType.PlatformClearing);
+        _dbContext.LedgerAccounts.Add(account);
+
+        if (_dbContext.Database.CurrentTransaction == null)
+        {
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                var concurrentAccount = await _dbContext.LedgerAccounts
+                    .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency && l.AccountName.Contains("INBOUND"), cancellationToken);
+                if (concurrentAccount != null)
+                {
+                    return concurrentAccount;
+                }
+                throw;
+            }
+        }
+
+        return account;
+    }
+
+    /// <inheritdoc/>
+    public async Task<(LedgerTransaction Transaction, FundingTransaction Funding)> PostInboundFundingCreditCoreAsync(
+        Guid walletId,
+        Guid? virtualAccountId,
+        decimal amount,
+        Currency currency,
+        PaymentProvider provider,
+        string providerTransactionReference,
+        FundingChannel channel,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (amount <= 0)
+            throw new ArgumentException("Funding amount must be positive.", nameof(amount));
+        if (string.IsNullOrWhiteSpace(providerTransactionReference))
+            throw new ArgumentException("ProviderTransactionReference is required.", nameof(providerTransactionReference));
+
+        // Lock recipient wallet with row-level lock
+        var recipientWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", walletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == walletId, cancellationToken);
+
+        if (recipientWallet == null)
+            throw new InvalidOperationException($"Recipient wallet '{walletId}' not found.");
+        if (recipientWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"Recipient wallet '{walletId}' is not active.");
+        if (recipientWallet.Currency != currency)
+            throw new InvalidOperationException($"Recipient wallet currency '{recipientWallet.Currency}' does not match funding currency '{currency}'.");
+
+        // Load or create funding transaction
+        var fundingTx = await _dbContext.FundingTransactions
+            .FirstOrDefaultAsync(f => f.Provider == provider && f.ProviderTransactionReference == providerTransactionReference, cancellationToken)
+            ?? _dbContext.FundingTransactions.Local
+                .FirstOrDefault(f => f.Provider == provider && f.ProviderTransactionReference == providerTransactionReference);
+
+        if (fundingTx == null)
+        {
+            fundingTx = FundingTransaction.Create(
+                walletId: walletId,
+                virtualAccountId: virtualAccountId,
+                provider: provider,
+                providerTransactionReference: providerTransactionReference,
+                fundingChannel: channel,
+                amount: amount,
+                currency: currency);
+            _dbContext.FundingTransactions.Add(fundingTx);
+        }
+
+        if (fundingTx.Status == FundingTransactionStatus.Completed && fundingTx.LedgerTransactionId.HasValue)
+        {
+            // Already credited idempotently
+            var existingTxn = await _dbContext.LedgerTransactions.FindAsync(new object[] { fundingTx.LedgerTransactionId.Value }, cancellationToken);
+            return (existingTxn!, fundingTx);
+        }
+
+        // Get clearing account and customer wallet ledger account
+        var clearingAccount = await GetOrCreateInboundClearingAccountAsync(currency, cancellationToken);
+        var customerAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == walletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.WalletId == walletId)
+            ?? throw new InvalidOperationException($"Ledger account for wallet '{walletId}' not found.");
+
+        // Credit recipient wallet available balance
+        recipientWallet.Credit(amount);
+
+        // Build LedgerTransaction
+        var txnType = channel == FundingChannel.VirtualAccount
+            ? LedgerTransactionType.VirtualAccountDeposit
+            : LedgerTransactionType.CardFunding;
+
+        var reference = $"FND-{providerTransactionReference}";
+        var transaction = new LedgerTransaction(
+            txnType,
+            reference,
+            idempotencyKey: providerTransactionReference,
+            description: description ?? $"Inbound {channel} deposit via {provider} ({providerTransactionReference})");
+        transaction.Complete(DateTime.UtcNow);
+
+        // Double-entry entries:
+        // DEBIT  Inbound Clearing Account  (Amount)
+        // CREDIT Customer Wallet Account   (Amount)
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, clearingAccount.Id, LedgerEntryDirection.Debit, amount, currency, 1),
+            new(transaction.Id, customerAccount.Id, LedgerEntryDirection.Credit, amount, currency, 2)
+        };
+
+        fundingTx.MarkCompleted(transaction.Id);
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return (transaction, fundingTx);
+    }
 }
+

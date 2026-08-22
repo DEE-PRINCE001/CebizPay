@@ -79,6 +79,12 @@ public interface IApplicationDbContext
     /// <summary>Gets the provider webhook events entity set.</summary>
     IEntitySet<WebhookEvent> WebhookEvents { get; }
 
+    /// <summary>Gets the dedicated virtual accounts entity set.</summary>
+    IEntitySet<VirtualAccount> VirtualAccounts { get; }
+
+    /// <summary>Gets the funding transactions entity set.</summary>
+    IEntitySet<FundingTransaction> FundingTransactions { get; }
+
     /// <summary>
     /// Saves changes asynchronously to the underlying database.
     /// </summary>

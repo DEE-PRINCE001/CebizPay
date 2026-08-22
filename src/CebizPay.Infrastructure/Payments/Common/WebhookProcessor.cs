@@ -24,7 +24,8 @@ namespace CebizPay.Infrastructure.Payments.Common;
 
 /// <summary>
 /// Infrastructure implementation of <see cref="IWebhookProcessor"/> coordinating secure ingestion,
-/// deduplication, state transition validation, and financial reconciliation for external payment webhooks.
+/// deduplication, state transition validation, and financial reconciliation for external payment webhooks
+/// (including outbound payout reconciliation, inbound virtual account deposits, and card funding).
 /// </summary>
 public sealed partial class WebhookProcessor : IWebhookProcessor
 {
@@ -133,7 +134,7 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         _dbContext.WebhookEvents.Add(webhookEvent);
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        // Step 4: Resolve matching PaymentAttempt
+        // Step 4: Resolve target - Outbound PaymentAttempt, Inbound VirtualAccount, or Card Funding
         PaymentAttempt? attempt = null;
         if (!string.IsNullOrWhiteSpace(parsed.ProviderReference))
         {
@@ -149,15 +150,57 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
                 .ConfigureAwait(false);
         }
 
-        if (attempt == null)
+        // --- Handle Outbound PaymentAttempt ---
+        if (attempt != null)
         {
-            var parsedRef = parsed.Reference ?? string.Empty;
-            LogWebhookAttemptNotFound(_logger, providerName, parsed.ProviderEventId, parsedRef);
-            webhookEvent.MarkIgnored("No matching PaymentAttempt found for reference.");
-            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-            return WebhookProcessingResult.Ignored(parsed.ProviderEventId, "No matching PaymentAttempt found for reference.");
+            return await ProcessOutboundAttemptWebhookAsync(provider, parsed, attempt, webhookEvent, cancellationToken).ConfigureAwait(false);
         }
+
+        // --- Handle Inbound Virtual Account Deposit (DVA) ---
+        VirtualAccount? virtualAccount = null;
+        if (!string.IsNullOrWhiteSpace(parsed.AccountNumber))
+        {
+            virtualAccount = await _dbContext.VirtualAccounts
+                .FirstOrDefaultAsync(v => v.Provider == provider && v.AccountNumber == parsed.AccountNumber, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (virtualAccount != null)
+        {
+            return await ProcessInboundVirtualAccountDepositAsync(provider, parsed, virtualAccount, webhookEvent, cancellationToken).ConfigureAwait(false);
+        }
+
+        // --- Handle Inbound Card Funding Payment ---
+        FundingTransaction? fundingTx = null;
+        if (!string.IsNullOrWhiteSpace(parsed.Reference))
+        {
+            fundingTx = await _dbContext.FundingTransactions
+                .FirstOrDefaultAsync(f => f.Provider == provider && f.ProviderTransactionReference == parsed.Reference, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (fundingTx != null)
+        {
+            return await ProcessCardFundingWebhookAsync(provider, parsed, fundingTx, webhookEvent, cancellationToken).ConfigureAwait(false);
+        }
+
+        // Unresolved reference
+        var parsedRef = parsed.Reference ?? parsed.AccountNumber ?? string.Empty;
+        LogWebhookAttemptNotFound(_logger, providerName, parsed.ProviderEventId, parsedRef);
+        webhookEvent.MarkIgnored("No matching PaymentAttempt, VirtualAccount, or FundingTransaction found for reference.");
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        return WebhookProcessingResult.Ignored(parsed.ProviderEventId, "No matching PaymentAttempt, VirtualAccount, or FundingTransaction found for reference.");
+    }
+
+    private async Task<WebhookProcessingResult> ProcessOutboundAttemptWebhookAsync(
+        PaymentProvider provider,
+        ParsedWebhookPayload parsed,
+        PaymentAttempt attempt,
+        WebhookEvent webhookEvent,
+        CancellationToken cancellationToken)
+    {
+        var providerName = provider.ToString();
 
         // Step 5: Amount and Currency Validation
         if (parsed.Amount.HasValue && parsed.Amount.Value > 0)
@@ -222,7 +265,6 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
 
         if (parsed.IsSuccess)
         {
-            // Provider confirms Success
             attempt.MarkSucceeded(parsed.ProviderReference ?? attempt.RequestReference, safeMetadata: parsed.SafeMetadata);
 
             if (bankTransfer != null && bankTransfer.Status != BankTransferStatus.Completed)
@@ -262,14 +304,12 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
 
         if (parsed.IsFailure)
         {
-            // Provider confirms Failure
             var failCode = parsed.FailureCode ?? "GATEWAY_FAILED";
             var failReason = parsed.FailureReason ?? "Transfer rejected by gateway";
             attempt.MarkFailed(failCode, failReason, safeMetadata: parsed.SafeMetadata);
 
             if (bankTransfer != null && bankTransfer.Status != BankTransferStatus.Failed)
             {
-                // Execute core financial reversal if still in PENDING / PROCESSING state
                 await _ledgerPostingService.PostBankTransferReversalCoreAsync(bankTransfer.Id, failReason, cancellationToken).ConfigureAwait(false);
 
                 _outboxService.Write(new BankTransferFailedEvent(
@@ -303,11 +343,158 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             return WebhookProcessingResult.Processed(parsed.ProviderEventId, attempt.Id);
         }
 
-        // In-flight / informational event
         webhookEvent.MarkProcessed(attempt.Id, parsed.SafeMetadata);
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         return WebhookProcessingResult.Processed(parsed.ProviderEventId, attempt.Id, "Informational webhook recorded.");
+    }
+
+    private async Task<WebhookProcessingResult> ProcessInboundVirtualAccountDepositAsync(
+        PaymentProvider provider,
+        ParsedWebhookPayload parsed,
+        VirtualAccount virtualAccount,
+        WebhookEvent webhookEvent,
+        CancellationToken cancellationToken)
+    {
+        if (!parsed.IsSuccess || !parsed.Amount.HasValue || parsed.Amount.Value <= 0)
+        {
+            webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "Non-credit virtual account event recorded.");
+        }
+
+        // Resolve recipient wallet
+        var walletQuery = _dbContext.Wallets.AsQueryable();
+        if (!string.IsNullOrWhiteSpace(virtualAccount.IndividualId))
+        {
+            walletQuery = walletQuery.Where(w => w.IndividualId == virtualAccount.IndividualId && w.Currency == virtualAccount.Currency);
+        }
+        else if (virtualAccount.OrganizationId.HasValue)
+        {
+            walletQuery = walletQuery.Where(w => w.OrganizationId == virtualAccount.OrganizationId.Value && w.Currency == virtualAccount.Currency);
+        }
+
+        var wallet = await walletQuery.FirstOrDefaultAsync(cancellationToken).ConfigureAwait(false);
+        if (wallet == null)
+        {
+            webhookEvent.MarkFailed("Recipient wallet for virtual account not found.");
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return WebhookProcessingResult.Error(parsed.ProviderEventId, "Recipient wallet not found.");
+        }
+
+        var depositReference = parsed.ProviderReference ?? parsed.Reference ?? parsed.ProviderEventId;
+
+        // Post inbound double-entry credit through central ledger
+        await using var dbTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var (txn, funding) = await _ledgerPostingService.PostInboundFundingCreditCoreAsync(
+                walletId: wallet.Id,
+                virtualAccountId: virtualAccount.Id,
+                amount: parsed.Amount.Value,
+                currency: virtualAccount.Currency,
+                provider: provider,
+                providerTransactionReference: depositReference,
+                channel: FundingChannel.VirtualAccount,
+                description: $"Inbound deposit via virtual account {virtualAccount.AccountNumber}",
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            RecordAudit(AuditActions.FundingReceived, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
+                JsonSerializer.Serialize(new { AccountNumber = virtualAccount.AccountNumber, Amount = parsed.Amount.Value, virtualAccount.Currency, Reference = depositReference }));
+
+            webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await dbTx.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+            var currStr = virtualAccount.Currency.ToString();
+            LogVirtualAccountDepositSuccess(_logger, parsed.Amount.Value, currStr, wallet.Id);
+            return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "Virtual account deposit credited.");
+        }
+        catch (Exception ex)
+        {
+            await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            LogVirtualAccountDepositException(_logger, parsed.ProviderEventId, ex);
+            webhookEvent.MarkFailed($"Credit failure: {ex.Message}");
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return WebhookProcessingResult.Error(parsed.ProviderEventId, ex.Message);
+        }
+    }
+
+    private async Task<WebhookProcessingResult> ProcessCardFundingWebhookAsync(
+        PaymentProvider provider,
+        ParsedWebhookPayload parsed,
+        FundingTransaction fundingTx,
+        WebhookEvent webhookEvent,
+        CancellationToken cancellationToken)
+    {
+        if (fundingTx.Status == FundingTransactionStatus.Completed)
+        {
+            webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "Funding transaction already completed.");
+        }
+
+        if (parsed.IsSuccess)
+        {
+            // Amount & currency verification
+            if (parsed.Amount.HasValue && parsed.Amount.Value != fundingTx.Amount)
+            {
+                var errorMsg = $"Card funding amount mismatch. Expected: {fundingTx.Amount}, Received: {parsed.Amount.Value}";
+                webhookEvent.MarkFailed(errorMsg);
+                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return WebhookProcessingResult.Error(parsed.ProviderEventId, errorMsg);
+            }
+
+            await using var dbTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var (txn, funding) = await _ledgerPostingService.PostInboundFundingCreditCoreAsync(
+                    walletId: fundingTx.WalletId,
+                    virtualAccountId: null,
+                    amount: fundingTx.Amount,
+                    currency: fundingTx.Currency,
+                    provider: provider,
+                    providerTransactionReference: fundingTx.ProviderTransactionReference,
+                    channel: FundingChannel.Card,
+                    description: $"Card deposit via {provider} ({fundingTx.ProviderTransactionReference})",
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+
+                RecordAudit(AuditActions.CardFundingCompleted, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
+                    JsonSerializer.Serialize(new { fundingTx.ProviderTransactionReference, fundingTx.Amount, fundingTx.Currency }));
+
+                webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
+                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                await dbTx.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+                var currStr = fundingTx.Currency.ToString();
+                LogCardFundingSuccess(_logger, fundingTx.ProviderTransactionReference, fundingTx.Amount, currStr, fundingTx.WalletId);
+                return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "Card funding credited.");
+            }
+            catch (Exception ex)
+            {
+                await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                LogCardFundingException(_logger, fundingTx.ProviderTransactionReference, ex);
+                webhookEvent.MarkFailed($"Credit failure: {ex.Message}");
+                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return WebhookProcessingResult.Error(parsed.ProviderEventId, ex.Message);
+            }
+        }
+
+        if (parsed.IsFailure)
+        {
+            fundingTx.MarkFailed(parsed.FailureReason ?? "Card payment failed at gateway");
+            RecordAudit(AuditActions.CardFundingFailed, AuditResourceTypes.FundingTransaction, fundingTx.Id.ToString(),
+                JsonSerializer.Serialize(new { fundingTx.ProviderTransactionReference, Reason = parsed.FailureReason }));
+
+            webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "Card funding failure recorded.");
+        }
+
+        webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "Informational card funding event recorded.");
     }
 
     private void RecordAudit(string action, string resourceType, string resourceId, string detailsJson)
@@ -366,6 +553,10 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
 
         var status = data.TryGetProperty("status", out var st) ? st.GetString()?.ToUpperInvariant() : null;
         var reference = data.TryGetProperty("reference", out var rf) ? rf.GetString() : null;
+        var txRef = data.TryGetProperty("tx_ref", out var tr) ? tr.GetString() : null;
+        var effectiveRef = reference ?? txRef;
+
+        var accountNumber = data.TryGetProperty("account_number", out var an) ? an.GetString() : null;
         var currency = data.TryGetProperty("currency", out var curr) ? curr.GetString() : null;
         decimal? amount = data.TryGetProperty("amount", out var am) && am.ValueKind == JsonValueKind.Number ? am.GetDecimal() : null;
         var completeMessage = data.TryGetProperty("complete_message", out var cm) ? cm.GetString() : null;
@@ -381,14 +572,16 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         {
             provider_id = id,
             status = status,
-            reference = reference
+            reference = effectiveRef,
+            account_number = accountNumber
         });
 
         return new ParsedWebhookPayload(
             ProviderEventId: providerEventId,
             EventType: eventType,
-            Reference: reference,
-            ProviderReference: id > 0 ? id.ToString(CultureInfo.InvariantCulture) : reference,
+            Reference: effectiveRef,
+            ProviderReference: id > 0 ? id.ToString(CultureInfo.InvariantCulture) : effectiveRef,
+            AccountNumber: accountNumber,
             Amount: amount,
             Currency: currency,
             ProviderStatus: status,
@@ -412,6 +605,16 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         var status = data.TryGetProperty("status", out var st) ? st.GetString()?.ToLowerInvariant() : null;
         var currency = data.TryGetProperty("currency", out var curr) ? curr.GetString() : null;
 
+        string? accountNumber = null;
+        if (data.TryGetProperty("authorization", out var auth) && auth.TryGetProperty("account_number", out var an))
+        {
+            accountNumber = an.GetString();
+        }
+        else if (data.TryGetProperty("dedicated_account", out var da) && da.TryGetProperty("account_number", out var daAn))
+        {
+            accountNumber = daAn.GetString();
+        }
+
         decimal? amount = null;
         if (data.TryGetProperty("amount", out var am) && am.ValueKind == JsonValueKind.Number)
         {
@@ -426,14 +629,17 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
 
         var providerEventId = !string.IsNullOrWhiteSpace(transferCode)
             ? string.Format(CultureInfo.InvariantCulture, "pstk_evt_{0}_{1}_{2}", eventType, transferCode, status ?? "unknown")
-            : ComputePayloadHash(rawPayload);
+            : !string.IsNullOrWhiteSpace(reference)
+                ? string.Format(CultureInfo.InvariantCulture, "pstk_evt_{0}_{1}_{2}", eventType, reference, status ?? "unknown")
+                : ComputePayloadHash(rawPayload);
 
         var safeMeta = JsonSerializer.Serialize(new
         {
             transfer_code = transferCode,
             reference = reference,
             status = status,
-            event_type = eventType
+            event_type = eventType,
+            account_number = accountNumber
         });
 
         return new ParsedWebhookPayload(
@@ -441,6 +647,7 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             EventType: eventType,
             Reference: reference,
             ProviderReference: transferCode ?? reference,
+            AccountNumber: accountNumber,
             Amount: amount,
             Currency: currency,
             ProviderStatus: status,
@@ -456,6 +663,7 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         string EventType,
         string? Reference,
         string? ProviderReference,
+        string? AccountNumber,
         decimal? Amount,
         string? Currency,
         string? ProviderStatus,
@@ -491,4 +699,16 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
 
     [LoggerMessage(EventId = 9, Level = LogLevel.Information, Message = "Stale out-of-order webhook ignored for PaymentAttempt {AttemptId}. Current: {CurrentStatus}, Received: {ReceivedStatus}")]
     private static partial void LogWebhookStaleIgnored(ILogger logger, Guid attemptId, string currentStatus, string? receivedStatus);
+
+    [LoggerMessage(EventId = 10, Level = LogLevel.Information, Message = "Successfully credited inbound deposit of {Amount} {Currency} to wallet {WalletId}")]
+    private static partial void LogVirtualAccountDepositSuccess(ILogger logger, decimal amount, string currency, Guid walletId);
+
+    [LoggerMessage(EventId = 11, Level = LogLevel.Error, Message = "Failed to credit virtual account deposit {EventId}")]
+    private static partial void LogVirtualAccountDepositException(ILogger logger, string eventId, Exception exception);
+
+    [LoggerMessage(EventId = 12, Level = LogLevel.Information, Message = "Successfully credited card funding {Ref} of {Amount} {Currency} to wallet {WalletId}")]
+    private static partial void LogCardFundingSuccess(ILogger logger, string @ref, decimal amount, string currency, Guid walletId);
+
+    [LoggerMessage(EventId = 13, Level = LogLevel.Error, Message = "Failed to apply card funding credit for {Ref}")]
+    private static partial void LogCardFundingException(ILogger logger, string @ref, Exception exception);
 }

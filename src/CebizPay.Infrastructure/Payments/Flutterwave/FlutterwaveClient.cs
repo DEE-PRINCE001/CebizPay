@@ -283,6 +283,181 @@ public sealed partial class FlutterwaveClient
         }
     }
 
+    /// <summary>
+    /// Provisions a dedicated permanent virtual account via Flutterwave.
+    /// </summary>
+    public async Task<VirtualAccountCreationResult> CreateVirtualAccountAsync(
+        string email,
+        string name,
+        string? phone,
+        string? bvn,
+        string txRef,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "v3/virtual-account-numbers");
+        ApplyAuthentication(request);
+
+        var names = (name ?? "Customer").Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var firstName = names.Length > 0 ? names[0] : "Customer";
+        var lastName = names.Length > 1 ? names[1] : "CebizPay";
+
+        var payload = new FlutterwaveVirtualAccountCreateRequest(
+            Email: email.Trim(),
+            IsPermanent: true,
+            Bvn: bvn?.Trim(),
+            TxRef: txRef.Trim(),
+            Phonenumber: phone?.Trim(),
+            FirstName: firstName,
+            LastName: lastName,
+            Narration: $"CebizPay Virtual Account for {name}");
+
+        request.Content = JsonContent.Create(payload);
+
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<FlutterwaveVirtualAccountResponse>(responseString);
+
+            if (response.IsSuccessStatusCode && parsed != null && parsed.Status == "success" && parsed.Data != null)
+            {
+                var accountNumber = parsed.Data.AccountNumber;
+                var bankName = parsed.Data.BankName ?? "Flutterwave Virtual Bank";
+                var orderRef = parsed.Data.OrderRef ?? parsed.Data.FlwRef ?? txRef;
+
+                if (!string.IsNullOrWhiteSpace(accountNumber))
+                {
+                    return VirtualAccountCreationResult.Success(
+                        accountNumber: accountNumber.Trim(),
+                        accountName: (name ?? "Customer").Trim(),
+                        bankCode: "035", // Default Wema / standard virtual bank routing
+                        bankName: bankName.Trim(),
+                        providerReference: orderRef);
+                }
+            }
+
+            return VirtualAccountCreationResult.Failure(parsed?.Message ?? $"Failed to provision virtual account (HTTP {(int)response.StatusCode})");
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return VirtualAccountCreationResult.Failure($"Virtual account communication error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Initializes a hosted card payment checkout session via Flutterwave Standard.
+    /// </summary>
+    public async Task<CardPaymentInitializationResult> InitializePaymentAsync(
+        decimal amount,
+        string currency,
+        string email,
+        string txRef,
+        string redirectUrl,
+        string? customerName,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "v3/payments");
+        ApplyAuthentication(request);
+
+        var payload = new FlutterwaveInitializePaymentRequest(
+            TxRef: txRef.Trim(),
+            Amount: amount,
+            Currency: currency.Trim().ToUpperInvariant(),
+            RedirectUrl: redirectUrl.Trim(),
+            Customer: new FlutterwaveCustomer(email.Trim(), customerName?.Trim()),
+            Customizations: new FlutterwaveCustomizations("CebizPay Wallet Funding", "Fund your CebizPay wallet"));
+
+        request.Content = JsonContent.Create(payload);
+
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<FlutterwaveInitializePaymentResponse>(responseString);
+
+            if (response.IsSuccessStatusCode && parsed != null && parsed.Status == "success" && parsed.Data != null && !string.IsNullOrWhiteSpace(parsed.Data.Link))
+            {
+                return CardPaymentInitializationResult.Success(
+                    authorizationUrl: parsed.Data.Link.Trim(),
+                    accessCode: null,
+                    reference: txRef.Trim());
+            }
+
+            return CardPaymentInitializationResult.Failure(parsed?.Message ?? $"Card payment initialization failed (HTTP {(int)response.StatusCode})");
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return CardPaymentInitializationResult.Failure($"Card payment communication error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Verifies the outcome of a transaction (card payment) with Flutterwave.
+    /// </summary>
+    public async Task<PaymentProviderResult> VerifyTransactionAsync(
+        string transactionIdOrRef,
+        CancellationToken cancellationToken = default)
+    {
+        var cleanRef = transactionIdOrRef.Trim();
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"v3/transactions/{cleanRef}/verify");
+        ApplyAuthentication(request);
+
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+
+            var statusCode = (int)response.StatusCode;
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<FlutterwaveVerifyTransactionResponse>(responseString);
+
+            if (response.IsSuccessStatusCode && parsed != null && parsed.Status == "success" && parsed.Data != null)
+            {
+                var status = parsed.Data.Status?.ToUpperInvariant();
+                var safeMeta = JsonSerializer.Serialize(new
+                {
+                    flw_id = parsed.Data.Id,
+                    flw_ref = parsed.Data.FlwRef,
+                    status = parsed.Data.Status,
+                    processor_response = parsed.Data.ProcessorResponse
+                });
+
+                if (status == "SUCCESSFUL")
+                {
+                    return PaymentProviderResult.Success(parsed.Data.FlwRef ?? cleanRef, safeMeta);
+                }
+
+                if (status == "FAILED")
+                {
+                    return PaymentProviderResult.BusinessFailure("PAYMENT_FAILED", parsed.Data.ProcessorResponse ?? "Card transaction failed", safeMeta);
+                }
+
+                return PaymentProviderResult.Unknown($"Card transaction status is '{status}'", safeMeta);
+            }
+
+            if (statusCode >= 500)
+            {
+                return PaymentProviderResult.TechnicalFailure(string.Format(CultureInfo.InvariantCulture, "HTTP_{0}", statusCode), parsed?.Message ?? "Server error");
+            }
+
+            return PaymentProviderResult.BusinessFailure(string.Format(CultureInfo.InvariantCulture, "STATUS_{0}", statusCode), parsed?.Message ?? "Transaction verification failed");
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return PaymentProviderResult.Unknown($"Transaction verification communication error: {ex.Message}");
+        }
+    }
+
     private static T? TryDeserialize<T>(string json) where T : class
     {
         try

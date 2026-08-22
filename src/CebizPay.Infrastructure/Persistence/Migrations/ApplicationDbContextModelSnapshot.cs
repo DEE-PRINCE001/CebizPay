@@ -1179,6 +1179,150 @@ namespace CebizPay.Infrastructure.Persistence.Migrations
                     b.ToTable("WebhookEvents", (string)null);
                 });
 
+            modelBuilder.Entity("CebizPay.Domain.Payments.Entities.VirtualAccount", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AccountName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("AccountNumber")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("BankCode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
+                    b.Property<string>("BankName")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Currency")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("IndividualId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid?>("OrganizationId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Provider")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProviderReference")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("IX_VirtualAccounts_Status");
+
+                    b.HasIndex("IndividualId", "Provider", "Currency")
+                        .IsUnique()
+                        .HasDatabaseName("IX_VirtualAccounts_IndividualId_Provider_Currency")
+                        .HasFilter("\"IndividualId\" IS NOT NULL");
+
+                    b.HasIndex("OrganizationId", "Provider", "Currency")
+                        .IsUnique()
+                        .HasDatabaseName("IX_VirtualAccounts_OrganizationId_Provider_Currency")
+                        .HasFilter("\"OrganizationId\" IS NOT NULL");
+
+                    b.HasIndex("Provider", "AccountNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_VirtualAccounts_Provider_AccountNumber");
+
+                    b.ToTable("VirtualAccounts", (string)null);
+                });
+
+            modelBuilder.Entity("CebizPay.Domain.Payments.Entities.FundingTransaction", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<DateTime?>("CompletedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Currency")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("FailedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FailureReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<int>("FundingChannel")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("LedgerTransactionId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Provider")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ProviderTransactionReference")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid?>("VirtualAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("WalletId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAtUtc")
+                        .HasDatabaseName("IX_FundingTransactions_CreatedAtUtc");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("IX_FundingTransactions_Status");
+
+                    b.HasIndex("VirtualAccountId")
+                        .HasDatabaseName("IX_FundingTransactions_VirtualAccountId");
+
+                    b.HasIndex("WalletId")
+                        .HasDatabaseName("IX_FundingTransactions_WalletId");
+
+                    b.HasIndex("Provider", "ProviderTransactionReference")
+                        .IsUnique()
+                        .HasDatabaseName("IX_FundingTransactions_Provider_ProviderTransactionReference");
+
+                    b.ToTable("FundingTransactions", (string)null);
+                });
+
             modelBuilder.Entity("CebizPay.Infrastructure.Identity.ApplicationUser", b =>
                 {
                     b.Property<string>("Id")

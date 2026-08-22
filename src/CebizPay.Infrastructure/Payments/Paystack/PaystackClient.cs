@@ -320,6 +320,202 @@ public sealed partial class PaystackClient
         }
     }
 
+    /// <summary>
+    /// Creates or retrieves a customer in Paystack to obtain customer_code.
+    /// </summary>
+    public async Task<string?> CreateCustomerAsync(
+        string email,
+        string? firstName,
+        string? lastName,
+        string? phone,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "customer");
+        ApplyAuthentication(request);
+
+        var payload = new PaystackCreateCustomerRequest(
+            Email: email.Trim(),
+            FirstName: firstName?.Trim(),
+            LastName: lastName?.Trim(),
+            Phone: phone?.Trim());
+
+        request.Content = JsonContent.Create(payload);
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<PaystackCreateCustomerResponse>(responseString);
+
+            return parsed?.Data?.CustomerCode;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Creates a Dedicated NUBAN / Virtual Account for a customer via Paystack.
+    /// </summary>
+    public async Task<VirtualAccountCreationResult> CreateDedicatedVirtualAccountAsync(
+        string customerCode,
+        string accountName,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "dedicated_account");
+        ApplyAuthentication(request);
+
+        var payload = new PaystackCreateDedicatedAccountRequest(
+            Customer: customerCode.Trim(),
+            PreferredBank: "wema-bank");
+
+        request.Content = JsonContent.Create(payload);
+
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<PaystackCreateDedicatedAccountResponse>(responseString);
+
+            if (response.IsSuccessStatusCode && parsed != null && parsed.Status && parsed.Data != null)
+            {
+                var accountNumber = parsed.Data.AccountNumber;
+                var bankName = parsed.Data.Bank?.Name ?? "Wema Bank";
+                var bankCode = "035"; // Wema Bank code
+
+                if (!string.IsNullOrWhiteSpace(accountNumber))
+                {
+                    return VirtualAccountCreationResult.Success(
+                        accountNumber: accountNumber.Trim(),
+                        accountName: parsed.Data.AccountName ?? accountName.Trim(),
+                        bankCode: bankCode,
+                        bankName: bankName.Trim(),
+                        providerReference: customerCode.Trim());
+                }
+            }
+
+            return VirtualAccountCreationResult.Failure(parsed?.Message ?? $"Failed to provision dedicated account (HTTP {(int)response.StatusCode})");
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return VirtualAccountCreationResult.Failure($"Dedicated account communication error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Initializes a Paystack standard/inline card checkout transaction.
+    /// </summary>
+    public async Task<CardPaymentInitializationResult> InitializeTransactionAsync(
+        decimal amount,
+        string email,
+        string reference,
+        string callbackUrl,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "transaction/initialize");
+        ApplyAuthentication(request);
+
+        // Convert NGN amount to kobo
+        var koboAmount = Math.Round(amount * 100, 0);
+
+        var payload = new PaystackInitializeTransactionRequest(
+            Amount: koboAmount,
+            Email: email.Trim(),
+            Reference: reference.Trim(),
+            CallbackUrl: callbackUrl.Trim());
+
+        request.Content = JsonContent.Create(payload);
+
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<PaystackInitializeTransactionResponse>(responseString);
+
+            if (response.IsSuccessStatusCode && parsed != null && parsed.Status && parsed.Data != null && !string.IsNullOrWhiteSpace(parsed.Data.AuthorizationUrl))
+            {
+                return CardPaymentInitializationResult.Success(
+                    authorizationUrl: parsed.Data.AuthorizationUrl.Trim(),
+                    accessCode: parsed.Data.AccessCode,
+                    reference: reference.Trim());
+            }
+
+            return CardPaymentInitializationResult.Failure(parsed?.Message ?? $"Paystack transaction initialization failed (HTTP {(int)response.StatusCode})");
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return CardPaymentInitializationResult.Failure($"Paystack transaction communication error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Verifies the outcome of a Paystack transaction (card checkout).
+    /// </summary>
+    public async Task<PaymentProviderResult> VerifyTransactionAsync(
+        string reference,
+        CancellationToken cancellationToken = default)
+    {
+        var cleanRef = reference.Trim();
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"transaction/verify/{cleanRef}");
+        ApplyAuthentication(request);
+
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+
+            var statusCode = (int)response.StatusCode;
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<PaystackVerifyTransactionResponse>(responseString);
+
+            if (response.IsSuccessStatusCode && parsed != null && parsed.Status && parsed.Data != null)
+            {
+                var pstkStatus = parsed.Data.Status?.ToLowerInvariant();
+                var safeMeta = JsonSerializer.Serialize(new
+                {
+                    paystack_id = parsed.Data.Id,
+                    gateway_response = parsed.Data.GatewayResponse,
+                    status = parsed.Data.Status,
+                    channel = parsed.Data.Channel
+                });
+
+                if (pstkStatus == "success")
+                {
+                    return PaymentProviderResult.Success(cleanRef, safeMeta);
+                }
+
+                if (pstkStatus == "failed" || pstkStatus == "abandoned")
+                {
+                    return PaymentProviderResult.BusinessFailure("PAYMENT_FAILED", parsed.Data.GatewayResponse ?? $"Transaction status is '{pstkStatus}'", safeMeta);
+                }
+
+                return PaymentProviderResult.Unknown($"Transaction status is '{pstkStatus}'", safeMeta);
+            }
+
+            if (statusCode >= 500)
+            {
+                return PaymentProviderResult.TechnicalFailure(string.Format(CultureInfo.InvariantCulture, "HTTP_{0}", statusCode), parsed?.Message ?? "Server error");
+            }
+
+            return PaymentProviderResult.BusinessFailure(string.Format(CultureInfo.InvariantCulture, "STATUS_{0}", statusCode), parsed?.Message ?? "Verification failed");
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return PaymentProviderResult.Unknown($"Paystack verify communication error: {ex.Message}");
+        }
+    }
+
     private static T? TryDeserialize<T>(string json) where T : class
     {
         try

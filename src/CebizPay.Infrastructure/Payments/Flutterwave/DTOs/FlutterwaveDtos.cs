@@ -49,3 +49,70 @@ internal sealed record FlutterwaveTransferStatusResponse(
     [property: JsonPropertyName("status")] string? Status,
     [property: JsonPropertyName("message")] string? Message,
     [property: JsonPropertyName("data")] FlutterwaveTransferData? Data);
+
+// --- Phase 3F Virtual Accounts & Card Payments ---
+
+internal sealed record FlutterwaveVirtualAccountCreateRequest(
+    [property: JsonPropertyName("email")] string Email,
+    [property: JsonPropertyName("is_permanent")] bool IsPermanent,
+    [property: JsonPropertyName("bvn")] string? Bvn,
+    [property: JsonPropertyName("tx_ref")] string TxRef,
+    [property: JsonPropertyName("phonenumber")] string? Phonenumber,
+    [property: JsonPropertyName("firstname")] string? FirstName,
+    [property: JsonPropertyName("lastname")] string? LastName,
+    [property: JsonPropertyName("narration")] string? Narration);
+
+internal sealed record FlutterwaveVirtualAccountResponse(
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("message")] string? Message,
+    [property: JsonPropertyName("data")] FlutterwaveVirtualAccountData? Data);
+
+internal sealed record FlutterwaveVirtualAccountData(
+    [property: JsonPropertyName("order_ref")] string? OrderRef,
+    [property: JsonPropertyName("account_number")] string? AccountNumber,
+    [property: JsonPropertyName("bank_name")] string? BankName,
+    [property: JsonPropertyName("flw_ref")] string? FlwRef,
+    [property: JsonPropertyName("account_status")] string? AccountStatus,
+    [property: JsonPropertyName("response_code")] string? ResponseCode,
+    [property: JsonPropertyName("response_message")] string? ResponseMessage);
+
+internal sealed record FlutterwaveInitializePaymentRequest(
+    [property: JsonPropertyName("tx_ref")] string TxRef,
+    [property: JsonPropertyName("amount")] decimal Amount,
+    [property: JsonPropertyName("currency")] string Currency,
+    [property: JsonPropertyName("redirect_url")] string RedirectUrl,
+    [property: JsonPropertyName("customer")] FlutterwaveCustomer Customer,
+    [property: JsonPropertyName("customizations")] FlutterwaveCustomizations? Customizations = null);
+
+internal sealed record FlutterwaveCustomer(
+    [property: JsonPropertyName("email")] string Email,
+    [property: JsonPropertyName("name")] string? Name = null,
+    [property: JsonPropertyName("phonenumber")] string? Phonenumber = null);
+
+internal sealed record FlutterwaveCustomizations(
+    [property: JsonPropertyName("title")] string Title,
+    [property: JsonPropertyName("description")] string? Description = null);
+
+internal sealed record FlutterwaveInitializePaymentResponse(
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("message")] string? Message,
+    [property: JsonPropertyName("data")] FlutterwaveInitializePaymentData? Data);
+
+internal sealed record FlutterwaveInitializePaymentData(
+    [property: JsonPropertyName("link")] string? Link);
+
+internal sealed record FlutterwaveVerifyTransactionResponse(
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("message")] string? Message,
+    [property: JsonPropertyName("data")] FlutterwaveVerifyTransactionData? Data);
+
+internal sealed record FlutterwaveVerifyTransactionData(
+    [property: JsonPropertyName("id")] long Id,
+    [property: JsonPropertyName("tx_ref")] string? TxRef,
+    [property: JsonPropertyName("flw_ref")] string? FlwRef,
+    [property: JsonPropertyName("amount")] decimal Amount,
+    [property: JsonPropertyName("currency")] string? Currency,
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("payment_type")] string? PaymentType,
+    [property: JsonPropertyName("app_fee")] decimal? AppFee,
+    [property: JsonPropertyName("processor_response")] string? ProcessorResponse);

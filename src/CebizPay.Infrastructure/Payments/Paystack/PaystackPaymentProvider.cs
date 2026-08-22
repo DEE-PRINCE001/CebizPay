@@ -9,9 +9,10 @@ namespace CebizPay.Infrastructure.Payments.Paystack;
 
 /// <summary>
 /// Infrastructure payment provider adapter for Paystack.
-/// Implements <see cref="IPaymentProvider"/> without leaking Paystack-specific recipient codes or details to upper layers.
+/// Implements <see cref="IPaymentProvider"/>, <see cref="IVirtualAccountProvider"/>, and <see cref="ICardPaymentProvider"/>
+/// without leaking Paystack-specific recipient codes or details to upper layers.
 /// </summary>
-public sealed partial class PaystackPaymentProvider : IPaymentProvider
+public sealed partial class PaystackPaymentProvider : IPaymentProvider, IVirtualAccountProvider, ICardPaymentProvider
 {
     private readonly PaystackClient _client;
     private readonly ApplicationDbContext _dbContext;
@@ -97,6 +98,73 @@ public sealed partial class PaystackPaymentProvider : IPaymentProvider
         }
 
         return _client.GetTransferStatusAsync(providerReference, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<VirtualAccountCreationResult> CreateVirtualAccountAsync(
+        VirtualAccountCreationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        // Step 1: Create or resolve customer in Paystack
+        var names = (request.AccountName ?? "Customer").Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var firstName = names.Length > 0 ? names[0] : "Customer";
+        var lastName = names.Length > 1 ? names[1] : "CebizPay";
+
+        var customerCode = await _client.CreateCustomerAsync(
+            email: request.Email,
+            firstName: firstName,
+            lastName: lastName,
+            phone: request.PhoneNumber,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(customerCode))
+        {
+            return VirtualAccountCreationResult.Failure("Failed to register customer with Paystack.");
+        }
+
+        // Step 2: Provision Dedicated NUBAN Account
+        return await _client.CreateDedicatedVirtualAccountAsync(
+            customerCode: customerCode,
+            accountName: request.AccountName ?? "Customer",
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public Task<VirtualAccountStatusResult> GetVirtualAccountStatusAsync(
+        string providerReference,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(new VirtualAccountStatusResult(true, null));
+    }
+
+    /// <inheritdoc/>
+    public Task<CardPaymentInitializationResult> InitializeCardPaymentAsync(
+        CardPaymentInitializationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return _client.InitializeTransactionAsync(
+            amount: request.Amount,
+            email: request.Email,
+            reference: request.Reference,
+            callbackUrl: request.CallbackUrl,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<PaymentProviderResult> GetCardPaymentStatusAsync(
+        string providerReference,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(providerReference))
+        {
+            throw new ArgumentException("ProviderReference is required.", nameof(providerReference));
+        }
+
+        return _client.VerifyTransactionAsync(providerReference, cancellationToken);
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Parent BankTransfer not found for PaymentAttempt {AttemptId} (LedgerTransactionId: {TxId})")]

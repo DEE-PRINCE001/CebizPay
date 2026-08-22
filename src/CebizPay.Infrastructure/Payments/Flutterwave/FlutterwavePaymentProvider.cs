@@ -9,9 +9,10 @@ namespace CebizPay.Infrastructure.Payments.Flutterwave;
 
 /// <summary>
 /// Infrastructure payment provider adapter for Flutterwave.
-/// Implements <see cref="IPaymentProvider"/> without leaking Flutterwave-specific details to upper layers.
+/// Implements <see cref="IPaymentProvider"/>, <see cref="IVirtualAccountProvider"/>, and <see cref="ICardPaymentProvider"/>
+/// without leaking Flutterwave-specific details to upper layers.
 /// </summary>
-public sealed partial class FlutterwavePaymentProvider : IPaymentProvider
+public sealed partial class FlutterwavePaymentProvider : IPaymentProvider, IVirtualAccountProvider, ICardPaymentProvider
 {
     private readonly FlutterwaveClient _client;
     private readonly ApplicationDbContext _dbContext;
@@ -77,6 +78,62 @@ public sealed partial class FlutterwavePaymentProvider : IPaymentProvider
         }
 
         return _client.GetTransferStatusAsync(providerReference, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<VirtualAccountCreationResult> CreateVirtualAccountAsync(
+        VirtualAccountCreationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var txRef = $"CBZVA-FLW-{Guid.NewGuid():N}";
+        return _client.CreateVirtualAccountAsync(
+            email: request.Email,
+            name: request.AccountName,
+            phone: request.PhoneNumber,
+            bvn: request.Bvn,
+            txRef: txRef,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<VirtualAccountStatusResult> GetVirtualAccountStatusAsync(
+        string providerReference,
+        CancellationToken cancellationToken = default)
+    {
+        // Flutterwave virtual accounts are permanent once active
+        return Task.FromResult(new VirtualAccountStatusResult(true, null));
+    }
+
+    /// <inheritdoc/>
+    public Task<CardPaymentInitializationResult> InitializeCardPaymentAsync(
+        CardPaymentInitializationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return _client.InitializePaymentAsync(
+            amount: request.Amount,
+            currency: request.Currency.ToString(),
+            email: request.Email,
+            txRef: request.Reference,
+            redirectUrl: request.CallbackUrl,
+            customerName: request.CustomerName,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<PaymentProviderResult> GetCardPaymentStatusAsync(
+        string providerReference,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(providerReference))
+        {
+            throw new ArgumentException("ProviderReference is required.", nameof(providerReference));
+        }
+
+        return _client.VerifyTransactionAsync(providerReference, cancellationToken);
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Parent BankTransfer not found for PaymentAttempt {AttemptId} (LedgerTransactionId: {TxId})")]

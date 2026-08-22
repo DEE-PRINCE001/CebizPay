@@ -1,5 +1,7 @@
 using CebizPay.Domain.Finance.Entities;
 using CebizPay.Domain.Finance.Enums;
+using CebizPay.Domain.Payments.Entities;
+using CebizPay.Domain.Payments.Enums;
 
 namespace CebizPay.Application.Common.Interfaces.Finance;
 
@@ -131,5 +133,31 @@ public interface ILedgerPostingService
     Task<LedgerTransaction> PostBankTransferReversalCoreAsync(
         Guid bankTransferId,
         string reason,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Returns the platform Inbound Clearing ledger account for deposits (DVA / Card) for the given currency.
+    /// </summary>
+    Task<LedgerAccount> GetOrCreateInboundClearingAccountAsync(Currency currency, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an inbound funding credit (virtual account deposit or card funding) within an ambient or new transaction.
+    /// Performs row-level locking on the recipient wallet.
+    ///
+    /// Ledger entries created:
+    ///   DEBIT  Inbound Clearing Account   amount
+    ///   CREDIT Customer Wallet Account    amount
+    ///
+    /// Materializes recipient wallet available balance (+amount) and updates FundingTransaction to COMPLETED.
+    /// </summary>
+    Task<(LedgerTransaction Transaction, FundingTransaction Funding)> PostInboundFundingCreditCoreAsync(
+        Guid walletId,
+        Guid? virtualAccountId,
+        decimal amount,
+        Currency currency,
+        PaymentProvider provider,
+        string providerTransactionReference,
+        FundingChannel channel,
+        string? description = null,
         CancellationToken cancellationToken = default);
 }

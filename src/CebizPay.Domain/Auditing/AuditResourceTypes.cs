@@ -35,4 +35,8 @@ public static class AuditResourceTypes
     public const string WebhookEvent = "WEBHOOK_EVENT";
     /// <summary>Payment failover resource type.</summary>
     public const string PaymentFailover = "PAYMENT_FAILOVER";
+    /// <summary>Virtual account resource type.</summary>
+    public const string VirtualAccount = "VIRTUAL_ACCOUNT";
+    /// <summary>Funding transaction resource type.</summary>
+    public const string FundingTransaction = "FUNDING_TRANSACTION";
 }

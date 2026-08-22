@@ -125,6 +125,10 @@ public static class DependencyInjection
 
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentProvider, CebizPay.Infrastructure.Payments.Flutterwave.FlutterwavePaymentProvider>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentProvider, CebizPay.Infrastructure.Payments.Paystack.PaystackPaymentProvider>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IVirtualAccountProvider, CebizPay.Infrastructure.Payments.Flutterwave.FlutterwavePaymentProvider>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IVirtualAccountProvider, CebizPay.Infrastructure.Payments.Paystack.PaystackPaymentProvider>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardPaymentProvider, CebizPay.Infrastructure.Payments.Flutterwave.FlutterwavePaymentProvider>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardPaymentProvider, CebizPay.Infrastructure.Payments.Paystack.PaystackPaymentProvider>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentProviderFactory, CebizPay.Infrastructure.Payments.Common.PaymentProviderFactory>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IBankAccountResolver, CebizPay.Infrastructure.Payments.Common.PaymentProviderBankAccountResolver>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IBankTransferExecutor, CebizPay.Infrastructure.Payments.Common.PaymentProviderBankTransferExecutor>();
@@ -132,6 +136,8 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IWebhookProcessor, CebizPay.Infrastructure.Payments.Common.WebhookProcessor>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentReconciliationService, CebizPay.Infrastructure.Payments.Common.PaymentReconciliationService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentFailoverService, CebizPay.Infrastructure.Payments.Common.PaymentFailoverService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IVirtualAccountService, CebizPay.Infrastructure.Payments.VirtualAccounts.VirtualAccountService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardFundingService, CebizPay.Infrastructure.Payments.Funding.CardFundingService>();
 
         // Configure Redis
         var redisOptions = configuration.GetSection(RedisOptions.SectionName).Get<RedisOptions>();

@@ -96,6 +96,12 @@ public class ApplicationDbContext
     /// <summary>Gets the provider webhook events entity set.</summary>
     public DbSet<CebizPay.Domain.Payments.Entities.WebhookEvent> WebhookEvents => Set<CebizPay.Domain.Payments.Entities.WebhookEvent>();
 
+    /// <summary>Gets the dedicated virtual accounts entity set.</summary>
+    public DbSet<CebizPay.Domain.Payments.Entities.VirtualAccount> VirtualAccounts => Set<CebizPay.Domain.Payments.Entities.VirtualAccount>();
+
+    /// <summary>Gets the funding transactions entity set.</summary>
+    public DbSet<CebizPay.Domain.Payments.Entities.FundingTransaction> FundingTransactions => Set<CebizPay.Domain.Payments.Entities.FundingTransaction>();
+
     // Explicit IApplicationDbContext implementations returning IEntitySet<T>
     IEntitySet<IndividualProfile> IApplicationDbContext.IndividualProfiles => new EntitySet<IndividualProfile>(IndividualProfiles);
     IEntitySet<AdminProfile> IApplicationDbContext.AdminProfiles => new EntitySet<AdminProfile>(AdminProfiles);
@@ -120,6 +126,8 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Finance.Entities.BankTransferFeePolicy> IApplicationDbContext.BankTransferFeePolicies => new EntitySet<CebizPay.Domain.Finance.Entities.BankTransferFeePolicy>(BankTransferFeePolicies);
     IEntitySet<CebizPay.Domain.Payments.Entities.PaymentAttempt> IApplicationDbContext.PaymentAttempts => new EntitySet<CebizPay.Domain.Payments.Entities.PaymentAttempt>(PaymentAttempts);
     IEntitySet<CebizPay.Domain.Payments.Entities.WebhookEvent> IApplicationDbContext.WebhookEvents => new EntitySet<CebizPay.Domain.Payments.Entities.WebhookEvent>(WebhookEvents);
+    IEntitySet<CebizPay.Domain.Payments.Entities.VirtualAccount> IApplicationDbContext.VirtualAccounts => new EntitySet<CebizPay.Domain.Payments.Entities.VirtualAccount>(VirtualAccounts);
+    IEntitySet<CebizPay.Domain.Payments.Entities.FundingTransaction> IApplicationDbContext.FundingTransactions => new EntitySet<CebizPay.Domain.Payments.Entities.FundingTransaction>(FundingTransactions);
 
     /// <inheritdoc/>
     async Task<IDbTransaction> IApplicationDbContext.BeginTransactionAsync(CancellationToken cancellationToken)

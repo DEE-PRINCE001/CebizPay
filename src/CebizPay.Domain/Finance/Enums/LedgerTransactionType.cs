@@ -32,5 +32,9 @@ public enum LedgerTransactionType
     /// <summary>Reversal of a prior transaction.</summary>
     Reversal = 13,
     /// <summary>Cross-currency FX conversion.</summary>
-    FxConversion = 14
+    FxConversion = 14,
+    /// <summary>Inbound bank deposit to virtual account.</summary>
+    VirtualAccountDeposit = 15,
+    /// <summary>Inbound card payment / checkout charge.</summary>
+    CardFunding = 16
 }

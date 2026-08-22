@@ -124,4 +124,20 @@ public static class AuditActions
     public const string ProviderFailoverSucceeded = "PROVIDER_FAILOVER_SUCCEEDED";
     /// <summary>Audit action when provider failover fails.</summary>
     public const string ProviderFailoverFailed = "PROVIDER_FAILOVER_FAILED";
+
+    // Virtual Accounts & Inbound Funding
+    /// <summary>Audit action when a dedicated virtual account is provisioned.</summary>
+    public const string VirtualAccountCreated = "VIRTUAL_ACCOUNT_CREATED";
+    /// <summary>Audit action when a virtual account is activated.</summary>
+    public const string VirtualAccountActivated = "VIRTUAL_ACCOUNT_ACTIVATED";
+    /// <summary>Audit action when a virtual account is suspended.</summary>
+    public const string VirtualAccountSuspended = "VIRTUAL_ACCOUNT_SUSPENDED";
+    /// <summary>Audit action when an inbound funding deposit is received and credited.</summary>
+    public const string FundingReceived = "FUNDING_RECEIVED";
+    /// <summary>Audit action when card funding is initialized.</summary>
+    public const string CardFundingInitiated = "CARD_FUNDING_INITIATED";
+    /// <summary>Audit action when card funding is completed and credited.</summary>
+    public const string CardFundingCompleted = "CARD_FUNDING_COMPLETED";
+    /// <summary>Audit action when card funding fails.</summary>
+    public const string CardFundingFailed = "CARD_FUNDING_FAILED";
 }
