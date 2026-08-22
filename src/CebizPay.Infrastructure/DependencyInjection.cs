@@ -135,9 +135,14 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IWebhookSignatureVerifier, CebizPay.Infrastructure.Payments.Common.WebhookSignatureVerifier>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IWebhookProcessor, CebizPay.Infrastructure.Payments.Common.WebhookProcessor>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentReconciliationService, CebizPay.Infrastructure.Payments.Common.PaymentReconciliationService>();
-        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentFailoverService, CebizPay.Infrastructure.Payments.Common.PaymentFailoverService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IVirtualAccountService, CebizPay.Infrastructure.Payments.VirtualAccounts.VirtualAccountService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardFundingService, CebizPay.Infrastructure.Payments.Funding.CardFundingService>();
+
+        // Configure Payroll services
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payroll.IPayrollDeductionProvider, CebizPay.Infrastructure.Payroll.NullPayrollDeductionProvider>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payroll.IPayrollCalculationService, CebizPay.Infrastructure.Payroll.PayrollCalculationService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payroll.IPayrollExecutionService, CebizPay.Infrastructure.Payroll.PayrollExecutionService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payroll.IPayrollBatchService, CebizPay.Infrastructure.Payroll.PayrollBatchService>();
 
         // Configure Redis
         var redisOptions = configuration.GetSection(RedisOptions.SectionName).Get<RedisOptions>();

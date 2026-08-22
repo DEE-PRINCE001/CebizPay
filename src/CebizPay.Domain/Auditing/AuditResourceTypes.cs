@@ -39,4 +39,10 @@ public static class AuditResourceTypes
     public const string VirtualAccount = "VIRTUAL_ACCOUNT";
     /// <summary>Funding transaction resource type.</summary>
     public const string FundingTransaction = "FUNDING_TRANSACTION";
+    /// <summary>Payroll batch resource type.</summary>
+    public const string PayrollBatch = "PAYROLL_BATCH";
+    /// <summary>Payroll item resource type.</summary>
+    public const string PayrollItem = "PAYROLL_ITEM";
+    /// <summary>Payment voucher resource type.</summary>
+    public const string PaymentVoucher = "PAYMENT_VOUCHER";
 }

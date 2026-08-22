@@ -85,6 +85,18 @@ public interface IApplicationDbContext
     /// <summary>Gets the funding transactions entity set.</summary>
     IEntitySet<FundingTransaction> FundingTransactions { get; }
 
+    /// <summary>Gets the payroll batches entity set.</summary>
+    IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollBatch> PayrollBatches { get; }
+
+    /// <summary>Gets the payroll line items entity set.</summary>
+    IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollItem> PayrollItems { get; }
+
+    /// <summary>Gets the payroll execution attempts entity set.</summary>
+    IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollExecutionAttempt> PayrollExecutionAttempts { get; }
+
+    /// <summary>Gets the payment vouchers entity set.</summary>
+    IEntitySet<CebizPay.Domain.Payroll.Entities.PaymentVoucher> PaymentVouchers { get; }
+
     /// <summary>
     /// Saves changes asynchronously to the underlying database.
     /// </summary>

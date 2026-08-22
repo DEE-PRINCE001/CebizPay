@@ -15,6 +15,12 @@ public class OrganizationMembership
     public string UserId { get; private set; } = string.Empty;
     /// <summary>Organization ID.</summary>
     public Guid OrganizationId { get; private set; }
+    /// <summary>Optional assigned department ID.</summary>
+    public Guid? DepartmentId { get; private set; }
+    /// <summary>Optional assigned workforce job role ID.</summary>
+    public Guid? WorkforceRoleId { get; private set; }
+    /// <summary>Optional assigned salary level structure ID.</summary>
+    public Guid? SalaryLevelId { get; private set; }
     /// <summary>Membership role within organization.</summary>
     public MembershipRoleType Role { get; private set; }
     /// <summary>Membership status (Active / Suspended).</summary>
@@ -31,7 +37,13 @@ public class OrganizationMembership
     /// <summary>
     /// Creates a new organization membership.
     /// </summary>
-    public OrganizationMembership(string userId, Guid organizationId, MembershipRoleType role = MembershipRoleType.Member)
+    public OrganizationMembership(
+        string userId,
+        Guid organizationId,
+        MembershipRoleType role = MembershipRoleType.Member,
+        Guid? departmentId = null,
+        Guid? workforceRoleId = null,
+        Guid? salaryLevelId = null)
     {
         if (string.IsNullOrWhiteSpace(userId))
             throw new ArgumentException("UserId is required.", nameof(userId));
@@ -42,8 +54,21 @@ public class OrganizationMembership
         UserId = userId;
         OrganizationId = organizationId;
         Role = role;
+        DepartmentId = departmentId;
+        WorkforceRoleId = workforceRoleId;
+        SalaryLevelId = salaryLevelId;
         Status = MembershipStatus.Active;
         JoinedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Assigns or updates the workforce structure for this membership.
+    /// </summary>
+    public void AssignWorkforceDetails(Guid? departmentId, Guid? workforceRoleId, Guid? salaryLevelId)
+    {
+        DepartmentId = departmentId;
+        WorkforceRoleId = workforceRoleId;
+        SalaryLevelId = salaryLevelId;
     }
 
     /// <summary>
@@ -89,9 +114,13 @@ public class OrganizationMembership
     public bool HasPermission(string permission)
     {
         if (Status != MembershipStatus.Active) return false;
-        if (permission == Permissions.Permissions.WalletTransfer)
+        if (permission == Permissions.Permissions.WalletTransfer || permission == Permissions.Permissions.PayrollExecute)
         {
             return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin || Role == MembershipRoleType.PayrollManager;
+        }
+        if (permission == Permissions.Permissions.PayrollView || permission == Permissions.Permissions.WalletView)
+        {
+            return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin || Role == MembershipRoleType.PayrollManager || Role == MembershipRoleType.HrManager;
         }
         return Role == MembershipRoleType.Owner;
     }

@@ -102,6 +102,18 @@ public class ApplicationDbContext
     /// <summary>Gets the funding transactions entity set.</summary>
     public DbSet<CebizPay.Domain.Payments.Entities.FundingTransaction> FundingTransactions => Set<CebizPay.Domain.Payments.Entities.FundingTransaction>();
 
+    /// <summary>Gets the payroll batches entity set.</summary>
+    public DbSet<CebizPay.Domain.Payroll.Entities.PayrollBatch> PayrollBatches => Set<CebizPay.Domain.Payroll.Entities.PayrollBatch>();
+
+    /// <summary>Gets the payroll line items entity set.</summary>
+    public DbSet<CebizPay.Domain.Payroll.Entities.PayrollItem> PayrollItems => Set<CebizPay.Domain.Payroll.Entities.PayrollItem>();
+
+    /// <summary>Gets the payroll execution attempts entity set.</summary>
+    public DbSet<CebizPay.Domain.Payroll.Entities.PayrollExecutionAttempt> PayrollExecutionAttempts => Set<CebizPay.Domain.Payroll.Entities.PayrollExecutionAttempt>();
+
+    /// <summary>Gets the payment vouchers entity set.</summary>
+    public DbSet<CebizPay.Domain.Payroll.Entities.PaymentVoucher> PaymentVouchers => Set<CebizPay.Domain.Payroll.Entities.PaymentVoucher>();
+
     // Explicit IApplicationDbContext implementations returning IEntitySet<T>
     IEntitySet<IndividualProfile> IApplicationDbContext.IndividualProfiles => new EntitySet<IndividualProfile>(IndividualProfiles);
     IEntitySet<AdminProfile> IApplicationDbContext.AdminProfiles => new EntitySet<AdminProfile>(AdminProfiles);
@@ -128,6 +140,10 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Payments.Entities.WebhookEvent> IApplicationDbContext.WebhookEvents => new EntitySet<CebizPay.Domain.Payments.Entities.WebhookEvent>(WebhookEvents);
     IEntitySet<CebizPay.Domain.Payments.Entities.VirtualAccount> IApplicationDbContext.VirtualAccounts => new EntitySet<CebizPay.Domain.Payments.Entities.VirtualAccount>(VirtualAccounts);
     IEntitySet<CebizPay.Domain.Payments.Entities.FundingTransaction> IApplicationDbContext.FundingTransactions => new EntitySet<CebizPay.Domain.Payments.Entities.FundingTransaction>(FundingTransactions);
+    IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollBatch> IApplicationDbContext.PayrollBatches => new EntitySet<CebizPay.Domain.Payroll.Entities.PayrollBatch>(PayrollBatches);
+    IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollItem> IApplicationDbContext.PayrollItems => new EntitySet<CebizPay.Domain.Payroll.Entities.PayrollItem>(PayrollItems);
+    IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollExecutionAttempt> IApplicationDbContext.PayrollExecutionAttempts => new EntitySet<CebizPay.Domain.Payroll.Entities.PayrollExecutionAttempt>(PayrollExecutionAttempts);
+    IEntitySet<CebizPay.Domain.Payroll.Entities.PaymentVoucher> IApplicationDbContext.PaymentVouchers => new EntitySet<CebizPay.Domain.Payroll.Entities.PaymentVoucher>(PaymentVouchers);
 
     /// <inheritdoc/>
     async Task<IDbTransaction> IApplicationDbContext.BeginTransactionAsync(CancellationToken cancellationToken)

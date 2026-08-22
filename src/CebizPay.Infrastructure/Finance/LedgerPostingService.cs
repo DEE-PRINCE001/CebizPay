@@ -871,5 +871,102 @@ public sealed class LedgerPostingService : ILedgerPostingService
         await _dbContext.SaveChangesAsync(cancellationToken);
         return (transaction, fundingTx);
     }
+
+    /// <inheritdoc/>
+    public async Task<LedgerTransaction> PostPayrollDisbursementCoreAsync(
+        Guid organizationWalletId,
+        Guid employeeWalletId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (amount <= 0)
+            throw new ArgumentException("Disbursement amount must be positive.", nameof(amount));
+        if (organizationWalletId == Guid.Empty)
+            throw new ArgumentException("OrganizationWalletId is required.", nameof(organizationWalletId));
+        if (employeeWalletId == Guid.Empty)
+            throw new ArgumentException("EmployeeWalletId is required.", nameof(employeeWalletId));
+
+        currency.EnsureTransactionalV1();
+
+        // Consistent lock order to prevent deadlocks
+        var firstId = organizationWalletId.CompareTo(employeeWalletId) < 0 ? organizationWalletId : employeeWalletId;
+        var secondId = firstId == organizationWalletId ? employeeWalletId : organizationWalletId;
+
+        var firstWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", firstId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == firstId, cancellationToken);
+
+        var secondWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", secondId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == secondId, cancellationToken);
+
+        if (firstWallet == null)
+            throw new InvalidOperationException($"Wallet '{firstId}' not found.");
+        if (secondWallet == null)
+            throw new InvalidOperationException($"Wallet '{secondId}' not found.");
+
+        var orgWallet = firstWallet.Id == organizationWalletId ? firstWallet : secondWallet;
+        var empWallet = firstWallet.Id == employeeWalletId ? firstWallet : secondWallet;
+
+        if (orgWallet.Currency != currency)
+            throw new InvalidOperationException($"Organization wallet currency '{orgWallet.Currency}' does not match payroll currency '{currency}'.");
+        if (empWallet.Currency != currency)
+            throw new InvalidOperationException($"Employee wallet currency '{empWallet.Currency}' does not match payroll currency '{currency}'.");
+
+        if (orgWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"Organization wallet is {orgWallet.Status}.");
+        if (empWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"Employee wallet is {empWallet.Status}.");
+
+        if (orgWallet.AvailableBalance < amount)
+            throw new InvalidOperationException($"Insufficient organization wallet balance. Required: {amount:F2} {currency}, Available: {orgWallet.AvailableBalance:F2} {currency}.");
+
+        // Mutate wallet balances
+        orgWallet.Debit(amount);
+        empWallet.Credit(amount);
+
+        // Get or create Ledger accounts
+        var orgAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == organizationWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.WalletId == organizationWalletId)
+            ?? LedgerAccount.CreateWalletAccount(organizationWalletId, $"ORG WALLET {organizationWalletId:N}", currency);
+
+        if (_dbContext.Entry(orgAccount).State == EntityState.Detached)
+            _dbContext.LedgerAccounts.Add(orgAccount);
+
+        var empAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == employeeWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.WalletId == employeeWalletId)
+            ?? LedgerAccount.CreateWalletAccount(employeeWalletId, $"EMP WALLET {employeeWalletId:N}", currency);
+
+        if (_dbContext.Entry(empAccount).State == EntityState.Detached)
+            _dbContext.LedgerAccounts.Add(empAccount);
+
+        // Build LedgerTransaction
+        var transaction = new LedgerTransaction(
+            LedgerTransactionType.Payroll,
+            reference,
+            idempotencyKey: reference,
+            description: description ?? $"Payroll disbursement {reference}");
+        transaction.Complete(DateTime.UtcNow);
+
+        // Double-entry entries:
+        // DEBIT  Organization Wallet Account  (Amount)
+        // CREDIT Employee Wallet Account      (Amount)
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, orgAccount.Id, LedgerEntryDirection.Debit, amount, currency, 1),
+            new(transaction.Id, empAccount.Id, LedgerEntryDirection.Credit, amount, currency, 2)
+        };
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return transaction;
+    }
 }
 

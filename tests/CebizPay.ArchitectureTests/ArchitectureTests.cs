@@ -113,6 +113,27 @@ public sealed class ArchitectureTests
         Assert.True(domainResult.IsSuccessful, "Domain layer must not reference payment provider SDKs.");
         Assert.True(appResult.IsSuccessful, "Application layer must not reference payment provider SDKs.");
     }
+
+    [Fact]
+    public void DomainAndApplication_ShouldNotDependOnPayrollInfrastructureOrWorkers()
+    {
+        var domainResult = Types.InAssembly(typeof(Domain.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "CebizPay.Infrastructure.Payroll",
+                "CebizPay.Workers")
+            .GetResult();
+
+        var appResult = Types.InAssembly(typeof(Application.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "CebizPay.Infrastructure.Payroll",
+                "CebizPay.Workers")
+            .GetResult();
+
+        Assert.True(domainResult.IsSuccessful, "Domain layer must not depend on Payroll infrastructure or workers.");
+        Assert.True(appResult.IsSuccessful, "Application layer must not depend on Payroll infrastructure or workers.");
+    }
 }
 
 

@@ -160,4 +160,25 @@ public interface ILedgerPostingService
         FundingChannel channel,
         string? description = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an atomic corporate payroll disbursement from an organization wallet to an employee wallet.
+    /// Performs ordered row-level locking on both wallets to prevent deadlocks and double-spends.
+    /// Re-validates organization balance sufficiency after acquiring lock.
+    ///
+    /// Ledger entries created:
+    ///   DEBIT  Organization Wallet Account    amount
+    ///   CREDIT Employee Wallet Account        amount
+    ///
+    /// Updates organization balance (-amount) and employee balance (+amount).
+    /// Creates a LedgerTransaction (Type: Payroll, Status: Completed).
+    /// </summary>
+    Task<LedgerTransaction> PostPayrollDisbursementCoreAsync(
+        Guid organizationWalletId,
+        Guid employeeWalletId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default);
 }

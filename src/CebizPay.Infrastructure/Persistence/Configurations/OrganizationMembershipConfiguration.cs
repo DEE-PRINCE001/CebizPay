@@ -43,9 +43,32 @@ public sealed class OrganizationMembershipConfiguration : IEntityTypeConfigurati
         builder.Property(x => x.SuspensionReason)
             .HasMaxLength(500);
 
+        builder.Property(x => x.DepartmentId);
+        builder.Property(x => x.WorkforceRoleId);
+        builder.Property(x => x.SalaryLevelId);
+
+        builder.HasIndex(x => new { x.OrganizationId, x.DepartmentId });
+        builder.HasIndex(x => new { x.OrganizationId, x.WorkforceRoleId });
+        builder.HasIndex(x => new { x.OrganizationId, x.SalaryLevelId });
+
         builder.HasOne<Organization>()
             .WithMany()
             .HasForeignKey(x => x.OrganizationId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        builder.HasOne<Department>()
+            .WithMany()
+            .HasForeignKey(x => x.DepartmentId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne<WorkforceRole>()
+            .WithMany()
+            .HasForeignKey(x => x.WorkforceRoleId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne<SalaryLevel>()
+            .WithMany()
+            .HasForeignKey(x => x.SalaryLevelId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

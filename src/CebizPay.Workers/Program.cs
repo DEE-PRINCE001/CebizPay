@@ -22,6 +22,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddHostedService<Worker>();
 builder.Services.AddHostedService<OutboxPublisherWorker>();
 builder.Services.AddHostedService<PaymentReconciliationWorker>();
+builder.Services.AddHostedService<PayrollExecutionWorker>();
 
 var host = builder.Build();
 host.Run();

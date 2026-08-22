@@ -140,4 +140,30 @@ public static class AuditActions
     public const string CardFundingCompleted = "CARD_FUNDING_COMPLETED";
     /// <summary>Audit action when card funding fails.</summary>
     public const string CardFundingFailed = "CARD_FUNDING_FAILED";
+
+    // Payroll & Payment Vouchers
+    /// <summary>Audit action when a payroll batch is created.</summary>
+    public const string PayrollCreated = "PAYROLL_CREATED";
+    /// <summary>Audit action when payroll execution starts.</summary>
+    public const string PayrollStarted = "PAYROLL_STARTED";
+    /// <summary>Audit action when a payroll batch is fully completed.</summary>
+    public const string PayrollCompleted = "PAYROLL_COMPLETED";
+    /// <summary>Audit action when a payroll batch partially completes.</summary>
+    public const string PayrollPartiallyCompleted = "PAYROLL_PARTIALLY_COMPLETED";
+    /// <summary>Audit action when a payroll batch fails completely.</summary>
+    public const string PayrollFailed = "PAYROLL_FAILED";
+    /// <summary>Audit action when a payroll batch is cancelled.</summary>
+    public const string PayrollCancelled = "PAYROLL_CANCELLED";
+    /// <summary>Audit action when a payroll item starts execution.</summary>
+    public const string PayrollItemStarted = "PAYROLL_ITEM_STARTED";
+    /// <summary>Audit action when a payroll item completes successfully.</summary>
+    public const string PayrollItemCompleted = "PAYROLL_ITEM_COMPLETED";
+    /// <summary>Audit action when a payroll item fails.</summary>
+    public const string PayrollItemFailed = "PAYROLL_ITEM_FAILED";
+    /// <summary>Audit action when a payroll item is retried.</summary>
+    public const string PayrollItemRetried = "PAYROLL_ITEM_RETRIED";
+    /// <summary>Audit action when a payment voucher is created.</summary>
+    public const string PaymentVoucherCreated = "PAYMENT_VOUCHER_CREATED";
+    /// <summary>Audit action when payment voucher metadata is updated.</summary>
+    public const string PaymentVoucherMetadataUpdated = "PAYMENT_VOUCHER_METADATA_UPDATED";
 }
