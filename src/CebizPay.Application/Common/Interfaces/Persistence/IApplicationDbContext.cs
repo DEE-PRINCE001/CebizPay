@@ -97,6 +97,21 @@ public interface IApplicationDbContext
     /// <summary>Gets the payment vouchers entity set.</summary>
     IEntitySet<CebizPay.Domain.Payroll.Entities.PaymentVoucher> PaymentVouchers { get; }
 
+    /// <summary>Gets the corporate loan plans entity set.</summary>
+    IEntitySet<CebizPay.Domain.Loans.Entities.CorporateLoanPlan> CorporateLoanPlans { get; }
+
+    /// <summary>Gets the staff loan applications entity set.</summary>
+    IEntitySet<CebizPay.Domain.Loans.Entities.LoanApplication> LoanApplications { get; }
+
+    /// <summary>Gets the loan contracts entity set.</summary>
+    IEntitySet<CebizPay.Domain.Loans.Entities.LoanContract> LoanContracts { get; }
+
+    /// <summary>Gets the loan repayment schedule items entity set.</summary>
+    IEntitySet<CebizPay.Domain.Loans.Entities.LoanRepaymentScheduleItem> LoanRepaymentScheduleItems { get; }
+
+    /// <summary>Gets the standard individual loan policies entity set.</summary>
+    IEntitySet<CebizPay.Domain.Loans.Entities.StandardIndividualLoanPolicy> StandardIndividualLoanPolicies { get; }
+
     /// <summary>
     /// Saves changes asynchronously to the underlying database.
     /// </summary>

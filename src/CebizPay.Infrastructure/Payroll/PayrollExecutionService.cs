@@ -149,7 +149,46 @@ public sealed partial class PayrollExecutionService : IPayrollExecutionService
 
             _dbContext.PaymentVouchers.Add(voucher);
 
-            // 6. Mark PayrollItem Completed
+            // 6. Settle any attached Corporate Loan Repayment Deductions atomically
+            if (!string.IsNullOrWhiteSpace(item.DeductionsDetailJson))
+            {
+                try
+                {
+                    var deductionList = JsonSerializer.Deserialize<List<PayrollDeductionDetailDto>>(item.DeductionsDetailJson);
+                    if (deductionList != null)
+                    {
+                        foreach (var deduction in deductionList.Where(d => d.DeductionType == "CORPORATE_LOAN_REPAYMENT" && !string.IsNullOrEmpty(d.Reference)))
+                        {
+                            if (Guid.TryParse(deduction.Reference, out var installmentId))
+                            {
+                                var installment = await _dbContext.LoanRepaymentScheduleItems
+                                    .FirstOrDefaultAsync(s => s.Id == installmentId, cancellationToken)
+                                    .ConfigureAwait(false);
+
+                                if (installment != null && installment.Status != Domain.Loans.Enums.LoanRepaymentStatus.Paid)
+                                {
+                                    var loanContract = await _dbContext.LoanContracts
+                                        .Include(c => c.RepaymentSchedule)
+                                        .FirstOrDefaultAsync(c => c.Id == installment.LoanContractId, cancellationToken)
+                                        .ConfigureAwait(false);
+
+                                    if (loanContract != null)
+                                    {
+                                        loanContract.ApplyRepayment(installment.InstallmentNumber, deduction.Amount, item.Id, ledgerTxn.Id);
+                                        LogLoanInstallmentSettled(_logger, installment.InstallmentNumber, deduction.Amount, loanContract.Id, item.Id);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogLoanDeductionParseError(_logger, item.Id, ex);
+                }
+            }
+
+            // 7. Mark PayrollItem Completed
             item.MarkCompleted(ledgerTxn.Id, voucher.Id);
 
             // 7. Write Audit and Outbox events
@@ -266,4 +305,10 @@ public sealed partial class PayrollExecutionService : IPayrollExecutionService
 
     [LoggerMessage(EventId = 4, Level = LogLevel.Error, Message = "Failed to persist failure state for PayrollItem {ItemId}")]
     private static partial void LogPayrollItemFailurePersistenceError(ILogger logger, Guid itemId, Exception exception);
+
+    [LoggerMessage(EventId = 5, Level = LogLevel.Information, Message = "Settled loan repayment installment #{Num} ({Amount}) for Contract {ContractId} via Payroll Item {ItemId}")]
+    private static partial void LogLoanInstallmentSettled(ILogger logger, int num, decimal amount, Guid contractId, Guid itemId);
+
+    [LoggerMessage(EventId = 6, Level = LogLevel.Warning, Message = "Failed to parse deduction details or settle loan schedule item for item {ItemId}")]
+    private static partial void LogLoanDeductionParseError(ILogger logger, Guid itemId, Exception exception);
 }

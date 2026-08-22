@@ -166,4 +166,32 @@ public static class AuditActions
     public const string PaymentVoucherCreated = "PAYMENT_VOUCHER_CREATED";
     /// <summary>Audit action when payment voucher metadata is updated.</summary>
     public const string PaymentVoucherMetadataUpdated = "PAYMENT_VOUCHER_METADATA_UPDATED";
+
+    // Credit & Loans
+    /// <summary>Audit action when a corporate loan plan is created.</summary>
+    public const string LoanPlanCreated = "LOAN_PLAN_CREATED";
+    /// <summary>Audit action when a corporate loan plan is updated.</summary>
+    public const string LoanPlanUpdated = "LOAN_PLAN_UPDATED";
+    /// <summary>Audit action when a staff loan application is submitted.</summary>
+    public const string LoanApplicationSubmitted = "LOAN_APPLICATION_SUBMITTED";
+    /// <summary>Audit action when a loan application is placed under review.</summary>
+    public const string LoanApplicationUnderReview = "LOAN_APPLICATION_UNDER_REVIEW";
+    /// <summary>Audit action when a loan application is approved.</summary>
+    public const string LoanApplicationApproved = "LOAN_APPLICATION_APPROVED";
+    /// <summary>Audit action when a loan application is declined.</summary>
+    public const string LoanApplicationDeclined = "LOAN_APPLICATION_DECLINED";
+    /// <summary>Audit action when a loan application is cancelled.</summary>
+    public const string LoanApplicationCancelled = "LOAN_APPLICATION_CANCELLED";
+    /// <summary>Audit action when a loan contract is created.</summary>
+    public const string LoanContractCreated = "LOAN_CONTRACT_CREATED";
+    /// <summary>Audit action when a loan is disbursed to employee wallet.</summary>
+    public const string LoanDisbursed = "LOAN_DISBURSED";
+    /// <summary>Audit action when loan repayment schedule is generated.</summary>
+    public const string LoanRepaymentScheduled = "LOAN_REPAYMENT_SCHEDULED";
+    /// <summary>Audit action when a loan repayment installment is paid.</summary>
+    public const string LoanRepaymentPaid = "LOAN_REPAYMENT_PAID";
+    /// <summary>Audit action when a loan repayment installment is missed.</summary>
+    public const string LoanRepaymentMissed = "LOAN_REPAYMENT_MISSED";
+    /// <summary>Audit action when a payroll loan is converted to a standard individual loan upon staff offboarding.</summary>
+    public const string LoanConvertedToIndividual = "LOAN_CONVERTED_TO_INDIVIDUAL";
 }

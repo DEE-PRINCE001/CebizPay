@@ -45,4 +45,12 @@ public static class AuditResourceTypes
     public const string PayrollItem = "PAYROLL_ITEM";
     /// <summary>Payment voucher resource type.</summary>
     public const string PaymentVoucher = "PAYMENT_VOUCHER";
+    /// <summary>Corporate loan plan resource type.</summary>
+    public const string LoanPlan = "LOAN_PLAN";
+    /// <summary>Staff loan application resource type.</summary>
+    public const string LoanApplication = "LOAN_APPLICATION";
+    /// <summary>Loan contract resource type.</summary>
+    public const string LoanContract = "LOAN_CONTRACT";
+    /// <summary>Loan repayment installment resource type.</summary>
+    public const string LoanRepayment = "LOAN_REPAYMENT";
 }

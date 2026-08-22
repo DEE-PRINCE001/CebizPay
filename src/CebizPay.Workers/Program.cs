@@ -23,6 +23,7 @@ builder.Services.AddHostedService<Worker>();
 builder.Services.AddHostedService<OutboxPublisherWorker>();
 builder.Services.AddHostedService<PaymentReconciliationWorker>();
 builder.Services.AddHostedService<PayrollExecutionWorker>();
+builder.Services.AddHostedService<LoanRepaymentWorker>();
 
 var host = builder.Build();
 host.Run();

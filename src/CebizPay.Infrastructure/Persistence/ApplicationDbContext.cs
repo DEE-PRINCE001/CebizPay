@@ -114,6 +114,21 @@ public class ApplicationDbContext
     /// <summary>Gets the payment vouchers entity set.</summary>
     public DbSet<CebizPay.Domain.Payroll.Entities.PaymentVoucher> PaymentVouchers => Set<CebizPay.Domain.Payroll.Entities.PaymentVoucher>();
 
+    /// <summary>Gets the corporate loan plans entity set.</summary>
+    public DbSet<CebizPay.Domain.Loans.Entities.CorporateLoanPlan> CorporateLoanPlans => Set<CebizPay.Domain.Loans.Entities.CorporateLoanPlan>();
+
+    /// <summary>Gets the staff loan applications entity set.</summary>
+    public DbSet<CebizPay.Domain.Loans.Entities.LoanApplication> LoanApplications => Set<CebizPay.Domain.Loans.Entities.LoanApplication>();
+
+    /// <summary>Gets the loan contracts entity set.</summary>
+    public DbSet<CebizPay.Domain.Loans.Entities.LoanContract> LoanContracts => Set<CebizPay.Domain.Loans.Entities.LoanContract>();
+
+    /// <summary>Gets the loan repayment schedule items entity set.</summary>
+    public DbSet<CebizPay.Domain.Loans.Entities.LoanRepaymentScheduleItem> LoanRepaymentScheduleItems => Set<CebizPay.Domain.Loans.Entities.LoanRepaymentScheduleItem>();
+
+    /// <summary>Gets the standard individual loan policies entity set.</summary>
+    public DbSet<CebizPay.Domain.Loans.Entities.StandardIndividualLoanPolicy> StandardIndividualLoanPolicies => Set<CebizPay.Domain.Loans.Entities.StandardIndividualLoanPolicy>();
+
     // Explicit IApplicationDbContext implementations returning IEntitySet<T>
     IEntitySet<IndividualProfile> IApplicationDbContext.IndividualProfiles => new EntitySet<IndividualProfile>(IndividualProfiles);
     IEntitySet<AdminProfile> IApplicationDbContext.AdminProfiles => new EntitySet<AdminProfile>(AdminProfiles);
@@ -144,6 +159,11 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollItem> IApplicationDbContext.PayrollItems => new EntitySet<CebizPay.Domain.Payroll.Entities.PayrollItem>(PayrollItems);
     IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollExecutionAttempt> IApplicationDbContext.PayrollExecutionAttempts => new EntitySet<CebizPay.Domain.Payroll.Entities.PayrollExecutionAttempt>(PayrollExecutionAttempts);
     IEntitySet<CebizPay.Domain.Payroll.Entities.PaymentVoucher> IApplicationDbContext.PaymentVouchers => new EntitySet<CebizPay.Domain.Payroll.Entities.PaymentVoucher>(PaymentVouchers);
+    IEntitySet<CebizPay.Domain.Loans.Entities.CorporateLoanPlan> IApplicationDbContext.CorporateLoanPlans => new EntitySet<CebizPay.Domain.Loans.Entities.CorporateLoanPlan>(CorporateLoanPlans);
+    IEntitySet<CebizPay.Domain.Loans.Entities.LoanApplication> IApplicationDbContext.LoanApplications => new EntitySet<CebizPay.Domain.Loans.Entities.LoanApplication>(LoanApplications);
+    IEntitySet<CebizPay.Domain.Loans.Entities.LoanContract> IApplicationDbContext.LoanContracts => new EntitySet<CebizPay.Domain.Loans.Entities.LoanContract>(LoanContracts);
+    IEntitySet<CebizPay.Domain.Loans.Entities.LoanRepaymentScheduleItem> IApplicationDbContext.LoanRepaymentScheduleItems => new EntitySet<CebizPay.Domain.Loans.Entities.LoanRepaymentScheduleItem>(LoanRepaymentScheduleItems);
+    IEntitySet<CebizPay.Domain.Loans.Entities.StandardIndividualLoanPolicy> IApplicationDbContext.StandardIndividualLoanPolicies => new EntitySet<CebizPay.Domain.Loans.Entities.StandardIndividualLoanPolicy>(StandardIndividualLoanPolicies);
 
     /// <inheritdoc/>
     async Task<IDbTransaction> IApplicationDbContext.BeginTransactionAsync(CancellationToken cancellationToken)

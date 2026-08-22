@@ -138,11 +138,18 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IVirtualAccountService, CebizPay.Infrastructure.Payments.VirtualAccounts.VirtualAccountService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardFundingService, CebizPay.Infrastructure.Payments.Funding.CardFundingService>();
 
-        // Configure Payroll services
-        services.AddScoped<CebizPay.Application.Common.Interfaces.Payroll.IPayrollDeductionProvider, CebizPay.Infrastructure.Payroll.NullPayrollDeductionProvider>();
+        // Configure Payroll & Loan services
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payroll.IPayrollDeductionProvider, CebizPay.Infrastructure.Payroll.PayrollLoanDeductionProvider>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payroll.IPayrollCalculationService, CebizPay.Infrastructure.Payroll.PayrollCalculationService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payroll.IPayrollExecutionService, CebizPay.Infrastructure.Payroll.PayrollExecutionService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payroll.IPayrollBatchService, CebizPay.Infrastructure.Payroll.PayrollBatchService>();
+
+        // Configure Credit & Loan services
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Loans.ILoanCalculationService, CebizPay.Infrastructure.Loans.LoanCalculationService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Loans.ILoanUnderwritingService, CebizPay.Infrastructure.Loans.LoanUnderwritingService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Loans.ILoanPlanService, CebizPay.Infrastructure.Loans.LoanPlanService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Loans.ILoanApplicationService, CebizPay.Infrastructure.Loans.LoanApplicationService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Loans.ILoanContractService, CebizPay.Infrastructure.Loans.LoanContractService>();
 
         // Configure Redis
         var redisOptions = configuration.GetSection(RedisOptions.SectionName).Get<RedisOptions>();

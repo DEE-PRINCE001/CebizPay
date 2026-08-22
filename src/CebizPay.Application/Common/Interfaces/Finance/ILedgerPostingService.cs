@@ -181,4 +181,52 @@ public interface ILedgerPostingService
         string reference,
         string? description = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ensures that a platform loan fund / disbursement clearing account exists for a given currency.
+    /// </summary>
+    Task<LedgerAccount> GetOrCreateLoanFundAccountAsync(Currency currency, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ensures that a platform loan receivable account exists for a given currency.
+    /// </summary>
+    Task<LedgerAccount> GetOrCreateLoanReceivableAccountAsync(Currency currency, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an atomic corporate loan principal disbursement from the system loan funding account to an employee wallet.
+    /// Performs row-level locking on the recipient wallet.
+    ///
+    /// Ledger entries created:
+    ///   DEBIT  Loan Fund / Disbursement Account    amount
+    ///   CREDIT Employee Wallet Account             amount
+    ///
+    /// Materializes recipient employee wallet balance (+amount).
+    /// Creates a LedgerTransaction (Type: LoanDisbursement, Status: Completed).
+    /// </summary>
+    Task<LedgerTransaction> PostLoanDisbursementCoreAsync(
+        Guid employeeWalletId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an atomic loan direct repayment from an employee wallet to the loan receivable account.
+    /// Performs row-level locking on the employee wallet and verifies balance sufficiency.
+    ///
+    /// Ledger entries created:
+    ///   DEBIT  Employee Wallet Account    amount
+    ///   CREDIT Loan Receivable Account    amount
+    ///
+    /// Deducts amount from employee wallet balance (-amount).
+    /// Creates a LedgerTransaction (Type: LoanRepayment, Status: Completed).
+    /// </summary>
+    Task<LedgerTransaction> PostLoanRepaymentCoreAsync(
+        Guid employeeWalletId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default);
 }

@@ -113,14 +113,19 @@ public class OrganizationMembership
     /// </summary>
     public bool HasPermission(string permission)
     {
-        if (Status != MembershipStatus.Active) return false;
-        if (permission == Permissions.Permissions.WalletTransfer || permission == Permissions.Permissions.PayrollExecute)
+        if (permission == Permissions.Permissions.WalletTransfer || permission == Permissions.Permissions.PayrollExecute || permission == Permissions.Permissions.LoanManagePlan)
         {
             return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin || Role == MembershipRoleType.PayrollManager;
         }
-        if (permission == Permissions.Permissions.PayrollView || permission == Permissions.Permissions.WalletView)
+        if (permission == Permissions.Permissions.LoanApprove || permission == Permissions.Permissions.LoanDecide)
         {
-            return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin || Role == MembershipRoleType.PayrollManager || Role == MembershipRoleType.HrManager;
+            return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin;
+        }
+        if (permission == Permissions.Permissions.PayrollView || permission == Permissions.Permissions.WalletView ||
+            permission == Permissions.Permissions.LoanView || permission == Permissions.Permissions.LoanRepaymentView ||
+            permission == Permissions.Permissions.LoanCreate)
+        {
+            return true;
         }
         return Role == MembershipRoleType.Owner;
     }

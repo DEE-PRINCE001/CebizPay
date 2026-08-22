@@ -968,5 +968,197 @@ public sealed class LedgerPostingService : ILedgerPostingService
         await _dbContext.SaveChangesAsync(cancellationToken);
         return transaction;
     }
+
+    /// <inheritdoc/>
+    public async Task<LedgerAccount> GetOrCreateLoanFundAccountAsync(Currency currency, CancellationToken cancellationToken = default)
+    {
+        var existing = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency && l.AccountName.Contains("LOAN FUND"), cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency && l.AccountName.Contains("LOAN FUND"));
+
+        if (existing != null)
+            return existing;
+
+        var accountName = $"{currency} PLATFORM LOAN FUND";
+        var account = LedgerAccount.CreateSystemAccount(accountName, currency, LedgerAccountType.PlatformClearing);
+        _dbContext.LedgerAccounts.Add(account);
+
+        if (_dbContext.Database.CurrentTransaction == null)
+        {
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                var concurrent = await _dbContext.LedgerAccounts
+                    .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency && l.AccountName.Contains("LOAN FUND"), cancellationToken);
+                if (concurrent != null)
+                    return concurrent;
+                throw;
+            }
+        }
+
+        return account;
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerAccount> GetOrCreateLoanReceivableAccountAsync(Currency currency, CancellationToken cancellationToken = default)
+    {
+        var existing = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency && l.AccountName.Contains("LOAN RECEIVABLE"), cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency && l.AccountName.Contains("LOAN RECEIVABLE"));
+
+        if (existing != null)
+            return existing;
+
+        var accountName = $"{currency} PLATFORM LOAN RECEIVABLE";
+        var account = LedgerAccount.CreateSystemAccount(accountName, currency, LedgerAccountType.PlatformClearing);
+        _dbContext.LedgerAccounts.Add(account);
+
+        if (_dbContext.Database.CurrentTransaction == null)
+        {
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                var concurrent = await _dbContext.LedgerAccounts
+                    .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency && l.AccountName.Contains("LOAN RECEIVABLE"), cancellationToken);
+                if (concurrent != null)
+                    return concurrent;
+                throw;
+            }
+        }
+
+        return account;
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerTransaction> PostLoanDisbursementCoreAsync(
+        Guid employeeWalletId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (amount <= 0)
+            throw new ArgumentException("Disbursement amount must be positive.", nameof(amount));
+
+        // Row-level lock on employee wallet
+        var empWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", employeeWalletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == employeeWalletId, cancellationToken);
+
+        if (empWallet == null)
+            throw new InvalidOperationException($"Employee wallet '{employeeWalletId}' not found.");
+        if (empWallet.Currency != currency)
+            throw new InvalidOperationException($"Employee wallet currency '{empWallet.Currency}' does not match loan currency '{currency}'.");
+        if (empWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"Employee wallet is {empWallet.Status}.");
+
+        // Mutate employee wallet balance
+        empWallet.Credit(amount);
+
+        // Resolve system loan fund account and employee ledger account
+        var loanFundAccount = await GetOrCreateLoanFundAccountAsync(currency, cancellationToken);
+
+        var empAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == employeeWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.WalletId == employeeWalletId)
+            ?? LedgerAccount.CreateWalletAccount(employeeWalletId, $"EMP WALLET {employeeWalletId:N}", currency);
+
+        if (_dbContext.Entry(empAccount).State == EntityState.Detached)
+            _dbContext.LedgerAccounts.Add(empAccount);
+
+        var transaction = new LedgerTransaction(
+            LedgerTransactionType.LoanDisbursement,
+            reference,
+            idempotencyKey: reference,
+            description: description ?? $"Loan disbursement {reference}");
+        transaction.Complete(DateTime.UtcNow);
+
+        // Double-entry entries:
+        // DEBIT  Platform Loan Fund Account (amount)
+        // CREDIT Employee Wallet Account     (amount)
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, loanFundAccount.Id, LedgerEntryDirection.Debit, amount, currency, 1),
+            new(transaction.Id, empAccount.Id, LedgerEntryDirection.Credit, amount, currency, 2)
+        };
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return transaction;
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerTransaction> PostLoanRepaymentCoreAsync(
+        Guid employeeWalletId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (amount <= 0)
+            throw new ArgumentException("Repayment amount must be positive.", nameof(amount));
+
+        // Row-level lock on employee wallet
+        var empWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", employeeWalletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == employeeWalletId, cancellationToken);
+
+        if (empWallet == null)
+            throw new InvalidOperationException($"Employee wallet '{employeeWalletId}' not found.");
+        if (empWallet.Currency != currency)
+            throw new InvalidOperationException($"Employee wallet currency '{empWallet.Currency}' does not match loan currency '{currency}'.");
+        if (empWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"Employee wallet is {empWallet.Status}.");
+        if (empWallet.AvailableBalance < amount)
+            throw new InvalidOperationException($"Insufficient employee wallet balance for loan repayment. Required: {amount:F2}, Available: {empWallet.AvailableBalance:F2}.");
+
+        // Mutate employee wallet balance
+        empWallet.Debit(amount);
+
+        // Resolve system loan receivable account and employee ledger account
+        var loanReceivableAccount = await GetOrCreateLoanReceivableAccountAsync(currency, cancellationToken);
+
+        var empAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == employeeWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.WalletId == employeeWalletId)
+            ?? LedgerAccount.CreateWalletAccount(employeeWalletId, $"EMP WALLET {employeeWalletId:N}", currency);
+
+        if (_dbContext.Entry(empAccount).State == EntityState.Detached)
+            _dbContext.LedgerAccounts.Add(empAccount);
+
+        var transaction = new LedgerTransaction(
+            LedgerTransactionType.LoanRepayment,
+            reference,
+            idempotencyKey: reference,
+            description: description ?? $"Loan repayment {reference}");
+        transaction.Complete(DateTime.UtcNow);
+
+        // Double-entry entries:
+        // DEBIT  Employee Wallet Account     (amount)
+        // CREDIT Platform Loan Receivable     (amount)
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, empAccount.Id, LedgerEntryDirection.Debit, amount, currency, 1),
+            new(transaction.Id, loanReceivableAccount.Id, LedgerEntryDirection.Credit, amount, currency, 2)
+        };
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return transaction;
+    }
 }
 

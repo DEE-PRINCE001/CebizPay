@@ -78,6 +78,16 @@ public static class Permissions
     // Loan & PIN Management
     /// <summary>Approve or decline organization loan applications.</summary>
     public const string LoanDecide = "Loan.Decide";
+    /// <summary>View loan applications, plans, and contracts.</summary>
+    public const string LoanView = "Loan.View";
+    /// <summary>Create loan applications.</summary>
+    public const string LoanCreate = "Loan.Create";
+    /// <summary>Approve loan applications.</summary>
+    public const string LoanApprove = "Loan.Approve";
+    /// <summary>Manage organization corporate loan plans.</summary>
+    public const string LoanManagePlan = "Loan.ManagePlan";
+    /// <summary>View loan repayment schedules and tracking.</summary>
+    public const string LoanRepaymentView = "Loan.RepaymentView";
     /// <summary>Manage transaction PIN settings.</summary>
     public const string PinManage = "Pin.Manage";
 
@@ -106,12 +116,12 @@ public static class Permissions
     public const string FeesManageBankTransferPolicy = "Fees.ManageBankTransferPolicy";
 
     /// <summary>
-    /// Default read-only permissions assigned to Read-Only Admin / Auditor role.
+    /// Read-only permissions for platform auditor / view-only roles.
     /// </summary>
     public static readonly IReadOnlySet<string> ReadOnlyAdminPermissions = new HashSet<string>
     {
         KycView, KybView, OrganizationsView, TransactionsView, PayrollLogsView, AuditView,
-        StaffView, PayrollView, WalletView, ErpView
+        StaffView, PayrollView, WalletView, ErpView, LoanView, LoanRepaymentView
     };
 
     /// <summary>
@@ -121,7 +131,8 @@ public static class Permissions
     {
         KybView, StaffView, StaffManage, StaffInvite, DepartmentsManage, RolesManage,
         SalaryLevelsManage, PayrollView, PayrollExecute, WalletView, WalletFund, WalletTransfer, WalletTransferBank,
-        LoanDecide, PinManage, AnnouncementsPublishWorkplace, ErpView, ErpManage
+        LoanDecide, LoanView, LoanCreate, LoanApprove, LoanManagePlan, LoanRepaymentView,
+        PinManage, AnnouncementsPublishWorkplace, ErpView, ErpManage
     };
 
     /// <summary>
@@ -129,7 +140,8 @@ public static class Permissions
     /// </summary>
     public static readonly IReadOnlySet<string> FinanceManagerPermissions = new HashSet<string>
     {
-        WalletView, WalletFund, WalletTransfer, WalletTransferBank, PayrollView, PayrollExecute, ErpView, TransactionsView
+        WalletView, WalletFund, WalletTransfer, WalletTransferBank, PayrollView, PayrollExecute, ErpView, TransactionsView,
+        LoanView, LoanRepaymentView
     };
 
     /// <summary>
@@ -137,6 +149,7 @@ public static class Permissions
     /// </summary>
     public static readonly IReadOnlySet<string> HrManagerPermissions = new HashSet<string>
     {
-        StaffView, StaffManage, StaffInvite, DepartmentsManage, RolesManage, SalaryLevelsManage, AnnouncementsPublishWorkplace
+        StaffView, StaffManage, StaffInvite, DepartmentsManage, RolesManage, SalaryLevelsManage, AnnouncementsPublishWorkplace,
+        LoanView
     };
 }
