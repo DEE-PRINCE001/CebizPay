@@ -145,11 +145,31 @@ public static class Permissions
     /// <summary>Publish organization workplace announcements.</summary>
     public const string AnnouncementsPublishWorkplace = "Announcements.Publish.Workplace";
 
-    // ERP Management
+    // ERP Management & Catalogs
     /// <summary>View organization ERP reports and financial metrics.</summary>
     public const string ErpView = "Erp.View";
     /// <summary>Manage ERP settings and configurations.</summary>
     public const string ErpManage = "Erp.Manage";
+    /// <summary>View inventory items, stock levels, and movements.</summary>
+    public const string InventoryView = "Inventory.View";
+    /// <summary>Create and manage inventory items.</summary>
+    public const string InventoryManage = "Inventory.Manage";
+    /// <summary>Execute inventory stock in, stock out, and adjustments.</summary>
+    public const string InventoryAdjust = "Inventory.Adjust";
+    /// <summary>Configure organization inventory valuation policies (WAC / FIFO).</summary>
+    public const string InventoryValuationManage = "Inventory.ValuationManage";
+    /// <summary>View organization services catalog.</summary>
+    public const string ServiceView = "Service.View";
+    /// <summary>Create, update, and manage services catalog.</summary>
+    public const string ServiceManage = "Service.Manage";
+    /// <summary>View organization suppliers.</summary>
+    public const string SupplierView = "Supplier.View";
+    /// <summary>Create, update, and manage suppliers.</summary>
+    public const string SupplierManage = "Supplier.Manage";
+    /// <summary>View organization customers.</summary>
+    public const string CustomerView = "Customer.View";
+    /// <summary>Create, update, and manage customers.</summary>
+    public const string CustomerManage = "Customer.Manage";
 
     // Platform Fee Policy (Super Admin only)
     /// <summary>
@@ -176,7 +196,8 @@ public static class Permissions
     {
         KycView, KybView, OrganizationsView, TransactionsView, PayrollLogsView, AuditView,
         StaffView, PayrollView, WalletView, ErpView, LoanView, LoanRepaymentView,
-        SavingsView, ThriftView, ThriftPayoutView, VasView, RecruitmentView
+        SavingsView, ThriftView, ThriftPayoutView, VasView, RecruitmentView,
+        InventoryView, ServiceView, SupplierView, CustomerView
     };
 
     /// <summary>
@@ -193,6 +214,8 @@ public static class Permissions
         SavingsView, SavingsCreate, SavingsContribute, SavingsWithdraw, SavingsManagePlan,
         ThriftView, ThriftCreate, ThriftInvite, ThriftManage, ThriftContribute, ThriftPayoutView,
         VasView, VasPurchase,
+        InventoryView, InventoryManage, InventoryAdjust, InventoryValuationManage,
+        ServiceView, ServiceManage, SupplierView, SupplierManage, CustomerView, CustomerManage,
         PinManage, AnnouncementsPublishWorkplace, ErpView, ErpManage
     };
 
@@ -202,7 +225,9 @@ public static class Permissions
     public static readonly IReadOnlySet<string> FinanceManagerPermissions = new HashSet<string>
     {
         WalletView, WalletFund, WalletTransfer, WalletTransferBank, PayrollView, PayrollExecute, ErpView, TransactionsView,
-        LoanView, LoanRepaymentView, SavingsView, SavingsManagePlan, ThriftView, ThriftPayoutView, VasView, VasPurchase
+        LoanView, LoanRepaymentView, SavingsView, SavingsManagePlan, ThriftView, ThriftPayoutView, VasView, VasPurchase,
+        InventoryView, InventoryManage, InventoryAdjust, InventoryValuationManage,
+        ServiceView, ServiceManage, SupplierView, SupplierManage, CustomerView, CustomerManage
     };
 
     /// <summary>

@@ -97,4 +97,18 @@ public static class AuditResourceTypes
     // Value-Added Services (VAS)
     /// <summary>VAS transaction resource type.</summary>
     public const string VasTransaction = "VAS_TRANSACTION";
+
+    // ERP Inventory, Services, Suppliers & Customers
+    /// <summary>Inventory item resource type.</summary>
+    public const string InventoryItem = "INVENTORY_ITEM";
+    /// <summary>Stock movement transaction resource type.</summary>
+    public const string StockMovement = "STOCK_MOVEMENT";
+    /// <summary>Inventory valuation policy resource type.</summary>
+    public const string InventoryValuationPolicy = "INVENTORY_VALUATION_POLICY";
+    /// <summary>ERP service catalog resource type.</summary>
+    public const string ErpService = "ERP_SERVICE";
+    /// <summary>Supplier resource type.</summary>
+    public const string Supplier = "SUPPLIER";
+    /// <summary>Customer resource type.</summary>
+    public const string Customer = "CUSTOMER";
 }

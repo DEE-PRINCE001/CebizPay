@@ -1,5 +1,6 @@
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Domain.Entities;
+using CebizPay.Domain.Erp.Entities;
 using CebizPay.Infrastructure.Identity;
 using CebizPay.Infrastructure.Persistence.Outbox;
 using Microsoft.AspNetCore.Identity;
@@ -56,6 +57,27 @@ public class ApplicationDbContext
 
     /// <summary>Gets the recruitment applications entity set.</summary>
     public DbSet<RecruitmentApplication> RecruitmentApplications => Set<RecruitmentApplication>();
+
+    /// <summary>Gets the inventory items entity set.</summary>
+    public DbSet<InventoryItem> InventoryItems => Set<InventoryItem>();
+
+    /// <summary>Gets the inventory valuation policies entity set.</summary>
+    public DbSet<InventoryValuationPolicy> InventoryValuationPolicies => Set<InventoryValuationPolicy>();
+
+    /// <summary>Gets the inventory cost layers entity set.</summary>
+    public DbSet<InventoryCostLayer> InventoryCostLayers => Set<InventoryCostLayer>();
+
+    /// <summary>Gets the stock movements entity set.</summary>
+    public DbSet<StockMovement> StockMovements => Set<StockMovement>();
+
+    /// <summary>Gets the ERP services entity set.</summary>
+    public DbSet<ErpService> ErpServices => Set<ErpService>();
+
+    /// <summary>Gets the suppliers entity set.</summary>
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+
+    /// <summary>Gets the customers entity set.</summary>
+    public DbSet<Customer> Customers => Set<Customer>();
 
     /// <summary>Gets the KYC documents entity set.</summary>
     public DbSet<KycDocument> KycDocuments => Set<KycDocument>();
@@ -185,6 +207,13 @@ public class ApplicationDbContext
     IEntitySet<StaffInvitation> IApplicationDbContext.StaffInvitations => new EntitySet<StaffInvitation>(StaffInvitations);
     IEntitySet<JobPosting> IApplicationDbContext.JobPostings => new EntitySet<JobPosting>(JobPostings);
     IEntitySet<RecruitmentApplication> IApplicationDbContext.RecruitmentApplications => new EntitySet<RecruitmentApplication>(RecruitmentApplications);
+    IEntitySet<InventoryItem> IApplicationDbContext.InventoryItems => new EntitySet<InventoryItem>(InventoryItems);
+    IEntitySet<InventoryValuationPolicy> IApplicationDbContext.InventoryValuationPolicies => new EntitySet<InventoryValuationPolicy>(InventoryValuationPolicies);
+    IEntitySet<InventoryCostLayer> IApplicationDbContext.InventoryCostLayers => new EntitySet<InventoryCostLayer>(InventoryCostLayers);
+    IEntitySet<StockMovement> IApplicationDbContext.StockMovements => new EntitySet<StockMovement>(StockMovements);
+    IEntitySet<ErpService> IApplicationDbContext.ErpServices => new EntitySet<ErpService>(ErpServices);
+    IEntitySet<Supplier> IApplicationDbContext.Suppliers => new EntitySet<Supplier>(Suppliers);
+    IEntitySet<Customer> IApplicationDbContext.Customers => new EntitySet<Customer>(Customers);
     IEntitySet<KycDocument> IApplicationDbContext.KycDocuments => new EntitySet<KycDocument>(KycDocuments);
     IEntitySet<KybDetail> IApplicationDbContext.KybDetails => new EntitySet<KybDetail>(KybDetails);
     IEntitySet<AuditLog> IApplicationDbContext.AuditLogs => new EntitySet<AuditLog>(AuditLogs);

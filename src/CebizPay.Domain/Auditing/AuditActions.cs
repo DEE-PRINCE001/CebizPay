@@ -312,4 +312,40 @@ public static class AuditActions
     public const string VasPurchaseReversed = "VAS_PURCHASE_REVERSED";
     /// <summary>Audit action when a VAS transaction is resolved via background reconciliation.</summary>
     public const string VasPurchaseReconciled = "VAS_PURCHASE_RECONCILED";
+
+    // ERP Inventory, Services, Suppliers & Customers
+    /// <summary>Audit action when an inventory item is created.</summary>
+    public const string InventoryItemCreated = "INVENTORY_ITEM_CREATED";
+    /// <summary>Audit action when an inventory item is updated.</summary>
+    public const string InventoryItemUpdated = "INVENTORY_ITEM_UPDATED";
+    /// <summary>Audit action when an inventory item is deactivated or soft-deleted.</summary>
+    public const string InventoryItemDeactivated = "INVENTORY_ITEM_DEACTIVATED";
+    /// <summary>Audit action when incoming stock is received.</summary>
+    public const string StockReceived = "STOCK_RECEIVED";
+    /// <summary>Audit action when stock is issued out.</summary>
+    public const string StockIssued = "STOCK_ISSUED";
+    /// <summary>Audit action when stock quantity is manually adjusted.</summary>
+    public const string StockAdjusted = "STOCK_ADJUSTED";
+    /// <summary>Audit action when an inventory valuation policy is initially created.</summary>
+    public const string InventoryValuationPolicyCreated = "INVENTORY_VALUATION_POLICY_CREATED";
+    /// <summary>Audit action when an organization's active inventory valuation policy is changed (WAC / FIFO).</summary>
+    public const string InventoryValuationPolicyChanged = "INVENTORY_VALUATION_POLICY_CHANGED";
+    /// <summary>Audit action when an ERP service is created.</summary>
+    public const string ServiceCreated = "SERVICE_CREATED";
+    /// <summary>Audit action when an ERP service is updated.</summary>
+    public const string ServiceUpdated = "SERVICE_UPDATED";
+    /// <summary>Audit action when an ERP service is deactivated or deleted.</summary>
+    public const string ServiceDeleted = "SERVICE_DELETED";
+    /// <summary>Audit action when a supplier is created.</summary>
+    public const string SupplierCreated = "SUPPLIER_CREATED";
+    /// <summary>Audit action when a supplier is updated.</summary>
+    public const string SupplierUpdated = "SUPPLIER_UPDATED";
+    /// <summary>Audit action when a supplier is deactivated or deleted.</summary>
+    public const string SupplierDeleted = "SUPPLIER_DELETED";
+    /// <summary>Audit action when a customer is created.</summary>
+    public const string CustomerCreated = "CUSTOMER_CREATED";
+    /// <summary>Audit action when a customer is updated.</summary>
+    public const string CustomerUpdated = "CUSTOMER_UPDATED";
+    /// <summary>Audit action when a customer is deactivated or deleted.</summary>
+    public const string CustomerDeleted = "CUSTOMER_DELETED";
 }

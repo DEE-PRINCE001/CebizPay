@@ -1,4 +1,5 @@
 using CebizPay.Domain.Entities;
+using CebizPay.Domain.Erp.Entities;
 using CebizPay.Domain.Finance.Entities;
 using CebizPay.Domain.Payments.Entities;
 
@@ -39,6 +40,27 @@ public interface IApplicationDbContext
 
     /// <summary>Gets the recruitment applications entity set.</summary>
     IEntitySet<RecruitmentApplication> RecruitmentApplications { get; }
+
+    /// <summary>Gets the inventory items entity set.</summary>
+    IEntitySet<InventoryItem> InventoryItems { get; }
+
+    /// <summary>Gets the inventory valuation policies entity set.</summary>
+    IEntitySet<InventoryValuationPolicy> InventoryValuationPolicies { get; }
+
+    /// <summary>Gets the inventory cost layers entity set.</summary>
+    IEntitySet<InventoryCostLayer> InventoryCostLayers { get; }
+
+    /// <summary>Gets the stock movements entity set.</summary>
+    IEntitySet<StockMovement> StockMovements { get; }
+
+    /// <summary>Gets the ERP services entity set.</summary>
+    IEntitySet<ErpService> ErpServices { get; }
+
+    /// <summary>Gets the suppliers entity set.</summary>
+    IEntitySet<Supplier> Suppliers { get; }
+
+    /// <summary>Gets the customers entity set.</summary>
+    IEntitySet<Customer> Customers { get; }
 
     /// <summary>Gets the KYC documents entity set.</summary>
     IEntitySet<KycDocument> KycDocuments { get; }
