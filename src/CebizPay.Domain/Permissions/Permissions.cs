@@ -67,6 +67,18 @@ public static class Permissions
     /// <summary>Manage organization salary levels.</summary>
     public const string SalaryLevelsManage = "SalaryLevels.Manage";
 
+    // Recruitment & Job Postings (Org-scoped)
+    /// <summary>View organization job postings and applications.</summary>
+    public const string RecruitmentView = "Recruitment.View";
+    /// <summary>Create draft job postings.</summary>
+    public const string RecruitmentCreate = "Recruitment.Create";
+    /// <summary>Manage and edit job postings.</summary>
+    public const string RecruitmentManage = "Recruitment.Manage";
+    /// <summary>Review, shortlist, reject, or accept candidate applications.</summary>
+    public const string RecruitmentReview = "Recruitment.Review";
+    /// <summary>Publish, close, or cancel job postings.</summary>
+    public const string RecruitmentClose = "Recruitment.Close";
+
     // Payroll Operations (Org-scoped)
     /// <summary>View organization payroll runs.</summary>
     public const string PayrollView = "Payroll.View";
@@ -164,7 +176,7 @@ public static class Permissions
     {
         KycView, KybView, OrganizationsView, TransactionsView, PayrollLogsView, AuditView,
         StaffView, PayrollView, WalletView, ErpView, LoanView, LoanRepaymentView,
-        SavingsView, ThriftView, ThriftPayoutView, VasView
+        SavingsView, ThriftView, ThriftPayoutView, VasView, RecruitmentView
     };
 
     /// <summary>
@@ -173,7 +185,9 @@ public static class Permissions
     public static readonly IReadOnlySet<string> OrgSuperAdminPermissions = new HashSet<string>
     {
         KybView, StaffView, StaffManage, StaffCreate, StaffAssign, StaffReactivate, StaffTerminate, StaffInvite,
-        DepartmentsManage, RolesManage, SalaryLevelsManage, PayrollView, PayrollExecute,
+        DepartmentsManage, RolesManage, SalaryLevelsManage,
+        RecruitmentView, RecruitmentCreate, RecruitmentManage, RecruitmentReview, RecruitmentClose,
+        PayrollView, PayrollExecute,
         WalletView, WalletFund, WalletTransfer, WalletTransferBank,
         LoanDecide, LoanView, LoanCreate, LoanApprove, LoanManagePlan, LoanRepaymentView,
         SavingsView, SavingsCreate, SavingsContribute, SavingsWithdraw, SavingsManagePlan,
@@ -197,7 +211,9 @@ public static class Permissions
     public static readonly IReadOnlySet<string> HrManagerPermissions = new HashSet<string>
     {
         StaffView, StaffManage, StaffCreate, StaffAssign, StaffReactivate, StaffTerminate, StaffInvite,
-        DepartmentsManage, RolesManage, SalaryLevelsManage, AnnouncementsPublishWorkplace,
+        DepartmentsManage, RolesManage, SalaryLevelsManage,
+        RecruitmentView, RecruitmentCreate, RecruitmentManage, RecruitmentReview, RecruitmentClose,
+        AnnouncementsPublishWorkplace,
         LoanView, SavingsView, ThriftView
     };
 }

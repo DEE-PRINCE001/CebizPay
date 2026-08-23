@@ -19,6 +19,10 @@ public static class AuditResourceTypes
     public const string SalaryLevel = "SALARY_LEVEL";
     /// <summary>Staff member resource type.</summary>
     public const string StaffMember = "STAFF_MEMBER";
+    /// <summary>Job posting resource type.</summary>
+    public const string JobPosting = "JOB_POSTING";
+    /// <summary>Recruitment application resource type.</summary>
+    public const string RecruitmentApplication = "RECRUITMENT_APPLICATION";
     /// <summary>Individual KYC document resource type.</summary>
     public const string KycDocument = "KYC_DOCUMENT";
     /// <summary>Organization KYB application resource type.</summary>

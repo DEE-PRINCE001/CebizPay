@@ -79,6 +79,30 @@ public static class AuditActions
     /// <summary>Audit action when bulk staff invitations are created.</summary>
     public const string StaffBulkInvited = "STAFF_BULK_INVITED";
 
+    // Recruitment & Job Postings
+    /// <summary>Audit action when a draft job posting is created.</summary>
+    public const string JobPostingCreated = "JOB_POSTING_CREATED";
+    /// <summary>Audit action when a job posting is updated.</summary>
+    public const string JobPostingUpdated = "JOB_POSTING_UPDATED";
+    /// <summary>Audit action when a job posting is published.</summary>
+    public const string JobPostingPublished = "JOB_POSTING_PUBLISHED";
+    /// <summary>Audit action when a job posting is closed.</summary>
+    public const string JobPostingClosed = "JOB_POSTING_CLOSED";
+    /// <summary>Audit action when a job posting is cancelled.</summary>
+    public const string JobPostingCancelled = "JOB_POSTING_CANCELLED";
+    /// <summary>Audit action when a candidate application is submitted.</summary>
+    public const string ApplicationSubmitted = "APPLICATION_SUBMITTED";
+    /// <summary>Audit action when an application status is marked under review.</summary>
+    public const string ApplicationReviewed = "APPLICATION_REVIEWED";
+    /// <summary>Audit action when an application is shortlisted.</summary>
+    public const string ApplicationShortlisted = "APPLICATION_SHORTLISTED";
+    /// <summary>Audit action when an application is rejected.</summary>
+    public const string ApplicationRejected = "APPLICATION_REJECTED";
+    /// <summary>Audit action when an application is accepted.</summary>
+    public const string ApplicationAccepted = "APPLICATION_ACCEPTED";
+    /// <summary>Audit action when an application is withdrawn by candidate.</summary>
+    public const string ApplicationWithdrawn = "APPLICATION_WITHDRAWN";
+
     // Platform Administration & Permissions
     /// <summary>Audit action when an admin permission is granted.</summary>
     public const string AdminPermissionGranted = "ADMIN_PERMISSION_GRANTED";

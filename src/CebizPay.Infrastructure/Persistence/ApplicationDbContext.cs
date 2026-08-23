@@ -51,6 +51,12 @@ public class ApplicationDbContext
     /// <summary>Gets the staff invitations entity set.</summary>
     public DbSet<StaffInvitation> StaffInvitations => Set<StaffInvitation>();
 
+    /// <summary>Gets the job postings entity set.</summary>
+    public DbSet<JobPosting> JobPostings => Set<JobPosting>();
+
+    /// <summary>Gets the recruitment applications entity set.</summary>
+    public DbSet<RecruitmentApplication> RecruitmentApplications => Set<RecruitmentApplication>();
+
     /// <summary>Gets the KYC documents entity set.</summary>
     public DbSet<KycDocument> KycDocuments => Set<KycDocument>();
 
@@ -177,6 +183,8 @@ public class ApplicationDbContext
     IEntitySet<WorkforceRole> IApplicationDbContext.WorkforceRoles => new EntitySet<WorkforceRole>(WorkforceRoles);
     IEntitySet<SalaryLevel> IApplicationDbContext.SalaryLevels => new EntitySet<SalaryLevel>(SalaryLevels);
     IEntitySet<StaffInvitation> IApplicationDbContext.StaffInvitations => new EntitySet<StaffInvitation>(StaffInvitations);
+    IEntitySet<JobPosting> IApplicationDbContext.JobPostings => new EntitySet<JobPosting>(JobPostings);
+    IEntitySet<RecruitmentApplication> IApplicationDbContext.RecruitmentApplications => new EntitySet<RecruitmentApplication>(RecruitmentApplications);
     IEntitySet<KycDocument> IApplicationDbContext.KycDocuments => new EntitySet<KycDocument>(KycDocuments);
     IEntitySet<KybDetail> IApplicationDbContext.KybDetails => new EntitySet<KybDetail>(KybDetails);
     IEntitySet<AuditLog> IApplicationDbContext.AuditLogs => new EntitySet<AuditLog>(AuditLogs);

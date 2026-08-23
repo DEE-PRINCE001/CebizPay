@@ -34,6 +34,12 @@ public interface IApplicationDbContext
     /// <summary>Gets the staff invitations entity set.</summary>
     IEntitySet<StaffInvitation> StaffInvitations { get; }
 
+    /// <summary>Gets the job postings entity set.</summary>
+    IEntitySet<JobPosting> JobPostings { get; }
+
+    /// <summary>Gets the recruitment applications entity set.</summary>
+    IEntitySet<RecruitmentApplication> RecruitmentApplications { get; }
+
     /// <summary>Gets the KYC documents entity set.</summary>
     IEntitySet<KycDocument> KycDocuments { get; }
 
