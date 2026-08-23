@@ -35,4 +35,16 @@ public class Department
         Description = description?.Trim();
         CreatedAtUtc = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// Updates department name and description.
+    /// </summary>
+    public void Update(string name, string? description = null)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Department Name is required.", nameof(name));
+
+        Name = name.Trim();
+        Description = description?.Trim();
+    }
 }

@@ -40,4 +40,19 @@ public class SalaryLevel
         Currency = string.IsNullOrWhiteSpace(currency) ? "NGN" : currency.Trim().ToUpperInvariant();
         CreatedAtUtc = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// Updates salary level name, base amount, and currency.
+    /// </summary>
+    public void Update(string levelName, decimal baseAmount, string currency = "NGN")
+    {
+        if (string.IsNullOrWhiteSpace(levelName))
+            throw new ArgumentException("LevelName is required.", nameof(levelName));
+        if (baseAmount < 0)
+            throw new ArgumentException("BaseAmount cannot be negative.", nameof(baseAmount));
+
+        LevelName = levelName.Trim();
+        BaseAmount = baseAmount;
+        Currency = string.IsNullOrWhiteSpace(currency) ? "NGN" : currency.Trim().ToUpperInvariant();
+    }
 }

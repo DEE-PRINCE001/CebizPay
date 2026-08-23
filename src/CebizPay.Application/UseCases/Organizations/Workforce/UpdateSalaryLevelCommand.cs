@@ -10,27 +10,28 @@ using MediatR;
 namespace CebizPay.Application.UseCases.Organizations.Workforce;
 
 /// <summary>
-/// Command to create a salary level.
+/// Command to update an organization salary level.
 /// </summary>
-public sealed record CreateSalaryLevelCommand(
+public sealed record UpdateSalaryLevelCommand(
+    Guid SalaryLevelId,
     Guid OrganizationId,
     string LevelName,
     decimal BaseAmount,
     string Currency = "NGN") : IRequest<Guid>;
 
 /// <summary>
-/// Validator for CreateSalaryLevelCommand.
+/// Validator for UpdateSalaryLevelCommand.
 /// </summary>
-public sealed class CreateSalaryLevelCommandValidator : AbstractValidator<CreateSalaryLevelCommand>
+public sealed class UpdateSalaryLevelCommandValidator : AbstractValidator<UpdateSalaryLevelCommand>
 {
     private static readonly string[] AllowedCurrencies = ["NGN", "INT-NGN", "USDT", "USD", "GHS", "EUR", "INR"];
 
     /// <summary>
-    /// Initializes validation rules for CreateSalaryLevelCommand.
-    /// Supported V1 currencies: NGN, Int-NGN, USDT.
+    /// Initializes validation rules for UpdateSalaryLevelCommand.
     /// </summary>
-    public CreateSalaryLevelCommandValidator()
+    public UpdateSalaryLevelCommandValidator()
     {
+        RuleFor(x => x.SalaryLevelId).NotEmpty().WithMessage("SalaryLevelId is required.");
         RuleFor(x => x.OrganizationId).NotEmpty().WithMessage("OrganizationId is required.");
         RuleFor(x => x.LevelName).NotEmpty().WithMessage("LevelName is required.").MaximumLength(100);
         RuleFor(x => x.BaseAmount).GreaterThanOrEqualTo(0).WithMessage("BaseAmount cannot be negative.");
@@ -40,9 +41,9 @@ public sealed class CreateSalaryLevelCommandValidator : AbstractValidator<Create
 }
 
 /// <summary>
-/// Handler for CreateSalaryLevelCommand.
+/// Handler for UpdateSalaryLevelCommand.
 /// </summary>
-public sealed class CreateSalaryLevelCommandHandler : IRequestHandler<CreateSalaryLevelCommand, Guid>
+public sealed class UpdateSalaryLevelCommandHandler : IRequestHandler<UpdateSalaryLevelCommand, Guid>
 {
     private readonly IApplicationDbContext _dbContext;
     private readonly ICurrentOrganizationContext _orgContext;
@@ -50,9 +51,9 @@ public sealed class CreateSalaryLevelCommandHandler : IRequestHandler<CreateSala
     private readonly IOutboxService _outboxService;
 
     /// <summary>
-    /// Initializes a new instance of <see cref="CreateSalaryLevelCommandHandler"/>.
+    /// Initializes a new instance of <see cref="UpdateSalaryLevelCommandHandler"/>.
     /// </summary>
-    public CreateSalaryLevelCommandHandler(
+    public UpdateSalaryLevelCommandHandler(
         IApplicationDbContext dbContext,
         ICurrentOrganizationContext orgContext,
         ICurrentUserService currentUserService,
@@ -65,7 +66,7 @@ public sealed class CreateSalaryLevelCommandHandler : IRequestHandler<CreateSala
     }
 
     /// <inheritdoc/>
-    public async Task<Guid> Handle(CreateSalaryLevelCommand request, CancellationToken cancellationToken)
+    public async Task<Guid> Handle(UpdateSalaryLevelCommand request, CancellationToken cancellationToken)
     {
         var hasAccess = await _orgContext.HasAccessToOrganizationAsync(request.OrganizationId, cancellationToken);
         if (!hasAccess)
@@ -81,34 +82,43 @@ public sealed class CreateSalaryLevelCommandHandler : IRequestHandler<CreateSala
             throw new InvalidOperationException("Cannot configure HRIS structure while organization status is suspended.");
         }
 
+        var salaryLevel = await _dbContext.SalaryLevels.FirstOrDefaultAsync(
+            s => s.Id == request.SalaryLevelId && s.OrganizationId == request.OrganizationId,
+            cancellationToken)
+            ?? throw new KeyNotFoundException($"Salary level {request.SalaryLevelId} not found in organization {request.OrganizationId}.");
+
         var trimmedName = request.LevelName.Trim();
         var lowerName = trimmedName.ToLowerInvariant();
 
 #pragma warning disable CA1862, CA1304, CA1311
-        var exists = await _dbContext.SalaryLevels.AnyAsync(
-            s => s.OrganizationId == request.OrganizationId && s.LevelName.ToLower() == lowerName,
+        var duplicateExists = await _dbContext.SalaryLevels.AnyAsync(
+            s => s.OrganizationId == request.OrganizationId && s.Id != request.SalaryLevelId && s.LevelName.ToLower() == lowerName,
             cancellationToken);
 #pragma warning restore CA1862, CA1304, CA1311
 
-        if (exists)
+        if (duplicateExists)
         {
-            throw new InvalidOperationException($"Salary level with name '{trimmedName}' already exists in this organization.");
+            throw new InvalidOperationException($"Another salary level with name '{trimmedName}' already exists in this organization.");
         }
 
-        var salaryLevel = new SalaryLevel(request.OrganizationId, trimmedName, request.BaseAmount, request.Currency);
-        _dbContext.SalaryLevels.Add(salaryLevel);
+        var beforeJson = System.Text.Json.JsonSerializer.Serialize(new { salaryLevel.Id, salaryLevel.LevelName, salaryLevel.BaseAmount, salaryLevel.Currency });
+
+        salaryLevel.Update(trimmedName, request.BaseAmount, request.Currency);
+
+        var afterJson = System.Text.Json.JsonSerializer.Serialize(new { salaryLevel.Id, salaryLevel.LevelName, salaryLevel.BaseAmount, salaryLevel.Currency });
 
         var actorUserId = _currentUserService.UserId ?? "SYSTEM";
         var auditLog = AuditLog.Create(
             actorId: actorUserId,
-            action: AuditActions.SalaryLevelCreated,
+            action: AuditActions.SalaryLevelUpdated,
             resourceType: AuditResourceTypes.SalaryLevel,
             resourceId: salaryLevel.Id.ToString(),
             organizationId: request.OrganizationId,
-            afterJson: System.Text.Json.JsonSerializer.Serialize(new { salaryLevel.Id, salaryLevel.LevelName, salaryLevel.BaseAmount, salaryLevel.Currency }));
+            beforeJson: beforeJson,
+            afterJson: afterJson);
         _dbContext.AuditLogs.Add(auditLog);
 
-        _outboxService.Write(new SalaryLevelCreatedDomainEvent(salaryLevel.Id, request.OrganizationId, salaryLevel.LevelName, salaryLevel.BaseAmount, salaryLevel.Currency, DateTime.UtcNow));
+        _outboxService.Write(new SalaryLevelUpdatedDomainEvent(salaryLevel.Id, request.OrganizationId, salaryLevel.LevelName, salaryLevel.BaseAmount, salaryLevel.Currency, DateTime.UtcNow));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

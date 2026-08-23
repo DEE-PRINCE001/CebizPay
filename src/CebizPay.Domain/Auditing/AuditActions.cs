@@ -46,6 +46,38 @@ public static class AuditActions
     public const string MembershipSuspended = "MEMBERSHIP_SUSPENDED";
     /// <summary>Audit action when an organization membership is reactivated.</summary>
     public const string MembershipReactivated = "MEMBERSHIP_REACTIVATED";
+    /// <summary>Audit action when an organization membership is terminated.</summary>
+    public const string MembershipTerminated = "MEMBERSHIP_TERMINATED";
+
+    // Departments, Roles, Salary Levels & Staff Management
+    /// <summary>Audit action when a department is created.</summary>
+    public const string DepartmentCreated = "DEPARTMENT_CREATED";
+    /// <summary>Audit action when a department is updated.</summary>
+    public const string DepartmentUpdated = "DEPARTMENT_UPDATED";
+    /// <summary>Audit action when a department is deleted.</summary>
+    public const string DepartmentDeleted = "DEPARTMENT_DELETED";
+    /// <summary>Audit action when a workforce role is created.</summary>
+    public const string RoleCreated = "ROLE_CREATED";
+    /// <summary>Audit action when a workforce role is updated.</summary>
+    public const string RoleUpdated = "ROLE_UPDATED";
+    /// <summary>Audit action when a workforce role is deleted.</summary>
+    public const string RoleDeleted = "ROLE_DELETED";
+    /// <summary>Audit action when a salary level is created.</summary>
+    public const string SalaryLevelCreated = "SALARY_LEVEL_CREATED";
+    /// <summary>Audit action when a salary level is updated.</summary>
+    public const string SalaryLevelUpdated = "SALARY_LEVEL_UPDATED";
+    /// <summary>Audit action when a salary level is deleted.</summary>
+    public const string SalaryLevelDeleted = "SALARY_LEVEL_DELETED";
+    /// <summary>Audit action when a staff member is directly created.</summary>
+    public const string StaffCreated = "STAFF_CREATED";
+    /// <summary>Audit action when a staff member workforce structure is assigned or reassigned.</summary>
+    public const string StaffAssigned = "STAFF_ASSIGNED";
+    /// <summary>Audit action when a staff member is reactivated.</summary>
+    public const string StaffReactivated = "STAFF_REACTIVATED";
+    /// <summary>Audit action when a staff member is terminated.</summary>
+    public const string StaffTerminated = "STAFF_TERMINATED";
+    /// <summary>Audit action when bulk staff invitations are created.</summary>
+    public const string StaffBulkInvited = "STAFF_BULK_INVITED";
 
     // Platform Administration & Permissions
     /// <summary>Audit action when an admin permission is granted.</summary>

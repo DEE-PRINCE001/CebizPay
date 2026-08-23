@@ -86,6 +86,20 @@ public class OrganizationMembership
     }
 
     /// <summary>
+    /// Terminates / offboards staff work access for this organization relationship.
+    /// Does NOT delete user's personal identity, KYC, or wallet.
+    /// </summary>
+    public void TerminateWorkAccess(string reason)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("Termination reason is required.", nameof(reason));
+
+        Status = MembershipStatus.Terminated;
+        SuspendedAtUtc = DateTime.UtcNow;
+        SuspensionReason = reason.Trim();
+    }
+
+    /// <summary>
     /// Reactivates staff work access.
     /// </summary>
     public void ReactivateWorkAccess()
@@ -123,13 +137,22 @@ public class OrganizationMembership
         {
             return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin;
         }
+        if (permission == Permissions.Permissions.StaffManage || permission == Permissions.Permissions.StaffCreate ||
+            permission == Permissions.Permissions.StaffAssign || permission == Permissions.Permissions.StaffTerminate ||
+            permission == Permissions.Permissions.StaffReactivate || permission == Permissions.Permissions.StaffInvite ||
+            permission == Permissions.Permissions.DepartmentsManage || permission == Permissions.Permissions.RolesManage ||
+            permission == Permissions.Permissions.SalaryLevelsManage)
+        {
+            return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin || Role == MembershipRoleType.HrManager;
+        }
         if (permission == Permissions.Permissions.PayrollView || permission == Permissions.Permissions.WalletView ||
             permission == Permissions.Permissions.LoanView || permission == Permissions.Permissions.LoanRepaymentView ||
             permission == Permissions.Permissions.LoanCreate || permission == Permissions.Permissions.SavingsView ||
             permission == Permissions.Permissions.SavingsCreate || permission == Permissions.Permissions.SavingsContribute ||
             permission == Permissions.Permissions.SavingsWithdraw || permission == Permissions.Permissions.ThriftView ||
             permission == Permissions.Permissions.ThriftCreate || permission == Permissions.Permissions.ThriftInvite ||
-            permission == Permissions.Permissions.ThriftContribute || permission == Permissions.Permissions.ThriftPayoutView)
+            permission == Permissions.Permissions.ThriftContribute || permission == Permissions.Permissions.ThriftPayoutView ||
+            permission == Permissions.Permissions.StaffView)
         {
             return true;
         }

@@ -48,6 +48,14 @@ public static class Permissions
     public const string StaffView = "Staff.View";
     /// <summary>Manage organization staff members.</summary>
     public const string StaffManage = "Staff.Manage";
+    /// <summary>Directly create / onboard organization staff members.</summary>
+    public const string StaffCreate = "Staff.Create";
+    /// <summary>Assign or reassign staff department, role, or salary level.</summary>
+    public const string StaffAssign = "Staff.Assign";
+    /// <summary>Reactivate suspended or terminated staff members.</summary>
+    public const string StaffReactivate = "Staff.Reactivate";
+    /// <summary>Terminate / offboard organization staff members.</summary>
+    public const string StaffTerminate = "Staff.Terminate";
     /// <summary>Send staff invitations.</summary>
     public const string StaffInvite = "Staff.Invite";
 
@@ -164,8 +172,9 @@ public static class Permissions
     /// </summary>
     public static readonly IReadOnlySet<string> OrgSuperAdminPermissions = new HashSet<string>
     {
-        KybView, StaffView, StaffManage, StaffInvite, DepartmentsManage, RolesManage,
-        SalaryLevelsManage, PayrollView, PayrollExecute, WalletView, WalletFund, WalletTransfer, WalletTransferBank,
+        KybView, StaffView, StaffManage, StaffCreate, StaffAssign, StaffReactivate, StaffTerminate, StaffInvite,
+        DepartmentsManage, RolesManage, SalaryLevelsManage, PayrollView, PayrollExecute,
+        WalletView, WalletFund, WalletTransfer, WalletTransferBank,
         LoanDecide, LoanView, LoanCreate, LoanApprove, LoanManagePlan, LoanRepaymentView,
         SavingsView, SavingsCreate, SavingsContribute, SavingsWithdraw, SavingsManagePlan,
         ThriftView, ThriftCreate, ThriftInvite, ThriftManage, ThriftContribute, ThriftPayoutView,
@@ -187,7 +196,8 @@ public static class Permissions
     /// </summary>
     public static readonly IReadOnlySet<string> HrManagerPermissions = new HashSet<string>
     {
-        StaffView, StaffManage, StaffInvite, DepartmentsManage, RolesManage, SalaryLevelsManage, AnnouncementsPublishWorkplace,
+        StaffView, StaffManage, StaffCreate, StaffAssign, StaffReactivate, StaffTerminate, StaffInvite,
+        DepartmentsManage, RolesManage, SalaryLevelsManage, AnnouncementsPublishWorkplace,
         LoanView, SavingsView, ThriftView
     };
 }

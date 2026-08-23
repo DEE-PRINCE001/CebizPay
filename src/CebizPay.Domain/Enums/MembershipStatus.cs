@@ -8,5 +8,7 @@ public enum MembershipStatus
     /// <summary>Active workplace member.</summary>
     Active = 1,
     /// <summary>Suspended workplace member.</summary>
-    Suspended = 2
+    Suspended = 2,
+    /// <summary>Terminated / offboarded workplace member.</summary>
+    Terminated = 3
 }

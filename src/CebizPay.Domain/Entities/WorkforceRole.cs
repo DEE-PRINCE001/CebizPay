@@ -38,4 +38,17 @@ public class WorkforceRole
         Description = description?.Trim();
         CreatedAtUtc = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// Updates workforce role title, department association, and description.
+    /// </summary>
+    public void Update(string title, Guid? departmentId = null, string? description = null)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            throw new ArgumentException("Role Title is required.", nameof(title));
+
+        Title = title.Trim();
+        DepartmentId = departmentId;
+        Description = description?.Trim();
+    }
 }

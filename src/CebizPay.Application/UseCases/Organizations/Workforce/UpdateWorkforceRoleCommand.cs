@@ -10,33 +10,35 @@ using MediatR;
 namespace CebizPay.Application.UseCases.Organizations.Workforce;
 
 /// <summary>
-/// Command to create a workforce role within an organization.
+/// Command to update an organization workforce role.
 /// </summary>
-public sealed record CreateWorkforceRoleCommand(
+public sealed record UpdateWorkforceRoleCommand(
+    Guid RoleId,
     Guid OrganizationId,
     string Title,
     Guid? DepartmentId,
     string? Description) : IRequest<Guid>;
 
 /// <summary>
-/// Validator for CreateWorkforceRoleCommand.
+/// Validator for UpdateWorkforceRoleCommand.
 /// </summary>
-public sealed class CreateWorkforceRoleCommandValidator : AbstractValidator<CreateWorkforceRoleCommand>
+public sealed class UpdateWorkforceRoleCommandValidator : AbstractValidator<UpdateWorkforceRoleCommand>
 {
     /// <summary>
-    /// Initializes validation rules for CreateWorkforceRoleCommand.
+    /// Initializes validation rules for UpdateWorkforceRoleCommand.
     /// </summary>
-    public CreateWorkforceRoleCommandValidator()
+    public UpdateWorkforceRoleCommandValidator()
     {
+        RuleFor(x => x.RoleId).NotEmpty().WithMessage("RoleId is required.");
         RuleFor(x => x.OrganizationId).NotEmpty().WithMessage("OrganizationId is required.");
         RuleFor(x => x.Title).NotEmpty().WithMessage("Role Title is required.").MaximumLength(100);
     }
 }
 
 /// <summary>
-/// Handler for CreateWorkforceRoleCommand.
+/// Handler for UpdateWorkforceRoleCommand.
 /// </summary>
-public sealed class CreateWorkforceRoleCommandHandler : IRequestHandler<CreateWorkforceRoleCommand, Guid>
+public sealed class UpdateWorkforceRoleCommandHandler : IRequestHandler<UpdateWorkforceRoleCommand, Guid>
 {
     private readonly IApplicationDbContext _dbContext;
     private readonly ICurrentOrganizationContext _orgContext;
@@ -44,9 +46,9 @@ public sealed class CreateWorkforceRoleCommandHandler : IRequestHandler<CreateWo
     private readonly IOutboxService _outboxService;
 
     /// <summary>
-    /// Initializes a new instance of <see cref="CreateWorkforceRoleCommandHandler"/>.
+    /// Initializes a new instance of <see cref="UpdateWorkforceRoleCommandHandler"/>.
     /// </summary>
-    public CreateWorkforceRoleCommandHandler(
+    public UpdateWorkforceRoleCommandHandler(
         IApplicationDbContext dbContext,
         ICurrentOrganizationContext orgContext,
         ICurrentUserService currentUserService,
@@ -59,7 +61,7 @@ public sealed class CreateWorkforceRoleCommandHandler : IRequestHandler<CreateWo
     }
 
     /// <inheritdoc/>
-    public async Task<Guid> Handle(CreateWorkforceRoleCommand request, CancellationToken cancellationToken)
+    public async Task<Guid> Handle(UpdateWorkforceRoleCommand request, CancellationToken cancellationToken)
     {
         var hasAccess = await _orgContext.HasAccessToOrganizationAsync(request.OrganizationId, cancellationToken);
         if (!hasAccess)
@@ -74,6 +76,11 @@ public sealed class CreateWorkforceRoleCommandHandler : IRequestHandler<CreateWo
         {
             throw new InvalidOperationException("Cannot configure HRIS structure while organization status is suspended.");
         }
+
+        var role = await _dbContext.WorkforceRoles.FirstOrDefaultAsync(
+            r => r.Id == request.RoleId && r.OrganizationId == request.OrganizationId,
+            cancellationToken)
+            ?? throw new KeyNotFoundException($"Workforce role {request.RoleId} not found in organization {request.OrganizationId}.");
 
         if (request.DepartmentId.HasValue)
         {
@@ -91,30 +98,34 @@ public sealed class CreateWorkforceRoleCommandHandler : IRequestHandler<CreateWo
         var lowerTitle = trimmedTitle.ToLowerInvariant();
 
 #pragma warning disable CA1862, CA1304, CA1311
-        var exists = await _dbContext.WorkforceRoles.AnyAsync(
-            r => r.OrganizationId == request.OrganizationId && r.Title.ToLower() == lowerTitle,
+        var duplicateExists = await _dbContext.WorkforceRoles.AnyAsync(
+            r => r.OrganizationId == request.OrganizationId && r.Id != request.RoleId && r.Title.ToLower() == lowerTitle,
             cancellationToken);
 #pragma warning restore CA1862, CA1304, CA1311
 
-        if (exists)
+        if (duplicateExists)
         {
-            throw new InvalidOperationException($"Workforce role with title '{trimmedTitle}' already exists in this organization.");
+            throw new InvalidOperationException($"Another workforce role with title '{trimmedTitle}' already exists in this organization.");
         }
 
-        var role = new WorkforceRole(request.OrganizationId, trimmedTitle, request.DepartmentId, request.Description);
-        _dbContext.WorkforceRoles.Add(role);
+        var beforeJson = System.Text.Json.JsonSerializer.Serialize(new { role.Id, role.Title, role.DepartmentId, role.Description });
+
+        role.Update(trimmedTitle, request.DepartmentId, request.Description);
+
+        var afterJson = System.Text.Json.JsonSerializer.Serialize(new { role.Id, role.Title, role.DepartmentId, role.Description });
 
         var actorUserId = _currentUserService.UserId ?? "SYSTEM";
         var auditLog = AuditLog.Create(
             actorId: actorUserId,
-            action: AuditActions.RoleCreated,
+            action: AuditActions.RoleUpdated,
             resourceType: AuditResourceTypes.WorkforceRole,
             resourceId: role.Id.ToString(),
             organizationId: request.OrganizationId,
-            afterJson: System.Text.Json.JsonSerializer.Serialize(new { role.Id, role.Title, role.DepartmentId, role.Description }));
+            beforeJson: beforeJson,
+            afterJson: afterJson);
         _dbContext.AuditLogs.Add(auditLog);
 
-        _outboxService.Write(new WorkforceRoleCreatedDomainEvent(role.Id, request.OrganizationId, role.Title, role.DepartmentId, DateTime.UtcNow));
+        _outboxService.Write(new WorkforceRoleUpdatedDomainEvent(role.Id, request.OrganizationId, role.Title, role.DepartmentId, DateTime.UtcNow));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 

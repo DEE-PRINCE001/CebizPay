@@ -3,6 +3,7 @@ using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Domain.Auditing;
 using CebizPay.Domain.Entities;
+using CebizPay.Domain.Enums;
 using CebizPay.Domain.Events;
 using FluentValidation;
 using MediatR;
@@ -10,32 +11,31 @@ using MediatR;
 namespace CebizPay.Application.UseCases.Organizations.Workforce;
 
 /// <summary>
-/// Command to create an organization department.
+/// Command to delete an organization department.
 /// </summary>
-public sealed record CreateDepartmentCommand(
-    Guid OrganizationId,
-    string Name,
-    string? Description) : IRequest<Guid>;
+public sealed record DeleteDepartmentCommand(
+    Guid DepartmentId,
+    Guid OrganizationId) : IRequest<bool>;
 
 /// <summary>
-/// Validator for CreateDepartmentCommand.
+/// Validator for DeleteDepartmentCommand.
 /// </summary>
-public sealed class CreateDepartmentCommandValidator : AbstractValidator<CreateDepartmentCommand>
+public sealed class DeleteDepartmentCommandValidator : AbstractValidator<DeleteDepartmentCommand>
 {
     /// <summary>
-    /// Initializes validation rules for CreateDepartmentCommand.
+    /// Initializes validation rules for DeleteDepartmentCommand.
     /// </summary>
-    public CreateDepartmentCommandValidator()
+    public DeleteDepartmentCommandValidator()
     {
+        RuleFor(x => x.DepartmentId).NotEmpty().WithMessage("DepartmentId is required.");
         RuleFor(x => x.OrganizationId).NotEmpty().WithMessage("OrganizationId is required.");
-        RuleFor(x => x.Name).NotEmpty().WithMessage("Department Name is required.").MaximumLength(100);
     }
 }
 
 /// <summary>
-/// Handler for CreateDepartmentCommand.
+/// Handler for DeleteDepartmentCommand.
 /// </summary>
-public sealed class CreateDepartmentCommandHandler : IRequestHandler<CreateDepartmentCommand, Guid>
+public sealed class DeleteDepartmentCommandHandler : IRequestHandler<DeleteDepartmentCommand, bool>
 {
     private readonly IApplicationDbContext _dbContext;
     private readonly ICurrentOrganizationContext _orgContext;
@@ -43,9 +43,9 @@ public sealed class CreateDepartmentCommandHandler : IRequestHandler<CreateDepar
     private readonly IOutboxService _outboxService;
 
     /// <summary>
-    /// Initializes a new instance of <see cref="CreateDepartmentCommandHandler"/>.
+    /// Initializes a new instance of <see cref="DeleteDepartmentCommandHandler"/>.
     /// </summary>
-    public CreateDepartmentCommandHandler(
+    public DeleteDepartmentCommandHandler(
         IApplicationDbContext dbContext,
         ICurrentOrganizationContext orgContext,
         ICurrentUserService currentUserService,
@@ -58,7 +58,7 @@ public sealed class CreateDepartmentCommandHandler : IRequestHandler<CreateDepar
     }
 
     /// <inheritdoc/>
-    public async Task<Guid> Handle(CreateDepartmentCommand request, CancellationToken cancellationToken)
+    public async Task<bool> Handle(DeleteDepartmentCommand request, CancellationToken cancellationToken)
     {
         var hasAccess = await _orgContext.HasAccessToOrganizationAsync(request.OrganizationId, cancellationToken);
         if (!hasAccess)
@@ -74,37 +74,38 @@ public sealed class CreateDepartmentCommandHandler : IRequestHandler<CreateDepar
             throw new InvalidOperationException("Cannot configure HRIS structure while organization status is suspended.");
         }
 
-        var trimmedName = request.Name.Trim();
-        var lowerName = trimmedName.ToLowerInvariant();
+        var dept = await _dbContext.Departments.FirstOrDefaultAsync(
+            d => d.Id == request.DepartmentId && d.OrganizationId == request.OrganizationId,
+            cancellationToken)
+            ?? throw new KeyNotFoundException($"Department {request.DepartmentId} not found in organization {request.OrganizationId}.");
 
-#pragma warning disable CA1862, CA1304, CA1311
-        var exists = await _dbContext.Departments.AnyAsync(
-            d => d.OrganizationId == request.OrganizationId && d.Name.ToLower() == lowerName,
+        var assignedStaffCount = await _dbContext.OrganizationMemberships.CountAsync(
+            m => m.OrganizationId == request.OrganizationId && m.DepartmentId == request.DepartmentId && m.Status == MembershipStatus.Active,
             cancellationToken);
-#pragma warning restore CA1862, CA1304, CA1311
 
-        if (exists)
+        if (assignedStaffCount > 0)
         {
-            throw new InvalidOperationException($"Department with name '{trimmedName}' already exists in this organization.");
+            throw new InvalidOperationException($"Cannot delete department '{dept.Name}' because {assignedStaffCount} active staff member(s) are currently assigned to it. Please reassign them first.");
         }
 
-        var dept = new Department(request.OrganizationId, trimmedName, request.Description);
-        _dbContext.Departments.Add(dept);
+        var beforeJson = System.Text.Json.JsonSerializer.Serialize(new { dept.Id, dept.Name, dept.Description });
+
+        _dbContext.Departments.Remove(dept);
 
         var actorUserId = _currentUserService.UserId ?? "SYSTEM";
         var auditLog = AuditLog.Create(
             actorId: actorUserId,
-            action: AuditActions.DepartmentCreated,
+            action: AuditActions.DepartmentDeleted,
             resourceType: AuditResourceTypes.Department,
             resourceId: dept.Id.ToString(),
             organizationId: request.OrganizationId,
-            afterJson: System.Text.Json.JsonSerializer.Serialize(new { dept.Id, dept.Name, dept.Description }));
+            beforeJson: beforeJson);
         _dbContext.AuditLogs.Add(auditLog);
 
-        _outboxService.Write(new DepartmentCreatedDomainEvent(dept.Id, request.OrganizationId, dept.Name, DateTime.UtcNow));
+        _outboxService.Write(new DepartmentDeletedDomainEvent(dept.Id, request.OrganizationId, dept.Name, DateTime.UtcNow));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return dept.Id;
+        return true;
     }
 }

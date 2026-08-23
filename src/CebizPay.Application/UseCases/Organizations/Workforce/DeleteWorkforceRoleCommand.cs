@@ -3,6 +3,7 @@ using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Domain.Auditing;
 using CebizPay.Domain.Entities;
+using CebizPay.Domain.Enums;
 using CebizPay.Domain.Events;
 using FluentValidation;
 using MediatR;
@@ -10,32 +11,31 @@ using MediatR;
 namespace CebizPay.Application.UseCases.Organizations.Workforce;
 
 /// <summary>
-/// Command to create an organization department.
+/// Command to delete an organization workforce role.
 /// </summary>
-public sealed record CreateDepartmentCommand(
-    Guid OrganizationId,
-    string Name,
-    string? Description) : IRequest<Guid>;
+public sealed record DeleteWorkforceRoleCommand(
+    Guid RoleId,
+    Guid OrganizationId) : IRequest<bool>;
 
 /// <summary>
-/// Validator for CreateDepartmentCommand.
+/// Validator for DeleteWorkforceRoleCommand.
 /// </summary>
-public sealed class CreateDepartmentCommandValidator : AbstractValidator<CreateDepartmentCommand>
+public sealed class DeleteWorkforceRoleCommandValidator : AbstractValidator<DeleteWorkforceRoleCommand>
 {
     /// <summary>
-    /// Initializes validation rules for CreateDepartmentCommand.
+    /// Initializes validation rules for DeleteWorkforceRoleCommand.
     /// </summary>
-    public CreateDepartmentCommandValidator()
+    public DeleteWorkforceRoleCommandValidator()
     {
+        RuleFor(x => x.RoleId).NotEmpty().WithMessage("RoleId is required.");
         RuleFor(x => x.OrganizationId).NotEmpty().WithMessage("OrganizationId is required.");
-        RuleFor(x => x.Name).NotEmpty().WithMessage("Department Name is required.").MaximumLength(100);
     }
 }
 
 /// <summary>
-/// Handler for CreateDepartmentCommand.
+/// Handler for DeleteWorkforceRoleCommand.
 /// </summary>
-public sealed class CreateDepartmentCommandHandler : IRequestHandler<CreateDepartmentCommand, Guid>
+public sealed class DeleteWorkforceRoleCommandHandler : IRequestHandler<DeleteWorkforceRoleCommand, bool>
 {
     private readonly IApplicationDbContext _dbContext;
     private readonly ICurrentOrganizationContext _orgContext;
@@ -43,9 +43,9 @@ public sealed class CreateDepartmentCommandHandler : IRequestHandler<CreateDepar
     private readonly IOutboxService _outboxService;
 
     /// <summary>
-    /// Initializes a new instance of <see cref="CreateDepartmentCommandHandler"/>.
+    /// Initializes a new instance of <see cref="DeleteWorkforceRoleCommandHandler"/>.
     /// </summary>
-    public CreateDepartmentCommandHandler(
+    public DeleteWorkforceRoleCommandHandler(
         IApplicationDbContext dbContext,
         ICurrentOrganizationContext orgContext,
         ICurrentUserService currentUserService,
@@ -58,7 +58,7 @@ public sealed class CreateDepartmentCommandHandler : IRequestHandler<CreateDepar
     }
 
     /// <inheritdoc/>
-    public async Task<Guid> Handle(CreateDepartmentCommand request, CancellationToken cancellationToken)
+    public async Task<bool> Handle(DeleteWorkforceRoleCommand request, CancellationToken cancellationToken)
     {
         var hasAccess = await _orgContext.HasAccessToOrganizationAsync(request.OrganizationId, cancellationToken);
         if (!hasAccess)
@@ -74,37 +74,38 @@ public sealed class CreateDepartmentCommandHandler : IRequestHandler<CreateDepar
             throw new InvalidOperationException("Cannot configure HRIS structure while organization status is suspended.");
         }
 
-        var trimmedName = request.Name.Trim();
-        var lowerName = trimmedName.ToLowerInvariant();
+        var role = await _dbContext.WorkforceRoles.FirstOrDefaultAsync(
+            r => r.Id == request.RoleId && r.OrganizationId == request.OrganizationId,
+            cancellationToken)
+            ?? throw new KeyNotFoundException($"Workforce role {request.RoleId} not found in organization {request.OrganizationId}.");
 
-#pragma warning disable CA1862, CA1304, CA1311
-        var exists = await _dbContext.Departments.AnyAsync(
-            d => d.OrganizationId == request.OrganizationId && d.Name.ToLower() == lowerName,
+        var assignedStaffCount = await _dbContext.OrganizationMemberships.CountAsync(
+            m => m.OrganizationId == request.OrganizationId && m.WorkforceRoleId == request.RoleId && m.Status == MembershipStatus.Active,
             cancellationToken);
-#pragma warning restore CA1862, CA1304, CA1311
 
-        if (exists)
+        if (assignedStaffCount > 0)
         {
-            throw new InvalidOperationException($"Department with name '{trimmedName}' already exists in this organization.");
+            throw new InvalidOperationException($"Cannot delete workforce role '{role.Title}' because {assignedStaffCount} active staff member(s) are currently assigned to it. Please reassign them first.");
         }
 
-        var dept = new Department(request.OrganizationId, trimmedName, request.Description);
-        _dbContext.Departments.Add(dept);
+        var beforeJson = System.Text.Json.JsonSerializer.Serialize(new { role.Id, role.Title, role.DepartmentId, role.Description });
+
+        _dbContext.WorkforceRoles.Remove(role);
 
         var actorUserId = _currentUserService.UserId ?? "SYSTEM";
         var auditLog = AuditLog.Create(
             actorId: actorUserId,
-            action: AuditActions.DepartmentCreated,
-            resourceType: AuditResourceTypes.Department,
-            resourceId: dept.Id.ToString(),
+            action: AuditActions.RoleDeleted,
+            resourceType: AuditResourceTypes.WorkforceRole,
+            resourceId: role.Id.ToString(),
             organizationId: request.OrganizationId,
-            afterJson: System.Text.Json.JsonSerializer.Serialize(new { dept.Id, dept.Name, dept.Description }));
+            beforeJson: beforeJson);
         _dbContext.AuditLogs.Add(auditLog);
 
-        _outboxService.Write(new DepartmentCreatedDomainEvent(dept.Id, request.OrganizationId, dept.Name, DateTime.UtcNow));
+        _outboxService.Write(new WorkforceRoleDeletedDomainEvent(role.Id, request.OrganizationId, role.Title, DateTime.UtcNow));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
-        return dept.Id;
+        return true;
     }
 }

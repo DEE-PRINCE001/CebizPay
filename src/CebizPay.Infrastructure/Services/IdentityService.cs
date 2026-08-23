@@ -205,4 +205,38 @@ public sealed class IdentityService : IIdentityService
 
         return (accessToken, refreshToken);
     }
+
+    /// <inheritdoc/>
+    public async Task<(bool Found, string UserId, string Email, string? PhoneNumber)> FindUserByEmailAsync(
+        string email,
+        CancellationToken cancellationToken = default)
+    {
+        var user = await _userManager.FindByEmailAsync(email);
+        if (user == null)
+        {
+            return (false, string.Empty, string.Empty, null);
+        }
+
+        return (true, user.Id, user.Email ?? string.Empty, user.PhoneNumber);
+    }
+
+    /// <inheritdoc/>
+    public async Task<IDictionary<string, (string Email, string? PhoneNumber)>> GetUserDetailsByIdsAsync(
+        IEnumerable<string> userIds,
+        CancellationToken cancellationToken = default)
+    {
+        var idsList = userIds.Distinct().ToList();
+        if (idsList.Count == 0)
+        {
+            return new Dictionary<string, (string Email, string? PhoneNumber)>();
+        }
+
+        var users = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
+            _userManager.Users.Where(u => idsList.Contains(u.Id)),
+            cancellationToken);
+
+        return users.ToDictionary(
+            u => u.Id,
+            u => (u.Email ?? string.Empty, u.PhoneNumber));
+    }
 }

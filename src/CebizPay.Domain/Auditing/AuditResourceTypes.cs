@@ -11,6 +11,14 @@ public static class AuditResourceTypes
     public const string Organization = "ORGANIZATION";
     /// <summary>Organization membership resource type.</summary>
     public const string Membership = "MEMBERSHIP";
+    /// <summary>Department resource type.</summary>
+    public const string Department = "DEPARTMENT";
+    /// <summary>Workforce role resource type.</summary>
+    public const string WorkforceRole = "WORKFORCE_ROLE";
+    /// <summary>Salary level resource type.</summary>
+    public const string SalaryLevel = "SALARY_LEVEL";
+    /// <summary>Staff member resource type.</summary>
+    public const string StaffMember = "STAFF_MEMBER";
     /// <summary>Individual KYC document resource type.</summary>
     public const string KycDocument = "KYC_DOCUMENT";
     /// <summary>Organization KYB application resource type.</summary>

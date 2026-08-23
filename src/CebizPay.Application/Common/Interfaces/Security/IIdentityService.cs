@@ -39,4 +39,18 @@ public interface IIdentityService
         string newPassword,
         bool isMobile,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Finds an identity user by email.
+    /// </summary>
+    Task<(bool Found, string UserId, string Email, string? PhoneNumber)> FindUserByEmailAsync(
+        string email,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Batch retrieves user identity information (email, phone number) keyed by user ID.
+    /// </summary>
+    Task<IDictionary<string, (string Email, string? PhoneNumber)>> GetUserDetailsByIdsAsync(
+        IEnumerable<string> userIds,
+        CancellationToken cancellationToken = default);
 }
