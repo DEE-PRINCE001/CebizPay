@@ -134,6 +134,45 @@ public sealed class ArchitectureTests
         Assert.True(domainResult.IsSuccessful, "Domain layer must not depend on Payroll infrastructure or workers.");
         Assert.True(appResult.IsSuccessful, "Application layer must not depend on Payroll infrastructure or workers.");
     }
+
+    [Fact]
+    public void DomainAndApplication_ShouldNotDependOnPaymentProviderOptionsOrSecrets()
+    {
+        var domainResult = Types.InAssembly(typeof(Domain.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "CebizPay.Infrastructure.Payments.Flutterwave.FlutterwaveOptions",
+                "CebizPay.Infrastructure.Payments.Paystack.PaystackOptions",
+                "CebizPay.Infrastructure.Options.VtuGateOptions")
+            .GetResult();
+
+        var appResult = Types.InAssembly(typeof(Application.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "CebizPay.Infrastructure.Payments.Flutterwave.FlutterwaveOptions",
+                "CebizPay.Infrastructure.Payments.Paystack.PaystackOptions",
+                "CebizPay.Infrastructure.Options.VtuGateOptions")
+            .GetResult();
+
+        Assert.True(domainResult.IsSuccessful, "Domain layer must not depend on payment provider options or secrets.");
+        Assert.True(appResult.IsSuccessful, "Application layer must not depend on payment provider options or secrets.");
+    }
+
+    [Fact]
+    public void ApiControllers_ShouldNotDirectlyDependOnProviderOptionsOrSecrets()
+    {
+        var apiResult = Types.InAssembly(typeof(Api.Controllers.v1.StaffSavingsController).Assembly)
+            .That()
+            .ResideInNamespace("CebizPay.Api.Controllers")
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "CebizPay.Infrastructure.Payments.Flutterwave.FlutterwaveOptions",
+                "CebizPay.Infrastructure.Payments.Paystack.PaystackOptions",
+                "CebizPay.Infrastructure.Options.VtuGateOptions")
+            .GetResult();
+
+        Assert.True(apiResult.IsSuccessful, "API Controllers must not directly depend on provider options or secrets.");
+    }
 }
 
 

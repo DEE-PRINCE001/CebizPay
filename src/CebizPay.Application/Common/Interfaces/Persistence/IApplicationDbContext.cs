@@ -112,6 +112,45 @@ public interface IApplicationDbContext
     /// <summary>Gets the standard individual loan policies entity set.</summary>
     IEntitySet<CebizPay.Domain.Loans.Entities.StandardIndividualLoanPolicy> StandardIndividualLoanPolicies { get; }
 
+    /// <summary>Gets the savings interest policies entity set.</summary>
+    IEntitySet<CebizPay.Domain.Savings.Entities.SavingsInterestPolicy> SavingsInterestPolicies { get; }
+
+    /// <summary>Gets the savings plans entity set.</summary>
+    IEntitySet<CebizPay.Domain.Savings.Entities.SavingsPlan> SavingsPlans { get; }
+
+    /// <summary>Gets the savings accounts entity set.</summary>
+    IEntitySet<CebizPay.Domain.Savings.Entities.SavingsAccount> SavingsAccounts { get; }
+
+    /// <summary>Gets the savings contributions entity set.</summary>
+    IEntitySet<CebizPay.Domain.Savings.Entities.SavingsContribution> SavingsContributions { get; }
+
+    /// <summary>Gets the savings interest accruals entity set.</summary>
+    IEntitySet<CebizPay.Domain.Savings.Entities.SavingsInterestAccrual> SavingsInterestAccruals { get; }
+
+    /// <summary>Gets the thrift groups entity set.</summary>
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftGroup> ThriftGroups { get; }
+
+    /// <summary>Gets the thrift members entity set.</summary>
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftMember> ThriftMembers { get; }
+
+    /// <summary>Gets the thrift invitations entity set.</summary>
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftInvitation> ThriftInvitations { get; }
+
+    /// <summary>Gets the thrift cycles entity set.</summary>
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftCycle> ThriftCycles { get; }
+
+    /// <summary>Gets the thrift contributions entity set.</summary>
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftContribution> ThriftContributions { get; }
+
+    /// <summary>Gets the thrift payouts entity set.</summary>
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftPayout> ThriftPayouts { get; }
+
+    /// <summary>Gets the thrift reimbursements entity set.</summary>
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftReimbursement> ThriftReimbursements { get; }
+
+    /// <summary>Gets the VAS transactions entity set.</summary>
+    IEntitySet<CebizPay.Domain.Vas.Entities.VasTransaction> VasTransactions { get; }
+
     /// <summary>
     /// Saves changes asynchronously to the underlying database.
     /// </summary>

@@ -113,7 +113,9 @@ public class OrganizationMembership
     /// </summary>
     public bool HasPermission(string permission)
     {
-        if (permission == Permissions.Permissions.WalletTransfer || permission == Permissions.Permissions.PayrollExecute || permission == Permissions.Permissions.LoanManagePlan)
+        if (permission == Permissions.Permissions.WalletTransfer || permission == Permissions.Permissions.PayrollExecute ||
+            permission == Permissions.Permissions.LoanManagePlan || permission == Permissions.Permissions.SavingsManagePlan ||
+            permission == Permissions.Permissions.ThriftManage)
         {
             return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin || Role == MembershipRoleType.PayrollManager;
         }
@@ -123,7 +125,11 @@ public class OrganizationMembership
         }
         if (permission == Permissions.Permissions.PayrollView || permission == Permissions.Permissions.WalletView ||
             permission == Permissions.Permissions.LoanView || permission == Permissions.Permissions.LoanRepaymentView ||
-            permission == Permissions.Permissions.LoanCreate)
+            permission == Permissions.Permissions.LoanCreate || permission == Permissions.Permissions.SavingsView ||
+            permission == Permissions.Permissions.SavingsCreate || permission == Permissions.Permissions.SavingsContribute ||
+            permission == Permissions.Permissions.SavingsWithdraw || permission == Permissions.Permissions.ThriftView ||
+            permission == Permissions.Permissions.ThriftCreate || permission == Permissions.Permissions.ThriftInvite ||
+            permission == Permissions.Permissions.ThriftContribute || permission == Permissions.Permissions.ThriftPayoutView)
         {
             return true;
         }

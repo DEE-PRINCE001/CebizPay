@@ -229,4 +229,121 @@ public interface ILedgerPostingService
         string reference,
         string? description = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ensures that a platform savings pool clearing account exists for a given currency.
+    /// </summary>
+    Task<LedgerAccount> GetOrCreateSavingsPoolAccountAsync(Currency currency, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ensures that a dedicated pooled clearing account exists for a given thrift group.
+    /// </summary>
+    Task<LedgerAccount> GetOrCreateThriftPoolAccountAsync(Guid thriftGroupId, Currency currency, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an atomic savings contribution debiting the customer wallet and crediting the platform savings pool account.
+    /// Performs row-level locking on the customer wallet and verifies balance sufficiency.
+    /// </summary>
+    Task<LedgerTransaction> PostSavingsContributionCoreAsync(
+        Guid userWalletId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an atomic savings withdrawal debiting the platform savings pool account and crediting the customer wallet.
+    /// Performs row-level locking on the recipient wallet.
+    /// </summary>
+    Task<LedgerTransaction> PostSavingsWithdrawalCoreAsync(
+        Guid userWalletId,
+        decimal payoutAmount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an atomic thrift contribution debiting the member wallet and crediting the thrift group pool account.
+    /// Performs row-level locking on the member wallet and verifies balance sufficiency.
+    /// </summary>
+    Task<LedgerTransaction> PostThriftContributionCoreAsync(
+        Guid memberWalletId,
+        Guid thriftGroupId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an atomic thrift pool payout debiting the thrift group pool account and crediting the beneficiary member wallet.
+    /// Performs row-level locking on the beneficiary wallet.
+    /// </summary>
+    Task<LedgerTransaction> PostThriftPayoutCoreAsync(
+        Guid beneficiaryWalletId,
+        Guid thriftGroupId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an atomic thrift reimbursement refunding a departing member's net contributions from the thrift pool account.
+    /// Performs row-level locking on the member wallet.
+    /// </summary>
+    /// <summary>
+    /// Posts an atomic thrift reimbursement refunding a departing member's net contributions from the thrift pool account.
+    /// Performs row-level locking on the member wallet.
+    /// </summary>
+    Task<LedgerTransaction> PostThriftReimbursementCoreAsync(
+        Guid memberWalletId,
+        Guid thriftGroupId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ensures that a platform VAS clearing / provider payable account exists for a given currency.
+    /// </summary>
+    Task<LedgerAccount> GetOrCreateVasClearingAccountAsync(Currency currency, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an atomic VAS purchase debit from a customer wallet to the platform VAS clearing account.
+    /// Performs row-level locking on the customer wallet and verifies balance sufficiency.
+    /// Creates the pending <see cref="CebizPay.Domain.Vas.Entities.VasTransaction"/> entity in the same atomic transaction.
+    ///
+    /// Ledger entries created:
+    ///   DEBIT  Customer Wallet Account    amount
+    ///   CREDIT VAS Clearing Account       amount
+    /// </summary>
+    Task<(LedgerTransaction Transaction, CebizPay.Domain.Vas.Entities.VasTransaction VasTransaction)> PostVasPurchaseDebitCoreAsync(
+        Guid customerWalletId,
+        Guid vasClearingAccountId,
+        decimal amount,
+        Currency currency,
+        string userId,
+        Guid? organizationId,
+        string phoneNumber,
+        CebizPay.Domain.Vas.Enums.VasNetwork network,
+        CebizPay.Domain.Vas.Enums.VasType type,
+        string? productCode,
+        string? productName,
+        string reference,
+        string? idempotencyKey = null,
+        string? description = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an atomic reversal of a failed VAS purchase transaction, refunding the debited funds
+    /// back from the VAS clearing account to the customer wallet.
+    /// </summary>
+    Task<LedgerTransaction> PostVasPurchaseReversalCoreAsync(
+        Guid vasTransactionId,
+        string reason,
+        CancellationToken cancellationToken = default);
 }

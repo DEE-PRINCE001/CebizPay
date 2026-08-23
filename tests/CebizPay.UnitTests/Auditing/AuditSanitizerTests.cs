@@ -44,7 +44,7 @@ public sealed class AuditSanitizerTests
         // Arrange
         var payload = new Dictionary<string, object>
         {
-            ["id"] = Guid.NewGuid().ToString(),
+            ["id"] = "fixed-entity-identifier-uuid",
             ["name"] = "Alice Johnson",
             ["amount"] = 5000m,
             ["currency"] = "NGN",

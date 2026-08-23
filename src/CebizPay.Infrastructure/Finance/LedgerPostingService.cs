@@ -1160,5 +1160,562 @@ public sealed class LedgerPostingService : ILedgerPostingService
         await _dbContext.SaveChangesAsync(cancellationToken);
         return transaction;
     }
+
+    /// <inheritdoc/>
+    public async Task<LedgerAccount> GetOrCreateSavingsPoolAccountAsync(Currency currency, CancellationToken cancellationToken = default)
+    {
+        var accountName = $"{currency} PLATFORM SAVINGS POOL";
+        var account = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.AccountName == accountName && l.Currency == currency, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.AccountName == accountName && l.Currency == currency);
+
+        if (account != null) return account;
+
+        account = LedgerAccount.CreateSystemAccount(accountName, currency, LedgerAccountType.PlatformClearing);
+        _dbContext.LedgerAccounts.Add(account);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return account;
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerAccount> GetOrCreateThriftPoolAccountAsync(Guid thriftGroupId, Currency currency, CancellationToken cancellationToken = default)
+    {
+        var accountName = $"THRIFT POOL {thriftGroupId:N} {currency}";
+        var account = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.AccountName == accountName && l.Currency == currency, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.AccountName == accountName && l.Currency == currency);
+
+        if (account != null) return account;
+
+        account = LedgerAccount.CreateSystemAccount(accountName, currency, LedgerAccountType.PlatformClearing);
+        _dbContext.LedgerAccounts.Add(account);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return account;
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerTransaction> PostSavingsContributionCoreAsync(
+        Guid userWalletId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (amount <= 0)
+            throw new ArgumentException("Contribution amount must be positive.", nameof(amount));
+
+        // Lock user wallet with row-level lock
+        var userWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", userWalletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == userWalletId, cancellationToken);
+
+        if (userWallet == null)
+            throw new InvalidOperationException($"User wallet '{userWalletId}' not found.");
+        if (userWallet.Currency != currency)
+            throw new InvalidOperationException($"User wallet currency '{userWallet.Currency}' does not match contribution currency '{currency}'.");
+        if (userWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"User wallet is {userWallet.Status}.");
+        if (userWallet.AvailableBalance < amount)
+            throw new InvalidOperationException($"Insufficient wallet balance for savings contribution. Required: {amount:F2}, Available: {userWallet.AvailableBalance:F2}.");
+
+        // Mutate wallet balance
+        userWallet.Debit(amount);
+
+        // Resolve savings pool account and user ledger account
+        var poolAccount = await GetOrCreateSavingsPoolAccountAsync(currency, cancellationToken);
+        var userAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == userWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.WalletId == userWalletId)
+            ?? LedgerAccount.CreateWalletAccount(userWalletId, $"USER WALLET {userWalletId:N}", currency);
+
+        if (_dbContext.Entry(userAccount).State == EntityState.Detached)
+            _dbContext.LedgerAccounts.Add(userAccount);
+
+        var transaction = new LedgerTransaction(
+            LedgerTransactionType.SavingsContribution,
+            reference,
+            idempotencyKey: reference,
+            description: description ?? $"Savings contribution {reference}");
+        transaction.Complete(DateTime.UtcNow);
+
+        // Double-entry entries:
+        // DEBIT  User Wallet Account       (amount)
+        // CREDIT Platform Savings Pool      (amount)
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, userAccount.Id, LedgerEntryDirection.Debit, amount, currency, 1),
+            new(transaction.Id, poolAccount.Id, LedgerEntryDirection.Credit, amount, currency, 2)
+        };
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return transaction;
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerTransaction> PostSavingsWithdrawalCoreAsync(
+        Guid userWalletId,
+        decimal payoutAmount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (payoutAmount <= 0)
+            throw new ArgumentException("Payout amount must be positive.", nameof(payoutAmount));
+
+        // Lock user wallet with row-level lock
+        var userWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", userWalletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == userWalletId, cancellationToken);
+
+        if (userWallet == null)
+            throw new InvalidOperationException($"User wallet '{userWalletId}' not found.");
+        if (userWallet.Currency != currency)
+            throw new InvalidOperationException($"User wallet currency '{userWallet.Currency}' does not match payout currency '{currency}'.");
+        if (userWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"User wallet is {userWallet.Status}.");
+
+        // Credit user wallet
+        userWallet.Credit(payoutAmount);
+
+        // Resolve savings pool account and user ledger account
+        var poolAccount = await GetOrCreateSavingsPoolAccountAsync(currency, cancellationToken);
+        var userAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == userWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.WalletId == userWalletId)
+            ?? LedgerAccount.CreateWalletAccount(userWalletId, $"USER WALLET {userWalletId:N}", currency);
+
+        if (_dbContext.Entry(userAccount).State == EntityState.Detached)
+            _dbContext.LedgerAccounts.Add(userAccount);
+
+        var transaction = new LedgerTransaction(
+            LedgerTransactionType.SavingsWithdrawal,
+            reference,
+            idempotencyKey: reference,
+            description: description ?? $"Savings withdrawal {reference}");
+        transaction.Complete(DateTime.UtcNow);
+
+        // Double-entry entries:
+        // DEBIT  Platform Savings Pool      (payoutAmount)
+        // CREDIT User Wallet Account         (payoutAmount)
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, poolAccount.Id, LedgerEntryDirection.Debit, payoutAmount, currency, 1),
+            new(transaction.Id, userAccount.Id, LedgerEntryDirection.Credit, payoutAmount, currency, 2)
+        };
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return transaction;
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerTransaction> PostThriftContributionCoreAsync(
+        Guid memberWalletId,
+        Guid thriftGroupId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (amount <= 0)
+            throw new ArgumentException("Contribution amount must be positive.", nameof(amount));
+
+        // Lock member wallet with row-level lock
+        var memberWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", memberWalletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == memberWalletId, cancellationToken);
+
+        if (memberWallet == null)
+            throw new InvalidOperationException($"Member wallet '{memberWalletId}' not found.");
+        if (memberWallet.Currency != currency)
+            throw new InvalidOperationException($"Member wallet currency '{memberWallet.Currency}' does not match thrift currency '{currency}'.");
+        if (memberWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"Member wallet is {memberWallet.Status}.");
+        if (memberWallet.AvailableBalance < amount)
+            throw new InvalidOperationException($"Insufficient member wallet balance for thrift contribution. Required: {amount:F2}, Available: {memberWallet.AvailableBalance:F2}.");
+
+        // Debit member wallet
+        memberWallet.Debit(amount);
+
+        // Resolve thrift pool account and member ledger account
+        var thriftPoolAccount = await GetOrCreateThriftPoolAccountAsync(thriftGroupId, currency, cancellationToken);
+        var memberAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == memberWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.WalletId == memberWalletId)
+            ?? LedgerAccount.CreateWalletAccount(memberWalletId, $"MEMBER WALLET {memberWalletId:N}", currency);
+
+        if (_dbContext.Entry(memberAccount).State == EntityState.Detached)
+            _dbContext.LedgerAccounts.Add(memberAccount);
+
+        var transaction = new LedgerTransaction(
+            LedgerTransactionType.ThriftContribution,
+            reference,
+            idempotencyKey: reference,
+            description: description ?? $"Thrift contribution {reference}");
+        transaction.Complete(DateTime.UtcNow);
+
+        // Double-entry entries:
+        // DEBIT  Member Wallet Account       (amount)
+        // CREDIT Thrift Pool Account         (amount)
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, memberAccount.Id, LedgerEntryDirection.Debit, amount, currency, 1),
+            new(transaction.Id, thriftPoolAccount.Id, LedgerEntryDirection.Credit, amount, currency, 2)
+        };
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return transaction;
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerTransaction> PostThriftPayoutCoreAsync(
+        Guid beneficiaryWalletId,
+        Guid thriftGroupId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (amount <= 0)
+            throw new ArgumentException("Payout amount must be positive.", nameof(amount));
+
+        // Lock beneficiary wallet with row-level lock
+        var benWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", beneficiaryWalletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == beneficiaryWalletId, cancellationToken);
+
+        if (benWallet == null)
+            throw new InvalidOperationException($"Beneficiary wallet '{beneficiaryWalletId}' not found.");
+        if (benWallet.Currency != currency)
+            throw new InvalidOperationException($"Beneficiary wallet currency '{benWallet.Currency}' does not match payout currency '{currency}'.");
+        if (benWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"Beneficiary wallet is {benWallet.Status}.");
+
+        // Credit beneficiary wallet
+        benWallet.Credit(amount);
+
+        // Resolve thrift pool account and beneficiary ledger account
+        var thriftPoolAccount = await GetOrCreateThriftPoolAccountAsync(thriftGroupId, currency, cancellationToken);
+        var benAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == beneficiaryWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.WalletId == beneficiaryWalletId)
+            ?? LedgerAccount.CreateWalletAccount(beneficiaryWalletId, $"BEN WALLET {beneficiaryWalletId:N}", currency);
+
+        if (_dbContext.Entry(benAccount).State == EntityState.Detached)
+            _dbContext.LedgerAccounts.Add(benAccount);
+
+        var transaction = new LedgerTransaction(
+            LedgerTransactionType.ThriftPayout,
+            reference,
+            idempotencyKey: reference,
+            description: description ?? $"Thrift payout {reference}");
+        transaction.Complete(DateTime.UtcNow);
+
+        // Double-entry entries:
+        // DEBIT  Thrift Pool Account         (amount)
+        // CREDIT Beneficiary Wallet Account  (amount)
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, thriftPoolAccount.Id, LedgerEntryDirection.Debit, amount, currency, 1),
+            new(transaction.Id, benAccount.Id, LedgerEntryDirection.Credit, amount, currency, 2)
+        };
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return transaction;
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerTransaction> PostThriftReimbursementCoreAsync(
+        Guid memberWalletId,
+        Guid thriftGroupId,
+        decimal amount,
+        Currency currency,
+        string reference,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (amount <= 0)
+            throw new ArgumentException("Reimbursement amount must be positive.", nameof(amount));
+
+        // Lock member wallet with row-level lock
+        var memberWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", memberWalletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == memberWalletId, cancellationToken);
+
+        if (memberWallet == null)
+            throw new InvalidOperationException($"Member wallet '{memberWalletId}' not found.");
+        if (memberWallet.Currency != currency)
+            throw new InvalidOperationException($"Member wallet currency '{memberWallet.Currency}' does not match refund currency '{currency}'.");
+        if (memberWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"Member wallet is {memberWallet.Status}.");
+
+        // Credit member wallet
+        memberWallet.Credit(amount);
+
+        // Resolve thrift pool account and member ledger account
+        var thriftPoolAccount = await GetOrCreateThriftPoolAccountAsync(thriftGroupId, currency, cancellationToken);
+        var memberAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == memberWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.WalletId == memberWalletId)
+            ?? LedgerAccount.CreateWalletAccount(memberWalletId, $"MEMBER WALLET {memberWalletId:N}", currency);
+
+        if (_dbContext.Entry(memberAccount).State == EntityState.Detached)
+            _dbContext.LedgerAccounts.Add(memberAccount);
+
+        var transaction = new LedgerTransaction(
+            LedgerTransactionType.Refund,
+            reference,
+            idempotencyKey: reference,
+            description: description ?? $"Thrift reimbursement {reference}");
+        transaction.Complete(DateTime.UtcNow);
+
+        // Double-entry entries:
+        // DEBIT  Thrift Pool Account         (amount)
+        // CREDIT Member Wallet Account       (amount)
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, thriftPoolAccount.Id, LedgerEntryDirection.Debit, amount, currency, 1),
+            new(transaction.Id, memberAccount.Id, LedgerEntryDirection.Credit, amount, currency, 2)
+        };
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return transaction;
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerAccount> GetOrCreateVasClearingAccountAsync(Currency currency, CancellationToken cancellationToken = default)
+    {
+        var existing = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency && l.AccountName.Contains("VAS CLEARING"), cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency && l.AccountName.Contains("VAS CLEARING"));
+
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        var accountName = $"{currency} VAS CLEARING";
+        var account = LedgerAccount.CreateSystemAccount(accountName, currency, LedgerAccountType.PlatformClearing);
+        _dbContext.LedgerAccounts.Add(account);
+
+        if (_dbContext.Database.CurrentTransaction == null)
+        {
+            try
+            {
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (DbUpdateException)
+            {
+                var concurrentAccount = await _dbContext.LedgerAccounts
+                    .FirstOrDefaultAsync(l => l.AccountType == LedgerAccountType.PlatformClearing && l.Currency == currency && l.AccountName.Contains("VAS CLEARING"), cancellationToken);
+                if (concurrentAccount != null)
+                {
+                    return concurrentAccount;
+                }
+                throw;
+            }
+        }
+
+        return account;
+    }
+
+    /// <inheritdoc/>
+    public async Task<(LedgerTransaction Transaction, Domain.Vas.Entities.VasTransaction VasTransaction)> PostVasPurchaseDebitCoreAsync(
+        Guid customerWalletId,
+        Guid vasClearingAccountId,
+        decimal amount,
+        Currency currency,
+        string userId,
+        Guid? organizationId,
+        string phoneNumber,
+        Domain.Vas.Enums.VasNetwork network,
+        Domain.Vas.Enums.VasType type,
+        string? productCode,
+        string? productName,
+        string reference,
+        string? idempotencyKey = null,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (amount <= 0)
+            throw new ArgumentException("Purchase amount must be positive.", nameof(amount));
+        if (string.IsNullOrWhiteSpace(userId))
+            throw new ArgumentException("UserId is required.", nameof(userId));
+        if (string.IsNullOrWhiteSpace(phoneNumber))
+            throw new ArgumentException("PhoneNumber is required.", nameof(phoneNumber));
+
+        // Lock customer wallet with row-level lock
+        var customerWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", customerWalletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == customerWalletId, cancellationToken);
+
+        if (customerWallet == null)
+            throw new InvalidOperationException($"Customer wallet '{customerWalletId}' not found.");
+        if (customerWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"Customer wallet is {customerWallet.Status}.");
+        if (customerWallet.Currency != currency)
+            throw new InvalidOperationException($"Customer wallet currency '{customerWallet.Currency}' does not match transaction currency '{currency}'.");
+        if (customerWallet.AvailableBalance < amount)
+            throw new InvalidOperationException($"Insufficient funds after lock. Required: {amount}, Available: {customerWallet.AvailableBalance}.");
+
+        // Resolve customer ledger account and VAS clearing account
+        var customerAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == customerWalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.WalletId == customerWalletId)
+            ?? LedgerAccount.CreateWalletAccount(customerWalletId, $"CUSTOMER WALLET {customerWalletId:N}", currency);
+
+        if (_dbContext.Entry(customerAccount).State == EntityState.Detached)
+            _dbContext.LedgerAccounts.Add(customerAccount);
+
+        var clearingAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.Id == vasClearingAccountId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.Id == vasClearingAccountId)
+            ?? throw new InvalidOperationException($"VAS clearing ledger account '{vasClearingAccountId}' not found.");
+
+        // Debit customer wallet balance
+        customerWallet.Debit(amount);
+
+        // Build central ledger transaction in PENDING status
+        var transaction = new LedgerTransaction(
+            LedgerTransactionType.VasPurchase,
+            reference,
+            idempotencyKey,
+            description ?? $"VAS {type} purchase {reference}");
+
+        // Double-entry ledger entries:
+        // DEBIT  Customer Wallet Account (amount)
+        // CREDIT VAS Clearing Account    (amount)
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, customerAccount.Id, LedgerEntryDirection.Debit, amount, currency, sequence: 1),
+            new(transaction.Id, clearingAccount.Id, LedgerEntryDirection.Credit, amount, currency, sequence: 2)
+        };
+
+        // Build VasTransaction aggregate
+        var vasTxn = type == Domain.Vas.Enums.VasType.Airtime
+            ? Domain.Vas.Entities.VasTransaction.CreateAirtime(
+                reference: reference,
+                userId: userId,
+                organizationId: organizationId,
+                walletId: customerWalletId,
+                ledgerTransactionId: transaction.Id,
+                phoneNumber: phoneNumber,
+                network: network,
+                amount: amount,
+                currency: currency)
+            : Domain.Vas.Entities.VasTransaction.CreateData(
+                reference: reference,
+                userId: userId,
+                organizationId: organizationId,
+                walletId: customerWalletId,
+                ledgerTransactionId: transaction.Id,
+                phoneNumber: phoneNumber,
+                network: network,
+                productCode: productCode ?? string.Empty,
+                productName: productName,
+                amount: amount,
+                currency: currency);
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+        _dbContext.VasTransactions.Add(vasTxn);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return (transaction, vasTxn);
+    }
+
+    /// <inheritdoc/>
+    public async Task<LedgerTransaction> PostVasPurchaseReversalCoreAsync(
+        Guid vasTransactionId,
+        string reason,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("Reversal reason is required.", nameof(reason));
+
+        var vasTxn = await _dbContext.VasTransactions
+            .FirstOrDefaultAsync(t => t.Id == vasTransactionId, cancellationToken)
+            ?? throw new InvalidOperationException($"VAS transaction '{vasTransactionId}' not found.");
+
+        if (vasTxn.Status == Domain.Vas.Enums.VasTransactionStatus.Succeeded)
+            throw new InvalidOperationException("Cannot reverse a completed VAS transaction.");
+        if (vasTxn.Status == Domain.Vas.Enums.VasTransactionStatus.Reversed)
+            throw new InvalidOperationException("VAS transaction has already been marked failed and reversed.");
+
+        // Lock customer wallet
+        var customerWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", vasTxn.WalletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == vasTxn.WalletId, cancellationToken);
+
+        if (customerWallet == null)
+            throw new InvalidOperationException($"Customer wallet '{vasTxn.WalletId}' not found.");
+
+        // Restore customer wallet balance
+        customerWallet.Credit(vasTxn.Amount);
+
+        // Mark VAS transaction reversed
+        vasTxn.MarkReversed(reason);
+
+        // Build reversal transaction
+        var reversalReference = $"REV-{vasTxn.Reference}";
+        var reversalTxn = new LedgerTransaction(
+            LedgerTransactionType.Reversal,
+            reversalReference,
+            idempotencyKey: reversalReference,
+            description: $"Reversal of VAS purchase {vasTxn.Reference}: {reason}");
+
+        reversalTxn.Complete(DateTime.UtcNow);
+
+        // Fetch original entries
+        var originalEntries = await _dbContext.LedgerEntries
+            .Where(e => e.LedgerTransactionId == vasTxn.LedgerTransactionId)
+            .OrderBy(e => e.Sequence)
+            .ToListAsync(cancellationToken);
+
+        var reversalEntries = new List<LedgerEntry>();
+        int seq = 1;
+        foreach (var original in originalEntries)
+        {
+            var oppositeDirection = original.Direction == LedgerEntryDirection.Debit
+                ? LedgerEntryDirection.Credit
+                : LedgerEntryDirection.Debit;
+
+            reversalEntries.Add(new LedgerEntry(
+                reversalTxn.Id,
+                original.LedgerAccountId,
+                oppositeDirection,
+                original.Amount,
+                original.Currency,
+                seq++));
+        }
+
+        _dbContext.LedgerTransactions.Add(reversalTxn);
+        _dbContext.LedgerEntries.AddRange(reversalEntries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return reversalTxn;
+    }
 }
+
 

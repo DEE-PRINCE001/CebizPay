@@ -194,4 +194,66 @@ public static class AuditActions
     public const string LoanRepaymentMissed = "LOAN_REPAYMENT_MISSED";
     /// <summary>Audit action when a payroll loan is converted to a standard individual loan upon staff offboarding.</summary>
     public const string LoanConvertedToIndividual = "LOAN_CONVERTED_TO_INDIVIDUAL";
+
+    // Savings
+    /// <summary>Audit action when a savings plan is created.</summary>
+    public const string SavingsPlanCreated = "SAVINGS_PLAN_CREATED";
+    /// <summary>Audit action when a savings account/instance is created.</summary>
+    public const string SavingsAccountCreated = "SAVINGS_ACCOUNT_CREATED";
+    /// <summary>Audit action when a savings contribution is made.</summary>
+    public const string SavingsContributionMade = "SAVINGS_CONTRIBUTION_MADE";
+    /// <summary>Audit action when savings daily interest is accrued.</summary>
+    public const string SavingsInterestAccrued = "SAVINGS_INTEREST_ACCRUED";
+    /// <summary>Audit action when a savings withdrawal is executed at maturity.</summary>
+    public const string SavingsWithdrawal = "SAVINGS_WITHDRAWAL";
+    /// <summary>Audit action when an early savings withdrawal is executed with penalty.</summary>
+    public const string SavingsEarlyWithdrawal = "SAVINGS_EARLY_WITHDRAWAL";
+    /// <summary>Audit action when a savings account reaches maturity.</summary>
+    public const string SavingsPlanMatured = "SAVINGS_PLAN_MATURED";
+    /// <summary>Audit action when a savings interest policy is created.</summary>
+    public const string SavingsInterestPolicyCreated = "SAVINGS_INTEREST_POLICY_CREATED";
+    /// <summary>Audit action when a savings interest policy is activated.</summary>
+    public const string SavingsInterestPolicyActivated = "SAVINGS_INTEREST_POLICY_ACTIVATED";
+    /// <summary>Audit action when a savings interest policy is deactivated.</summary>
+    public const string SavingsInterestPolicyDeactivated = "SAVINGS_INTEREST_POLICY_DEACTIVATED";
+
+    // Thrift / Ajo / Esusu
+    /// <summary>Audit action when a thrift group is created.</summary>
+    public const string ThriftCreated = "THRIFT_CREATED";
+    /// <summary>Audit action when a member is invited to a thrift group.</summary>
+    public const string ThriftMemberInvited = "THRIFT_MEMBER_INVITED";
+    /// <summary>Audit action when a member joins a thrift group.</summary>
+    public const string ThriftMemberJoined = "THRIFT_MEMBER_JOINED";
+    /// <summary>Audit action when a thrift member selects a payout position.</summary>
+    public const string ThriftPositionSelected = "THRIFT_POSITION_SELECTED";
+    /// <summary>Audit action when thrift payout positions are locked.</summary>
+    public const string ThriftPositionsLocked = "THRIFT_POSITIONS_LOCKED";
+    /// <summary>Audit action when a thrift cycle is started.</summary>
+    public const string ThriftCycleStarted = "THRIFT_CYCLE_STARTED";
+    /// <summary>Audit action when a thrift contribution is successfully collected.</summary>
+    public const string ThriftContributionCollected = "THRIFT_CONTRIBUTION_COLLECTED";
+    /// <summary>Audit action when a thrift contribution is missed.</summary>
+    public const string ThriftContributionMissed = "THRIFT_CONTRIBUTION_MISSED";
+    /// <summary>Audit action when a thrift cycle payout is completed.</summary>
+    public const string ThriftPayoutCompleted = "THRIFT_PAYOUT_COMPLETED";
+    /// <summary>Audit action when a thrift member's payout is suspended due to consecutive misses.</summary>
+    public const string ThriftPayoutSuspended = "THRIFT_PAYOUT_SUSPENDED";
+    /// <summary>Audit action when a departing thrift member is reimbursed net contributions.</summary>
+    public const string ThriftMemberReimbursed = "THRIFT_MEMBER_REIMBURSED";
+    /// <summary>Audit action when a member is removed from a thrift group.</summary>
+    public const string ThriftMemberRemoved = "THRIFT_MEMBER_REMOVED";
+
+    // Value-Added Services (VAS) Audit Actions
+    /// <summary>Audit action when a VAS purchase transaction is initialized.</summary>
+    public const string VasPurchaseCreated = "VAS_PURCHASE_CREATED";
+    /// <summary>Audit action when a VAS purchase begins active gateway processing.</summary>
+    public const string VasPurchaseProcessing = "VAS_PURCHASE_PROCESSING";
+    /// <summary>Audit action when a VAS purchase completes successfully.</summary>
+    public const string VasPurchaseSucceeded = "VAS_PURCHASE_SUCCEEDED";
+    /// <summary>Audit action when a VAS purchase definitively fails.</summary>
+    public const string VasPurchaseFailed = "VAS_PURCHASE_FAILED";
+    /// <summary>Audit action when a failed VAS purchase is financially reversed.</summary>
+    public const string VasPurchaseReversed = "VAS_PURCHASE_REVERSED";
+    /// <summary>Audit action when a VAS transaction is resolved via background reconciliation.</summary>
+    public const string VasPurchaseReconciled = "VAS_PURCHASE_RECONCILED";
 }

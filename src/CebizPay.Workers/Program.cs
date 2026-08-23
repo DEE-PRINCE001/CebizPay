@@ -24,6 +24,9 @@ builder.Services.AddHostedService<OutboxPublisherWorker>();
 builder.Services.AddHostedService<PaymentReconciliationWorker>();
 builder.Services.AddHostedService<PayrollExecutionWorker>();
 builder.Services.AddHostedService<LoanRepaymentWorker>();
+builder.Services.AddHostedService<SavingsAccrualWorker>();
+builder.Services.AddHostedService<ThriftCycleWorker>();
+builder.Services.AddHostedService<VasReconciliationWorker>();
 
 var host = builder.Build();
 host.Run();

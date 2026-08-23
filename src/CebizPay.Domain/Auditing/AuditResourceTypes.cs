@@ -53,4 +53,36 @@ public static class AuditResourceTypes
     public const string LoanContract = "LOAN_CONTRACT";
     /// <summary>Loan repayment installment resource type.</summary>
     public const string LoanRepayment = "LOAN_REPAYMENT";
+
+    // Savings
+    /// <summary>Savings plan resource type.</summary>
+    public const string SavingsPlan = "SAVINGS_PLAN";
+    /// <summary>Savings account/contract instance resource type.</summary>
+    public const string SavingsAccount = "SAVINGS_ACCOUNT";
+    /// <summary>Savings contribution resource type.</summary>
+    public const string SavingsContribution = "SAVINGS_CONTRIBUTION";
+    /// <summary>Savings interest policy resource type.</summary>
+    public const string SavingsInterestPolicy = "SAVINGS_INTEREST_POLICY";
+    /// <summary>Savings interest accrual resource type.</summary>
+    public const string SavingsInterestAccrual = "SAVINGS_INTEREST_ACCRUAL";
+
+    // Thrift / Ajo / Esusu
+    /// <summary>Thrift group resource type.</summary>
+    public const string ThriftGroup = "THRIFT_GROUP";
+    /// <summary>Thrift member resource type.</summary>
+    public const string ThriftMember = "THRIFT_MEMBER";
+    /// <summary>Thrift invitation resource type.</summary>
+    public const string ThriftInvitation = "THRIFT_INVITATION";
+    /// <summary>Thrift cycle resource type.</summary>
+    public const string ThriftCycle = "THRIFT_CYCLE";
+    /// <summary>Thrift contribution resource type.</summary>
+    public const string ThriftContribution = "THRIFT_CONTRIBUTION";
+    /// <summary>Thrift payout resource type.</summary>
+    public const string ThriftPayout = "THRIFT_PAYOUT";
+    /// <summary>Thrift reimbursement resource type.</summary>
+    public const string ThriftReimbursement = "THRIFT_REIMBURSEMENT";
+
+    // Value-Added Services (VAS)
+    /// <summary>VAS transaction resource type.</summary>
+    public const string VasTransaction = "VAS_TRANSACTION";
 }

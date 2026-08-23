@@ -129,6 +129,45 @@ public class ApplicationDbContext
     /// <summary>Gets the standard individual loan policies entity set.</summary>
     public DbSet<CebizPay.Domain.Loans.Entities.StandardIndividualLoanPolicy> StandardIndividualLoanPolicies => Set<CebizPay.Domain.Loans.Entities.StandardIndividualLoanPolicy>();
 
+    /// <summary>Gets the savings interest policies entity set.</summary>
+    public DbSet<CebizPay.Domain.Savings.Entities.SavingsInterestPolicy> SavingsInterestPolicies => Set<CebizPay.Domain.Savings.Entities.SavingsInterestPolicy>();
+
+    /// <summary>Gets the savings plans entity set.</summary>
+    public DbSet<CebizPay.Domain.Savings.Entities.SavingsPlan> SavingsPlans => Set<CebizPay.Domain.Savings.Entities.SavingsPlan>();
+
+    /// <summary>Gets the savings accounts entity set.</summary>
+    public DbSet<CebizPay.Domain.Savings.Entities.SavingsAccount> SavingsAccounts => Set<CebizPay.Domain.Savings.Entities.SavingsAccount>();
+
+    /// <summary>Gets the savings contributions entity set.</summary>
+    public DbSet<CebizPay.Domain.Savings.Entities.SavingsContribution> SavingsContributions => Set<CebizPay.Domain.Savings.Entities.SavingsContribution>();
+
+    /// <summary>Gets the savings interest accruals entity set.</summary>
+    public DbSet<CebizPay.Domain.Savings.Entities.SavingsInterestAccrual> SavingsInterestAccruals => Set<CebizPay.Domain.Savings.Entities.SavingsInterestAccrual>();
+
+    /// <summary>Gets the thrift groups entity set.</summary>
+    public DbSet<CebizPay.Domain.Thrift.Entities.ThriftGroup> ThriftGroups => Set<CebizPay.Domain.Thrift.Entities.ThriftGroup>();
+
+    /// <summary>Gets the thrift members entity set.</summary>
+    public DbSet<CebizPay.Domain.Thrift.Entities.ThriftMember> ThriftMembers => Set<CebizPay.Domain.Thrift.Entities.ThriftMember>();
+
+    /// <summary>Gets the thrift invitations entity set.</summary>
+    public DbSet<CebizPay.Domain.Thrift.Entities.ThriftInvitation> ThriftInvitations => Set<CebizPay.Domain.Thrift.Entities.ThriftInvitation>();
+
+    /// <summary>Gets the thrift cycles entity set.</summary>
+    public DbSet<CebizPay.Domain.Thrift.Entities.ThriftCycle> ThriftCycles => Set<CebizPay.Domain.Thrift.Entities.ThriftCycle>();
+
+    /// <summary>Gets the thrift contributions entity set.</summary>
+    public DbSet<CebizPay.Domain.Thrift.Entities.ThriftContribution> ThriftContributions => Set<CebizPay.Domain.Thrift.Entities.ThriftContribution>();
+
+    /// <summary>Gets the thrift payouts entity set.</summary>
+    public DbSet<CebizPay.Domain.Thrift.Entities.ThriftPayout> ThriftPayouts => Set<CebizPay.Domain.Thrift.Entities.ThriftPayout>();
+
+    /// <summary>Gets the thrift reimbursements entity set.</summary>
+    public DbSet<CebizPay.Domain.Thrift.Entities.ThriftReimbursement> ThriftReimbursements => Set<CebizPay.Domain.Thrift.Entities.ThriftReimbursement>();
+
+    /// <summary>Gets the VAS transactions entity set.</summary>
+    public DbSet<CebizPay.Domain.Vas.Entities.VasTransaction> VasTransactions => Set<CebizPay.Domain.Vas.Entities.VasTransaction>();
+
     // Explicit IApplicationDbContext implementations returning IEntitySet<T>
     IEntitySet<IndividualProfile> IApplicationDbContext.IndividualProfiles => new EntitySet<IndividualProfile>(IndividualProfiles);
     IEntitySet<AdminProfile> IApplicationDbContext.AdminProfiles => new EntitySet<AdminProfile>(AdminProfiles);
@@ -164,6 +203,19 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Loans.Entities.LoanContract> IApplicationDbContext.LoanContracts => new EntitySet<CebizPay.Domain.Loans.Entities.LoanContract>(LoanContracts);
     IEntitySet<CebizPay.Domain.Loans.Entities.LoanRepaymentScheduleItem> IApplicationDbContext.LoanRepaymentScheduleItems => new EntitySet<CebizPay.Domain.Loans.Entities.LoanRepaymentScheduleItem>(LoanRepaymentScheduleItems);
     IEntitySet<CebizPay.Domain.Loans.Entities.StandardIndividualLoanPolicy> IApplicationDbContext.StandardIndividualLoanPolicies => new EntitySet<CebizPay.Domain.Loans.Entities.StandardIndividualLoanPolicy>(StandardIndividualLoanPolicies);
+    IEntitySet<CebizPay.Domain.Savings.Entities.SavingsInterestPolicy> IApplicationDbContext.SavingsInterestPolicies => new EntitySet<CebizPay.Domain.Savings.Entities.SavingsInterestPolicy>(SavingsInterestPolicies);
+    IEntitySet<CebizPay.Domain.Savings.Entities.SavingsPlan> IApplicationDbContext.SavingsPlans => new EntitySet<CebizPay.Domain.Savings.Entities.SavingsPlan>(SavingsPlans);
+    IEntitySet<CebizPay.Domain.Savings.Entities.SavingsAccount> IApplicationDbContext.SavingsAccounts => new EntitySet<CebizPay.Domain.Savings.Entities.SavingsAccount>(SavingsAccounts);
+    IEntitySet<CebizPay.Domain.Savings.Entities.SavingsContribution> IApplicationDbContext.SavingsContributions => new EntitySet<CebizPay.Domain.Savings.Entities.SavingsContribution>(SavingsContributions);
+    IEntitySet<CebizPay.Domain.Savings.Entities.SavingsInterestAccrual> IApplicationDbContext.SavingsInterestAccruals => new EntitySet<CebizPay.Domain.Savings.Entities.SavingsInterestAccrual>(SavingsInterestAccruals);
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftGroup> IApplicationDbContext.ThriftGroups => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftGroup>(ThriftGroups);
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftMember> IApplicationDbContext.ThriftMembers => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftMember>(ThriftMembers);
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftInvitation> IApplicationDbContext.ThriftInvitations => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftInvitation>(ThriftInvitations);
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftCycle> IApplicationDbContext.ThriftCycles => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftCycle>(ThriftCycles);
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftContribution> IApplicationDbContext.ThriftContributions => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftContribution>(ThriftContributions);
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftPayout> IApplicationDbContext.ThriftPayouts => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftPayout>(ThriftPayouts);
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftReimbursement> IApplicationDbContext.ThriftReimbursements => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftReimbursement>(ThriftReimbursements);
+    IEntitySet<CebizPay.Domain.Vas.Entities.VasTransaction> IApplicationDbContext.VasTransactions => new EntitySet<CebizPay.Domain.Vas.Entities.VasTransaction>(VasTransactions);
 
     /// <inheritdoc/>
     async Task<IDbTransaction> IApplicationDbContext.BeginTransactionAsync(CancellationToken cancellationToken)

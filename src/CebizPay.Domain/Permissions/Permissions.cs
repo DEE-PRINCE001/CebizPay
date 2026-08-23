@@ -91,6 +91,34 @@ public static class Permissions
     /// <summary>Manage transaction PIN settings.</summary>
     public const string PinManage = "Pin.Manage";
 
+    // Savings
+    /// <summary>View savings plans and savings accounts.</summary>
+    public const string SavingsView = "Savings.View";
+    /// <summary>Create a new savings plan or open a savings account.</summary>
+    public const string SavingsCreate = "Savings.Create";
+    /// <summary>Contribute funds to an active savings account.</summary>
+    public const string SavingsContribute = "Savings.Contribute";
+    /// <summary>Withdraw funds from a savings account.</summary>
+    public const string SavingsWithdraw = "Savings.Withdraw";
+    /// <summary>Manage organization corporate savings plans.</summary>
+    public const string SavingsManagePlan = "Savings.ManagePlan";
+    /// <summary>Manage platform savings interest policies (Super Admin only).</summary>
+    public const string SavingsManagePolicy = "Savings.ManagePolicy";
+
+    // Thrift / Ajo / Esusu
+    /// <summary>View thrift groups, cycles, and member positions.</summary>
+    public const string ThriftView = "Thrift.View";
+    /// <summary>Create a thrift group.</summary>
+    public const string ThriftCreate = "Thrift.Create";
+    /// <summary>Invite members to a thrift group.</summary>
+    public const string ThriftInvite = "Thrift.Invite";
+    /// <summary>Manage thrift group configuration and position locking.</summary>
+    public const string ThriftManage = "Thrift.Manage";
+    /// <summary>Contribute funds to a thrift cycle.</summary>
+    public const string ThriftContribute = "Thrift.Contribute";
+    /// <summary>View thrift payout history and status.</summary>
+    public const string ThriftPayoutView = "Thrift.PayoutView";
+
     // Announcements
     /// <summary>Publish platform-wide announcements.</summary>
     public const string AnnouncementsPublishPlatform = "Announcements.Publish.Platform";
@@ -115,13 +143,20 @@ public static class Permissions
     /// </summary>
     public const string FeesManageBankTransferPolicy = "Fees.ManageBankTransferPolicy";
 
+    // Value-Added Services (VAS - Airtime & Data)
+    /// <summary>View VAS transactions and catalog bundles.</summary>
+    public const string VasView = "Vas.View";
+    /// <summary>Purchase airtime and mobile data bundles.</summary>
+    public const string VasPurchase = "Vas.Purchase";
+
     /// <summary>
     /// Read-only permissions for platform auditor / view-only roles.
     /// </summary>
     public static readonly IReadOnlySet<string> ReadOnlyAdminPermissions = new HashSet<string>
     {
         KycView, KybView, OrganizationsView, TransactionsView, PayrollLogsView, AuditView,
-        StaffView, PayrollView, WalletView, ErpView, LoanView, LoanRepaymentView
+        StaffView, PayrollView, WalletView, ErpView, LoanView, LoanRepaymentView,
+        SavingsView, ThriftView, ThriftPayoutView, VasView
     };
 
     /// <summary>
@@ -132,6 +167,9 @@ public static class Permissions
         KybView, StaffView, StaffManage, StaffInvite, DepartmentsManage, RolesManage,
         SalaryLevelsManage, PayrollView, PayrollExecute, WalletView, WalletFund, WalletTransfer, WalletTransferBank,
         LoanDecide, LoanView, LoanCreate, LoanApprove, LoanManagePlan, LoanRepaymentView,
+        SavingsView, SavingsCreate, SavingsContribute, SavingsWithdraw, SavingsManagePlan,
+        ThriftView, ThriftCreate, ThriftInvite, ThriftManage, ThriftContribute, ThriftPayoutView,
+        VasView, VasPurchase,
         PinManage, AnnouncementsPublishWorkplace, ErpView, ErpManage
     };
 
@@ -141,7 +179,7 @@ public static class Permissions
     public static readonly IReadOnlySet<string> FinanceManagerPermissions = new HashSet<string>
     {
         WalletView, WalletFund, WalletTransfer, WalletTransferBank, PayrollView, PayrollExecute, ErpView, TransactionsView,
-        LoanView, LoanRepaymentView
+        LoanView, LoanRepaymentView, SavingsView, SavingsManagePlan, ThriftView, ThriftPayoutView, VasView, VasPurchase
     };
 
     /// <summary>
@@ -150,6 +188,6 @@ public static class Permissions
     public static readonly IReadOnlySet<string> HrManagerPermissions = new HashSet<string>
     {
         StaffView, StaffManage, StaffInvite, DepartmentsManage, RolesManage, SalaryLevelsManage, AnnouncementsPublishWorkplace,
-        LoanView
+        LoanView, SavingsView, ThriftView
     };
 }

@@ -6,6 +6,8 @@ using CebizPay.Infrastructure.Caching;
 using CebizPay.Infrastructure.Identity;
 using CebizPay.Infrastructure.Messaging;
 using CebizPay.Infrastructure.Options;
+using CebizPay.Infrastructure.Payments.Flutterwave;
+using CebizPay.Infrastructure.Payments.Paystack;
 using CebizPay.Infrastructure.Persistence;
 using CebizPay.Infrastructure.Security;
 using CebizPay.Infrastructure.Services;
@@ -114,14 +116,31 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IFeePolicyService, CebizPay.Infrastructure.Finance.FeePolicyService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IBankTransferFeePolicyService, CebizPay.Infrastructure.Finance.BankTransferFeePolicyService>();
 
-        // Configure Payments & Providers
-        services.Configure<CebizPay.Infrastructure.Payments.Flutterwave.FlutterwaveOptions>(
-            configuration.GetSection(CebizPay.Infrastructure.Payments.Flutterwave.FlutterwaveOptions.SectionName));
-        services.Configure<CebizPay.Infrastructure.Payments.Paystack.PaystackOptions>(
-            configuration.GetSection(CebizPay.Infrastructure.Payments.Paystack.PaystackOptions.SectionName));
+        // Configure Payments & VAS Providers Options with validation
+        services.AddOptions<FlutterwaveOptions>()
+            .Bind(configuration.GetSection(FlutterwaveOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddOptions<PaystackOptions>()
+            .Bind(configuration.GetSection(PaystackOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddOptions<VtuGateOptions>()
+            .Bind(configuration.GetSection(VtuGateOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
 
         services.AddHttpClient<CebizPay.Infrastructure.Payments.Flutterwave.FlutterwaveClient>();
         services.AddHttpClient<CebizPay.Infrastructure.Payments.Paystack.PaystackClient>();
+        services.AddHttpClient<CebizPay.Infrastructure.Vas.VtuGate.VtuGateClient>();
+
+        // Configure VAS Services
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Vas.IVasProvider, CebizPay.Infrastructure.Vas.VtuGate.VtuGateVasProvider>();
+        services.AddSingleton<CebizPay.Application.Common.Interfaces.Vas.IVasDuplicateGuard, CebizPay.Infrastructure.Vas.VasDuplicateGuard>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Vas.IVasPurchaseExecutor, CebizPay.Infrastructure.Vas.VasPurchaseExecutor>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Vas.IVasReconciliationService, CebizPay.Infrastructure.Vas.VasReconciliationService>();
 
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentProvider, CebizPay.Infrastructure.Payments.Flutterwave.FlutterwavePaymentProvider>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentProvider, CebizPay.Infrastructure.Payments.Paystack.PaystackPaymentProvider>();
@@ -150,6 +169,15 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Loans.ILoanPlanService, CebizPay.Infrastructure.Loans.LoanPlanService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Loans.ILoanApplicationService, CebizPay.Infrastructure.Loans.LoanApplicationService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Loans.ILoanContractService, CebizPay.Infrastructure.Loans.LoanContractService>();
+
+        // Configure Savings services
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Savings.ISavingsInterestPolicyService, CebizPay.Infrastructure.Savings.SavingsInterestPolicyService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Savings.ISavingsService, CebizPay.Infrastructure.Savings.SavingsService>();
+
+        // Configure Thrift / Ajo / Esusu services
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Thrift.IThriftGroupService, CebizPay.Infrastructure.Thrift.ThriftGroupService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Thrift.IThriftCollectionService, CebizPay.Infrastructure.Thrift.ThriftCollectionService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Thrift.IThriftPayoutService, CebizPay.Infrastructure.Thrift.ThriftPayoutService>();
 
         // Configure Redis
         var redisOptions = configuration.GetSection(RedisOptions.SectionName).Get<RedisOptions>();

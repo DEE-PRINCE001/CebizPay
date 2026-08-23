@@ -147,6 +147,21 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
                 "PIN Required",
                 exception.Message),
 
+            VasDuplicatePurchaseException => (
+                StatusCodes.Status409Conflict,
+                "Duplicate VAS Purchase",
+                exception.Message),
+
+            VasLimitExceededException => (
+                StatusCodes.Status422UnprocessableEntity,
+                "VAS Limit Exceeded",
+                exception.Message),
+
+            VasInvalidProductException => (
+                StatusCodes.Status422UnprocessableEntity,
+                "Invalid VAS Product",
+                exception.Message),
+
             _ => (
                 StatusCodes.Status500InternalServerError,
                 "An unexpected error occurred",
@@ -165,6 +180,9 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
         PinRequiredException ex => ex.Code,
         PinLockedException ex => ex.Code,
         InvalidPinException ex => ex.Code,
+        VasDuplicatePurchaseException ex => ex.Code,
+        VasLimitExceededException ex => ex.Code,
+        VasInvalidProductException ex => ex.Code,
         _ => null
     };
 
