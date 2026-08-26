@@ -12,29 +12,23 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
-
     <!-- OpenApi Fix -->
     <PackageVersion Include="Microsoft.OpenApi" Version="2.7.5" />
-
     <!-- PostgreSQL -->
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />
-
     <!-- Caching & Messaging -->
     <PackageVersion Include="StackExchange.Redis" Version="3.1.13" />
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
-
     <!-- Application / Utilities -->
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
     <PackageVersion Include="MediatR" Version="14.2.0" />
     <PackageVersion Include="Asp.Versioning.Http" Version="8.1.0" />
     <PackageVersion Include="BCrypt.Net-Next" Version="4.0.3" />
-
     <!-- Health Checks -->
     <PackageVersion Include="AspNetCore.HealthChecks.NpgSql" Version="9.0.0" />
     <PackageVersion Include="AspNetCore.HealthChecks.Rabbitmq" Version="9.0.0" />
     <PackageVersion Include="AspNetCore.HealthChecks.Redis" Version="9.0.0" />
-
     <!-- Logging & Observability -->
     <PackageVersion Include="Serilog.AspNetCore" Version="9.0.0" />
     <PackageVersion Include="Serilog.Sinks.Console" Version="6.0.0" />
@@ -43,9 +37,9 @@
     <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.11.1" />
     <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.11.0" />
     <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.3" />
-
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.2.3" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />

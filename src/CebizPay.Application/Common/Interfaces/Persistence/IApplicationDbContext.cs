@@ -62,6 +62,33 @@ public interface IApplicationDbContext
     /// <summary>Gets the customers entity set.</summary>
     IEntitySet<Customer> Customers { get; }
 
+    /// <summary>Gets the purchase orders entity set.</summary>
+    IEntitySet<PurchaseOrder> PurchaseOrders { get; }
+
+    /// <summary>Gets the purchase order items entity set.</summary>
+    IEntitySet<PurchaseOrderItem> PurchaseOrderItems { get; }
+
+    /// <summary>Gets the sales orders entity set.</summary>
+    IEntitySet<SalesOrder> SalesOrders { get; }
+
+    /// <summary>Gets the sales order items entity set.</summary>
+    IEntitySet<SalesOrderItem> SalesOrderItems { get; }
+
+    /// <summary>Gets the operating expenses entity set.</summary>
+    IEntitySet<OperatingExpense> OperatingExpenses { get; }
+
+    /// <summary>Gets the ERP invoices entity set.</summary>
+    IEntitySet<ErpInvoice> ErpInvoices { get; }
+
+    /// <summary>Gets the ERP invoice items entity set.</summary>
+    IEntitySet<ErpInvoiceItem> ErpInvoiceItems { get; }
+
+    /// <summary>Gets the ERP receipts entity set.</summary>
+    IEntitySet<ErpReceipt> ErpReceipts { get; }
+
+    /// <summary>Gets the ERP company disbursement vouchers entity set.</summary>
+    IEntitySet<CompanyVoucher> CompanyVouchers { get; }
+
     /// <summary>Gets the KYC documents entity set.</summary>
     IEntitySet<KycDocument> KycDocuments { get; }
 

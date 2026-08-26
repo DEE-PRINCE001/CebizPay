@@ -111,4 +111,18 @@ public static class AuditResourceTypes
     public const string Supplier = "SUPPLIER";
     /// <summary>Customer resource type.</summary>
     public const string Customer = "CUSTOMER";
+
+    // ERP Orders, Expenses, Invoices & Receipts (Phase 5D)
+    /// <summary>Purchase order resource type.</summary>
+    public const string PurchaseOrder = "PURCHASE_ORDER";
+    /// <summary>Sales order resource type.</summary>
+    public const string SalesOrder = "SALES_ORDER";
+    /// <summary>Operating expense resource type.</summary>
+    public const string OperatingExpense = "OPERATING_EXPENSE";
+    /// <summary>Invoice resource type.</summary>
+    public const string Invoice = "INVOICE";
+    /// <summary>Receipt resource type.</summary>
+    public const string Receipt = "RECEIPT";
+    /// <summary>Company voucher resource type.</summary>
+    public const string CompanyVoucher = "COMPANY_VOUCHER";
 }

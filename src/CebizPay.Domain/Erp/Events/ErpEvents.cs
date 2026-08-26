@@ -1,4 +1,5 @@
 using CebizPay.Domain.Erp.Enums;
+using CebizPay.Domain.Finance.Enums;
 
 namespace CebizPay.Domain.Erp.Events;
 
@@ -137,3 +138,184 @@ public sealed record CustomerDeletedDomainEvent(
     Guid OrganizationId,
     string Reference,
     DateTime OccurredAtUtc);
+
+// Phase 5D Orders, Expenses, Invoices & Receipts Events
+
+/// <summary>Event raised when a purchase order is created.</summary>
+public sealed record PurchaseOrderCreatedDomainEvent(
+    Guid PurchaseOrderId,
+    Guid OrganizationId,
+    string OrderNumber,
+    Guid SupplierId,
+    decimal TotalAmount,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when a purchase order is confirmed.</summary>
+public sealed record PurchaseOrderConfirmedDomainEvent(
+    Guid PurchaseOrderId,
+    Guid OrganizationId,
+    string OrderNumber,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when a purchase order is received into inventory.</summary>
+public sealed record PurchaseOrderReceivedDomainEvent(
+    Guid PurchaseOrderId,
+    Guid OrganizationId,
+    string OrderNumber,
+    PurchaseOrderStatus Status,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when a purchase order is cancelled.</summary>
+public sealed record PurchaseOrderCancelledDomainEvent(
+    Guid PurchaseOrderId,
+    Guid OrganizationId,
+    string OrderNumber,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when a sales order is created.</summary>
+public sealed record SalesOrderCreatedDomainEvent(
+    Guid SalesOrderId,
+    Guid OrganizationId,
+    string OrderNumber,
+    Guid CustomerId,
+    decimal TotalAmount,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when a sales order is confirmed.</summary>
+public sealed record SalesOrderConfirmedDomainEvent(
+    Guid SalesOrderId,
+    Guid OrganizationId,
+    string OrderNumber,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when a sales order is fulfilled from inventory.</summary>
+public sealed record SalesOrderFulfilledDomainEvent(
+    Guid SalesOrderId,
+    Guid OrganizationId,
+    string OrderNumber,
+    SalesOrderStatus Status,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when a sales order is cancelled.</summary>
+public sealed record SalesOrderCancelledDomainEvent(
+    Guid SalesOrderId,
+    Guid OrganizationId,
+    string OrderNumber,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when an operating expense is created.</summary>
+public sealed record ExpenseCreatedDomainEvent(
+    Guid ExpenseId,
+    Guid OrganizationId,
+    string ExpenseNumber,
+    ExpenseCategory Category,
+    decimal Amount,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when an operating expense is approved.</summary>
+public sealed record ExpenseApprovedDomainEvent(
+    Guid ExpenseId,
+    Guid OrganizationId,
+    string ExpenseNumber,
+    string ApprovedByUserId,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when an operating expense is paid.</summary>
+public sealed record ExpensePaidDomainEvent(
+    Guid ExpenseId,
+    Guid OrganizationId,
+    string ExpenseNumber,
+    decimal Amount,
+    ExpensePaymentMethod PaymentMethod,
+    Guid? LedgerTransactionId,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when an operating expense is cancelled.</summary>
+public sealed record ExpenseCancelledDomainEvent(
+    Guid ExpenseId,
+    Guid OrganizationId,
+    string ExpenseNumber,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when an invoice is created.</summary>
+public sealed record InvoiceCreatedDomainEvent(
+    Guid InvoiceId,
+    Guid OrganizationId,
+    string InvoiceNumber,
+    Guid CustomerId,
+    decimal TotalAmount,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when an invoice is issued.</summary>
+public sealed record InvoiceIssuedDomainEvent(
+    Guid InvoiceId,
+    Guid OrganizationId,
+    string InvoiceNumber,
+    DateTime DueDate,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when an invoice payment is settled.</summary>
+public sealed record InvoicePaidDomainEvent(
+    Guid InvoiceId,
+    Guid OrganizationId,
+    string InvoiceNumber,
+    decimal PaidAmount,
+    InvoiceSettlementMethod SettlementMethod,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when an invoice is cancelled.</summary>
+public sealed record InvoiceCancelledDomainEvent(
+    Guid InvoiceId,
+    Guid OrganizationId,
+    string InvoiceNumber,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when an immutable payment receipt is generated.</summary>
+public sealed record ReceiptGeneratedDomainEvent(
+    Guid ReceiptId,
+    Guid OrganizationId,
+    string ReceiptNumber,
+    Guid InvoiceId,
+    decimal Amount,
+    DateTime OccurredAtUtc);
+
+// ==========================================
+// Company Vouchers (Phase 5E)
+// ==========================================
+
+/// <summary>Event raised when a company voucher is created.</summary>
+public sealed record CompanyVoucherCreatedDomainEvent(
+    Guid VoucherId,
+    Guid OrganizationId,
+    string VoucherNumber,
+    decimal Amount,
+    Currency Currency,
+    string PayeeName,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when a company voucher is approved.</summary>
+public sealed record CompanyVoucherApprovedDomainEvent(
+    Guid VoucherId,
+    Guid OrganizationId,
+    string VoucherNumber,
+    string ApprovedByUserId,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when a company voucher is paid.</summary>
+public sealed record CompanyVoucherPaidDomainEvent(
+    Guid VoucherId,
+    Guid OrganizationId,
+    string VoucherNumber,
+    decimal Amount,
+    Currency Currency,
+    CompanyVoucherPaymentMethod PaymentMethod,
+    Guid? LedgerTransactionId,
+    DateTime OccurredAtUtc);
+
+/// <summary>Event raised when a company voucher is cancelled.</summary>
+public sealed record CompanyVoucherCancelledDomainEvent(
+    Guid VoucherId,
+    Guid OrganizationId,
+    string VoucherNumber,
+    DateTime OccurredAtUtc);
+

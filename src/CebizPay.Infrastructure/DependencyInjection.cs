@@ -58,6 +58,9 @@ public static class DependencyInjection
         services.AddOptions<CorsOptions>()
             .Bind(configuration.GetSection(CorsOptions.SectionName));
 
+        services.AddOptions<SuperAdminSeedOptions>()
+            .Bind(configuration.GetSection(SuperAdminSeedOptions.SectionName));
+
         // Configure PostgreSQL & EF Core
         var dbOptions = configuration.GetSection(DatabaseOptions.SectionName).Get<DatabaseOptions>()
             ?? new DatabaseOptions();

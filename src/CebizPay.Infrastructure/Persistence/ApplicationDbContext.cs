@@ -79,6 +79,33 @@ public class ApplicationDbContext
     /// <summary>Gets the customers entity set.</summary>
     public DbSet<Customer> Customers => Set<Customer>();
 
+    /// <summary>Gets the purchase orders entity set.</summary>
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+
+    /// <summary>Gets the purchase order items entity set.</summary>
+    public DbSet<PurchaseOrderItem> PurchaseOrderItems => Set<PurchaseOrderItem>();
+
+    /// <summary>Gets the sales orders entity set.</summary>
+    public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
+
+    /// <summary>Gets the sales order items entity set.</summary>
+    public DbSet<SalesOrderItem> SalesOrderItems => Set<SalesOrderItem>();
+
+    /// <summary>Gets the operating expenses entity set.</summary>
+    public DbSet<OperatingExpense> OperatingExpenses => Set<OperatingExpense>();
+
+    /// <summary>Gets the ERP invoices entity set.</summary>
+    public DbSet<ErpInvoice> ErpInvoices => Set<ErpInvoice>();
+
+    /// <summary>Gets the ERP invoice items entity set.</summary>
+    public DbSet<ErpInvoiceItem> ErpInvoiceItems => Set<ErpInvoiceItem>();
+
+    /// <summary>Gets the ERP receipts entity set.</summary>
+    public DbSet<ErpReceipt> ErpReceipts => Set<ErpReceipt>();
+
+    /// <summary>Gets the ERP company disbursement vouchers entity set.</summary>
+    public DbSet<CompanyVoucher> CompanyVouchers => Set<CompanyVoucher>();
+
     /// <summary>Gets the KYC documents entity set.</summary>
     public DbSet<KycDocument> KycDocuments => Set<KycDocument>();
 
@@ -214,6 +241,15 @@ public class ApplicationDbContext
     IEntitySet<ErpService> IApplicationDbContext.ErpServices => new EntitySet<ErpService>(ErpServices);
     IEntitySet<Supplier> IApplicationDbContext.Suppliers => new EntitySet<Supplier>(Suppliers);
     IEntitySet<Customer> IApplicationDbContext.Customers => new EntitySet<Customer>(Customers);
+    IEntitySet<PurchaseOrder> IApplicationDbContext.PurchaseOrders => new EntitySet<PurchaseOrder>(PurchaseOrders);
+    IEntitySet<PurchaseOrderItem> IApplicationDbContext.PurchaseOrderItems => new EntitySet<PurchaseOrderItem>(PurchaseOrderItems);
+    IEntitySet<SalesOrder> IApplicationDbContext.SalesOrders => new EntitySet<SalesOrder>(SalesOrders);
+    IEntitySet<SalesOrderItem> IApplicationDbContext.SalesOrderItems => new EntitySet<SalesOrderItem>(SalesOrderItems);
+    IEntitySet<OperatingExpense> IApplicationDbContext.OperatingExpenses => new EntitySet<OperatingExpense>(OperatingExpenses);
+    IEntitySet<ErpInvoice> IApplicationDbContext.ErpInvoices => new EntitySet<ErpInvoice>(ErpInvoices);
+    IEntitySet<ErpInvoiceItem> IApplicationDbContext.ErpInvoiceItems => new EntitySet<ErpInvoiceItem>(ErpInvoiceItems);
+    IEntitySet<ErpReceipt> IApplicationDbContext.ErpReceipts => new EntitySet<ErpReceipt>(ErpReceipts);
+    IEntitySet<CompanyVoucher> IApplicationDbContext.CompanyVouchers => new EntitySet<CompanyVoucher>(CompanyVouchers);
     IEntitySet<KycDocument> IApplicationDbContext.KycDocuments => new EntitySet<KycDocument>(KycDocuments);
     IEntitySet<KybDetail> IApplicationDbContext.KybDetails => new EntitySet<KybDetail>(KybDetails);
     IEntitySet<AuditLog> IApplicationDbContext.AuditLogs => new EntitySet<AuditLog>(AuditLogs);

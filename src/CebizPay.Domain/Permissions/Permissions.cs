@@ -170,6 +170,30 @@ public static class Permissions
     public const string CustomerView = "Customer.View";
     /// <summary>Create, update, and manage customers.</summary>
     public const string CustomerManage = "Customer.Manage";
+    /// <summary>View purchase and sales orders.</summary>
+    public const string OrdersView = "Orders.View";
+    /// <summary>Create, confirm, fulfill, receive, or cancel orders.</summary>
+    public const string OrdersManage = "Orders.Manage";
+    /// <summary>View operating expenses.</summary>
+    public const string ExpensesView = "Expenses.View";
+    /// <summary>Create, approve, pay, or cancel operating expenses.</summary>
+    public const string ExpensesManage = "Expenses.Manage";
+    /// <summary>View invoices and customer billing.</summary>
+    public const string InvoicesView = "Invoices.View";
+    /// <summary>Create, issue, pay, or cancel invoices.</summary>
+    public const string InvoicesManage = "Invoices.Manage";
+    /// <summary>View payment receipts.</summary>
+    public const string ReceiptsView = "Receipts.View";
+    /// <summary>View company vouchers.</summary>
+    public const string CompanyVouchersView = "CompanyVouchers.View";
+    /// <summary>Create company vouchers.</summary>
+    public const string CompanyVouchersCreate = "CompanyVouchers.Create";
+    /// <summary>Approve company vouchers.</summary>
+    public const string CompanyVouchersApprove = "CompanyVouchers.Approve";
+    /// <summary>Pay or settle company vouchers.</summary>
+    public const string CompanyVouchersPay = "CompanyVouchers.Pay";
+    /// <summary>View ERP financial and operational reports.</summary>
+    public const string ReportsView = "Reports.View";
 
     // Platform Fee Policy (Super Admin only)
     /// <summary>
@@ -197,7 +221,9 @@ public static class Permissions
         KycView, KybView, OrganizationsView, TransactionsView, PayrollLogsView, AuditView,
         StaffView, PayrollView, WalletView, ErpView, LoanView, LoanRepaymentView,
         SavingsView, ThriftView, ThriftPayoutView, VasView, RecruitmentView,
-        InventoryView, ServiceView, SupplierView, CustomerView
+        InventoryView, ServiceView, SupplierView, CustomerView,
+        OrdersView, ExpensesView, InvoicesView, ReceiptsView,
+        CompanyVouchersView, ReportsView
     };
 
     /// <summary>
@@ -216,6 +242,8 @@ public static class Permissions
         VasView, VasPurchase,
         InventoryView, InventoryManage, InventoryAdjust, InventoryValuationManage,
         ServiceView, ServiceManage, SupplierView, SupplierManage, CustomerView, CustomerManage,
+        OrdersView, OrdersManage, ExpensesView, ExpensesManage, InvoicesView, InvoicesManage, ReceiptsView,
+        CompanyVouchersView, CompanyVouchersCreate, CompanyVouchersApprove, CompanyVouchersPay, ReportsView,
         PinManage, AnnouncementsPublishWorkplace, ErpView, ErpManage
     };
 
@@ -227,7 +255,9 @@ public static class Permissions
         WalletView, WalletFund, WalletTransfer, WalletTransferBank, PayrollView, PayrollExecute, ErpView, TransactionsView,
         LoanView, LoanRepaymentView, SavingsView, SavingsManagePlan, ThriftView, ThriftPayoutView, VasView, VasPurchase,
         InventoryView, InventoryManage, InventoryAdjust, InventoryValuationManage,
-        ServiceView, ServiceManage, SupplierView, SupplierManage, CustomerView, CustomerManage
+        ServiceView, ServiceManage, SupplierView, SupplierManage, CustomerView, CustomerManage,
+        OrdersView, OrdersManage, ExpensesView, ExpensesManage, InvoicesView, InvoicesManage, ReceiptsView,
+        CompanyVouchersView, CompanyVouchersCreate, CompanyVouchersApprove, CompanyVouchersPay, ReportsView
     };
 
     /// <summary>

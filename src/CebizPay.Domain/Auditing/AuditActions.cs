@@ -348,4 +348,54 @@ public static class AuditActions
     public const string CustomerUpdated = "CUSTOMER_UPDATED";
     /// <summary>Audit action when a customer is deactivated or deleted.</summary>
     public const string CustomerDeleted = "CUSTOMER_DELETED";
+
+    // ERP Orders, Expenses, Invoices & Receipts (Phase 5D)
+    /// <summary>Audit action when a purchase order is created.</summary>
+    public const string PurchaseOrderCreated = "PURCHASE_ORDER_CREATED";
+    /// <summary>Audit action when a purchase order is confirmed.</summary>
+    public const string PurchaseOrderConfirmed = "PURCHASE_ORDER_CONFIRMED";
+    /// <summary>Audit action when a purchase order is received into inventory.</summary>
+    public const string PurchaseOrderReceived = "PURCHASE_ORDER_RECEIVED";
+    /// <summary>Audit action when a purchase order is cancelled.</summary>
+    public const string PurchaseOrderCancelled = "PURCHASE_ORDER_CANCELLED";
+
+    /// <summary>Audit action when a sales order is created.</summary>
+    public const string SalesOrderCreated = "SALES_ORDER_CREATED";
+    /// <summary>Audit action when a sales order is confirmed.</summary>
+    public const string SalesOrderConfirmed = "SALES_ORDER_CONFIRMED";
+    /// <summary>Audit action when a sales order is fulfilled from inventory.</summary>
+    public const string SalesOrderFulfilled = "SALES_ORDER_FULFILLED";
+    /// <summary>Audit action when a sales order is cancelled.</summary>
+    public const string SalesOrderCancelled = "SALES_ORDER_CANCELLED";
+
+    /// <summary>Audit action when an operating expense is created.</summary>
+    public const string ExpenseCreated = "EXPENSE_CREATED";
+    /// <summary>Audit action when an operating expense is approved.</summary>
+    public const string ExpenseApproved = "EXPENSE_APPROVED";
+    /// <summary>Audit action when an operating expense is paid.</summary>
+    public const string ExpensePaid = "EXPENSE_PAID";
+    /// <summary>Audit action when an operating expense is cancelled.</summary>
+    public const string ExpenseCancelled = "EXPENSE_CANCELLED";
+
+    /// <summary>Audit action when an invoice is created.</summary>
+    public const string InvoiceCreated = "INVOICE_CREATED";
+    /// <summary>Audit action when an invoice is issued.</summary>
+    public const string InvoiceIssued = "INVOICE_ISSUED";
+    /// <summary>Audit action when an invoice payment is recorded / settled.</summary>
+    public const string InvoicePaid = "INVOICE_PAID";
+    /// <summary>Audit action when an invoice is cancelled.</summary>
+    public const string InvoiceCancelled = "INVOICE_CANCELLED";
+
+    /// <summary>Audit action when an immutable receipt is generated upon invoice settlement.</summary>
+    public const string ReceiptGenerated = "RECEIPT_GENERATED";
+
+    // Company Vouchers (Phase 5E)
+    /// <summary>Audit action when a company voucher is created.</summary>
+    public const string CompanyVoucherCreated = "COMPANY_VOUCHER_CREATED";
+    /// <summary>Audit action when a company voucher is approved.</summary>
+    public const string CompanyVoucherApproved = "COMPANY_VOUCHER_APPROVED";
+    /// <summary>Audit action when a company voucher is paid.</summary>
+    public const string CompanyVoucherPaid = "COMPANY_VOUCHER_PAID";
+    /// <summary>Audit action when a company voucher is cancelled.</summary>
+    public const string CompanyVoucherCancelled = "COMPANY_VOUCHER_CANCELLED";
 }

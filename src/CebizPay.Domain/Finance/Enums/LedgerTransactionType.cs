@@ -36,5 +36,11 @@ public enum LedgerTransactionType
     /// <summary>Inbound bank deposit to virtual account.</summary>
     VirtualAccountDeposit = 15,
     /// <summary>Inbound card payment / checkout charge.</summary>
-    CardFunding = 16
+    CardFunding = 16,
+    /// <summary>ERP operating expense payment from wallet.</summary>
+    ErpExpense = 17,
+    /// <summary>ERP invoice payment settled via wallet.</summary>
+    ErpInvoicePayment = 18,
+    /// <summary>ERP company voucher disbursement settled via wallet.</summary>
+    CompanyVoucherDisbursement = 19
 }

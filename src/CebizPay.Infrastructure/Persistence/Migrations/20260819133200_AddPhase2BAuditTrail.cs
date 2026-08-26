@@ -13,10 +13,6 @@ namespace CebizPay.Infrastructure.Persistence.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
-                name: "IX_IdempotencyRecords_UserId_OrganizationId_Operation_Idempote~",
-                table: "IdempotencyRecords");
-
-            migrationBuilder.DropIndex(
                 name: "IX_AuditLogs_ActorUserId",
                 table: "AuditLogs");
 
@@ -90,20 +86,6 @@ namespace CebizPay.Infrastructure.Persistence.Migrations
                 nullable: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_IdempotencyRecords_OrganizationId_Operation_IdempotencyKey",
-                table: "IdempotencyRecords",
-                columns: new[] { "OrganizationId", "Operation", "IdempotencyKey" },
-                unique: true,
-                filter: "\"OrganizationId\" IS NOT NULL");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_IdempotencyRecords_UserId_Operation_IdempotencyKey",
-                table: "IdempotencyRecords",
-                columns: new[] { "UserId", "Operation", "IdempotencyKey" },
-                unique: true,
-                filter: "\"OrganizationId\" IS NULL AND \"UserId\" IS NOT NULL");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_AuditLogs_ActorId",
                 table: "AuditLogs",
                 column: "ActorId");
@@ -127,14 +109,6 @@ namespace CebizPay.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropIndex(
-                name: "IX_IdempotencyRecords_OrganizationId_Operation_IdempotencyKey",
-                table: "IdempotencyRecords");
-
-            migrationBuilder.DropIndex(
-                name: "IX_IdempotencyRecords_UserId_Operation_IdempotencyKey",
-                table: "IdempotencyRecords");
-
             migrationBuilder.DropIndex(
                 name: "IX_AuditLogs_ActorId",
                 table: "AuditLogs");
@@ -207,12 +181,6 @@ namespace CebizPay.Infrastructure.Persistence.Migrations
                 maxLength: 450,
                 nullable: false,
                 defaultValue: "");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_IdempotencyRecords_UserId_OrganizationId_Operation_Idempote~",
-                table: "IdempotencyRecords",
-                columns: new[] { "UserId", "OrganizationId", "Operation", "IdempotencyKey" },
-                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_AuditLogs_ActorUserId",
