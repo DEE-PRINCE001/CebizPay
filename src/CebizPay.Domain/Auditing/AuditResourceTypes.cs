@@ -125,4 +125,14 @@ public static class AuditResourceTypes
     public const string Receipt = "RECEIPT";
     /// <summary>Company voucher resource type.</summary>
     public const string CompanyVoucher = "COMPANY_VOUCHER";
+    /// <summary>External funding account resource type.</summary>
+    public const string ExternalFundingAccount = "EXTERNAL_FUNDING_ACCOUNT";
+    /// <summary>Generalized platform fee policy resource type.</summary>
+    public const string PlatformFeePolicy = "PLATFORM_FEE_POLICY";
+    /// <summary>Saved card token resource type.</summary>
+    public const string SavedCard = "SAVED_CARD";
+    /// <summary>Card refund resource type.</summary>
+    public const string CardRefund = "CARD_REFUND";
+    /// <summary>Card verification resource type.</summary>
+    public const string CardVerification = "CARD_VERIFICATION";
 }

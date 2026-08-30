@@ -458,6 +458,213 @@ public sealed partial class FlutterwaveClient
         }
     }
 
+    /// <summary>
+    /// Verifies transaction outcome and extracts tokenized card details if available.
+    /// </summary>
+    public async Task<(PaymentProviderResult Result, CardTokenDetails? TokenDetails)> VerifyTransactionWithDetailsAsync(
+        string transactionIdOrRef,
+        CancellationToken cancellationToken = default)
+    {
+        var cleanRef = transactionIdOrRef.Trim();
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"v3/transactions/{cleanRef}/verify");
+        ApplyAuthentication(request);
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var statusCode = (int)response.StatusCode;
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<FlutterwaveVerifyTransactionResponse>(responseString);
+
+            if (response.IsSuccessStatusCode && parsed != null && parsed.Status == "success" && parsed.Data != null)
+            {
+                var status = parsed.Data.Status?.ToUpperInvariant();
+                var safeMeta = JsonSerializer.Serialize(new
+                {
+                    flw_id = parsed.Data.Id,
+                    flw_ref = parsed.Data.FlwRef,
+                    status = parsed.Data.Status,
+                    processor_response = parsed.Data.ProcessorResponse
+                });
+
+                CardTokenDetails? tokenDetails = null;
+                if (parsed.Data.Card != null && !string.IsNullOrWhiteSpace(parsed.Data.Card.Last4Digits))
+                {
+                    var tokenValue = !string.IsNullOrWhiteSpace(parsed.Data.Card.Token)
+                        ? parsed.Data.Card.Token.Trim()
+                        : (parsed.Data.FlwRef ?? cleanRef);
+                    var expParts = (parsed.Data.Card.Expiry ?? string.Empty).Split('/');
+                    var expMonth = expParts.Length > 0 ? expParts[0].Trim() : null;
+                    var expYear = expParts.Length > 1 ? expParts[1].Trim() : null;
+                    tokenDetails = new CardTokenDetails(
+                        Token: tokenValue,
+                        Last4: parsed.Data.Card.Last4Digits.Trim(),
+                        Brand: parsed.Data.Card.Type ?? "Card",
+                        ExpiryMonth: expMonth,
+                        ExpiryYear: expYear,
+                        CardHolderName: parsed.Data.Customer?.Name);
+                }
+
+                if (status == "SUCCESSFUL")
+                {
+                    return (PaymentProviderResult.Success(parsed.Data.FlwRef ?? cleanRef, safeMeta), tokenDetails);
+                }
+
+                if (status == "FAILED")
+                {
+                    return (PaymentProviderResult.BusinessFailure("PAYMENT_FAILED", parsed.Data.ProcessorResponse ?? "Card transaction failed", safeMeta), tokenDetails);
+                }
+
+                return (PaymentProviderResult.Unknown($"Card transaction status is '{status}'", safeMeta), tokenDetails);
+            }
+
+            if (statusCode >= 500)
+            {
+                return (PaymentProviderResult.TechnicalFailure(string.Format(CultureInfo.InvariantCulture, "HTTP_{0}", statusCode), parsed?.Message ?? "Server error"), null);
+            }
+
+            return (PaymentProviderResult.BusinessFailure(string.Format(CultureInfo.InvariantCulture, "STATUS_{0}", statusCode), parsed?.Message ?? "Transaction verification failed"), null);
+        }
+        catch (Exception ex)
+        {
+            return (PaymentProviderResult.Unknown($"Transaction verification communication error: {ex.Message}"), null);
+        }
+    }
+
+    /// <summary>
+    /// Charges a tokenized card using Flutterwave's tokenized charges API.
+    /// </summary>
+    public async Task<CardChargeResult> ChargeTokenizedCardAsync(
+        string token,
+        decimal amount,
+        string currency,
+        string email,
+        string txRef,
+        string? firstName = null,
+        string? lastName = null,
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "v3/tokenized-charges");
+        ApplyAuthentication(request);
+
+        var payload = new FlutterwaveTokenizedChargeRequest(
+            Token: token.Trim(),
+            Currency: currency.Trim().ToUpperInvariant(),
+            Country: "NG",
+            Amount: amount,
+            Email: email.Trim(),
+            FirstName: firstName?.Trim() ?? "Customer",
+            LastName: lastName?.Trim() ?? "CebizPay",
+            TxRef: txRef.Trim(),
+            Narration: "CebizPay Wallet Funding");
+
+        request.Content = JsonContent.Create(payload);
+
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+
+            var statusCode = (int)response.StatusCode;
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<FlutterwaveTokenizedChargeResponse>(responseString);
+
+            if (response.IsSuccessStatusCode && parsed != null && parsed.Status == "success" && parsed.Data != null)
+            {
+                var status = parsed.Data.Status?.ToUpperInvariant();
+                var safeMeta = JsonSerializer.Serialize(new
+                {
+                    flw_id = parsed.Data.Id,
+                    flw_ref = parsed.Data.FlwRef,
+                    status = parsed.Data.Status,
+                    processor_response = parsed.Data.ProcessorResponse
+                });
+
+                CardTokenDetails? tokenDetails = null;
+                if (parsed.Data.Card != null && !string.IsNullOrWhiteSpace(parsed.Data.Card.Last4Digits))
+                {
+                    var tokenValue = !string.IsNullOrWhiteSpace(parsed.Data.Card.Token)
+                        ? parsed.Data.Card.Token.Trim()
+                        : token;
+                    var expParts = (parsed.Data.Card.Expiry ?? string.Empty).Split('/');
+                    tokenDetails = new CardTokenDetails(
+                        Token: tokenValue,
+                        Last4: parsed.Data.Card.Last4Digits.Trim(),
+                        Brand: parsed.Data.Card.Type ?? "Card",
+                        ExpiryMonth: expParts.Length > 0 ? expParts[0].Trim() : null,
+                        ExpiryYear: expParts.Length > 1 ? expParts[1].Trim() : null,
+                        CardHolderName: null);
+                }
+
+                if (status == "SUCCESSFUL")
+                {
+                    var refToReturn = parsed.Data.FlwRef ?? (parsed.Data.Id > 0 ? parsed.Data.Id.ToString(CultureInfo.InvariantCulture) : txRef);
+                    return CardChargeResult.Success(refToReturn, safeMeta, tokenDetails);
+                }
+
+                if (status == "FAILED")
+                {
+                    return CardChargeResult.BusinessFailure("PAYMENT_FAILED", parsed.Data.ProcessorResponse ?? "Tokenized charge failed", safeMeta);
+                }
+
+                return CardChargeResult.Unknown($"Tokenized charge status is '{status}'", safeMeta);
+            }
+
+            if (statusCode >= 500)
+            {
+                return CardChargeResult.TechnicalFailure(string.Format(CultureInfo.InvariantCulture, "HTTP_{0}", statusCode), parsed?.Message ?? "Server error");
+            }
+
+            return CardChargeResult.BusinessFailure(string.Format(CultureInfo.InvariantCulture, "STATUS_{0}", statusCode), parsed?.Message ?? "Tokenized charge failed");
+        }
+        catch (TaskCanceledException)
+        {
+            stopwatch.Stop();
+            return CardChargeResult.Unknown("Tokenized charge timed out.");
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return CardChargeResult.Unknown($"Tokenized charge communication error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Executes a refund for a transaction on Flutterwave.
+    /// </summary>
+    public async Task<CardRefundResult> RefundTransactionAsync(
+        string transactionIdOrRef,
+        decimal? amount = null,
+        string? comments = null,
+        CancellationToken cancellationToken = default)
+    {
+        var cleanRef = transactionIdOrRef.Trim();
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"v3/transactions/{cleanRef}/refund");
+        ApplyAuthentication(request);
+
+        var payload = new FlutterwaveRefundRequest(amount, comments ?? "Customer refund request");
+        request.Content = JsonContent.Create(payload);
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<FlutterwaveRefundResponse>(responseString);
+
+            if (response.IsSuccessStatusCode && parsed != null && parsed.Status == "success" && parsed.Data != null)
+            {
+                return CardRefundResult.Success(parsed.Data.FlwRef ?? parsed.Data.Id.ToString(CultureInfo.InvariantCulture), parsed.Data.Status ?? "completed");
+            }
+
+            return CardRefundResult.Failure(parsed?.Message ?? $"Refund request failed (HTTP {(int)response.StatusCode})");
+        }
+        catch (Exception ex)
+        {
+            return CardRefundResult.Failure($"Refund communication error: {ex.Message}");
+        }
+    }
+
     private static T? TryDeserialize<T>(string json) where T : class
     {
         try

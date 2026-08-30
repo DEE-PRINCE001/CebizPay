@@ -170,8 +170,12 @@ public static class AuditActions
     public const string WebhookRejected = "WEBHOOK_REJECTED";
     /// <summary>Audit action when a duplicate provider webhook is safely acknowledged.</summary>
     public const string WebhookDuplicate = "WEBHOOK_DUPLICATE";
+    /// <summary>Audit action when a webhook references an unmapped / unknown account.</summary>
+    public const string WebhookUnmatchedTransaction = "WEBHOOK_UNMATCHED_TRANSACTION";
     /// <summary>Audit action when a payment attempt is reconciled via webhook or query.</summary>
     public const string PaymentAttemptReconciled = "PAYMENT_ATTEMPT_RECONCILED";
+    /// <summary>Audit action when an inbound funding transaction completes and credits the wallet.</summary>
+    public const string PaymentFundingCompleted = "PAYMENT_FUNDING_COMPLETED";
 
     // Provider Failover
     /// <summary>Audit action when provider failover is initiated.</summary>
@@ -196,6 +200,24 @@ public static class AuditActions
     public const string CardFundingCompleted = "CARD_FUNDING_COMPLETED";
     /// <summary>Audit action when card funding fails.</summary>
     public const string CardFundingFailed = "CARD_FUNDING_FAILED";
+    /// <summary>Audit action when a tokenized card is saved.</summary>
+    public const string SavedCardCreated = "SAVED_CARD_CREATED";
+    /// <summary>Audit action when a saved card is revoked.</summary>
+    public const string SavedCardRevoked = "SAVED_CARD_REVOKED";
+    /// <summary>Audit action when a saved card token is marked invalid.</summary>
+    public const string SavedCardInvalidated = "SAVED_CARD_INVALIDATED";
+    /// <summary>Audit action when a saved card is set as default.</summary>
+    public const string SavedCardDefaultSet = "SAVED_CARD_DEFAULT_SET";
+    /// <summary>Audit action when a card refund is requested.</summary>
+    public const string CardRefundRequested = "CARD_REFUND_REQUESTED";
+    /// <summary>Audit action when a card refund is completed and reversed.</summary>
+    public const string CardRefundCompleted = "CARD_REFUND_COMPLETED";
+    /// <summary>Audit action when a card refund fails.</summary>
+    public const string CardRefundFailed = "CARD_REFUND_FAILED";
+    /// <summary>Audit action when card verification is initiated.</summary>
+    public const string CardVerificationInitiated = "CARD_VERIFICATION_INITIATED";
+    /// <summary>Audit action when card verification is completed.</summary>
+    public const string CardVerificationCompleted = "CARD_VERIFICATION_COMPLETED";
 
     // Payroll & Payment Vouchers
     /// <summary>Audit action when a payroll batch is created.</summary>
@@ -398,4 +420,21 @@ public static class AuditActions
     public const string CompanyVoucherPaid = "COMPANY_VOUCHER_PAID";
     /// <summary>Audit action when a company voucher is cancelled.</summary>
     public const string CompanyVoucherCancelled = "COMPANY_VOUCHER_CANCELLED";
+
+    // External Funding Accounts & Platform Fee Policies
+    /// <summary>Audit action when an external funding account is attached to a wallet.</summary>
+    public const string ExternalFundingAccountCreated = "EXTERNAL_FUNDING_ACCOUNT_CREATED";
+    /// <summary>Audit action when an external funding account is activated.</summary>
+    public const string ExternalFundingAccountActivated = "EXTERNAL_FUNDING_ACCOUNT_ACTIVATED";
+    /// <summary>Audit action when an external funding account is deactivated / suspended / closed.</summary>
+    public const string ExternalFundingAccountDeactivated = "EXTERNAL_FUNDING_ACCOUNT_DEACTIVATED";
+    /// <summary>Audit action when an external funding account primary status changes.</summary>
+    public const string ExternalFundingAccountPrimaryChanged = "EXTERNAL_FUNDING_ACCOUNT_PRIMARY_CHANGED";
+
+    /// <summary>Audit action when a new platform fee policy is created.</summary>
+    public const string PlatformFeePolicyCreated = "PLATFORM_FEE_POLICY_CREATED";
+    /// <summary>Audit action when a platform fee policy is activated.</summary>
+    public const string PlatformFeePolicyActivated = "PLATFORM_FEE_POLICY_ACTIVATED";
+    /// <summary>Audit action when a platform fee policy is deactivated.</summary>
+    public const string PlatformFeePolicyDeactivated = "PLATFORM_FEE_POLICY_DEACTIVATED";
 }

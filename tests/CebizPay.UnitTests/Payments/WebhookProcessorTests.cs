@@ -8,6 +8,7 @@ using CebizPay.Domain.Payments.Entities;
 using CebizPay.Domain.Payments.Enums;
 using CebizPay.Infrastructure.Payments.Common;
 using CebizPay.Infrastructure.Payments.Flutterwave;
+using CebizPay.Infrastructure.Payments.Monnify;
 using CebizPay.Infrastructure.Payments.Paystack;
 using CebizPay.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -39,6 +40,17 @@ public sealed class WebhookProcessorTests
         SecretKey = "sk_test_paystack"
     });
 
+    private readonly IOptions<MonnifyOptions> _monnifyOptions = Options.Create(new MonnifyOptions
+    {
+        WebhookSecret = "mnfy_secret_123",
+        SecretKey = "mnfy_secret_123",
+        ApiKey = "mnfy_key_123",
+        ContractCode = "1234567890",
+        Enabled = true
+    });
+
+    private readonly IPlatformFeePolicyService _feePolicyService = Substitute.For<IPlatformFeePolicyService>();
+
     private static ApplicationDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -54,9 +66,11 @@ public sealed class WebhookProcessorTests
             _signatureVerifier,
             dbContext,
             _ledgerPosting,
+            _feePolicyService,
             _outbox,
             _flwOptions,
             _pstkOptions,
+            _monnifyOptions,
             NullLogger<WebhookProcessor>.Instance);
     }
 

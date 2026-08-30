@@ -42,6 +42,9 @@ public sealed class CardFundingApiTests
                         options.ApiVersionReader = new UrlSegmentApiVersionReader();
                     });
                     services.AddSingleton(cardFundingService);
+                    var currentUserService = Substitute.For<CebizPay.Application.Common.Interfaces.Security.ICurrentUserService>();
+                    currentUserService.UserId.Returns("usr_test_123");
+                    services.AddSingleton(currentUserService);
                 });
                 webBuilder.Configure(app =>
                 {
@@ -58,6 +61,46 @@ public sealed class CardFundingApiTests
 
         var client = host.GetTestClient();
         return (host, client);
+    }
+
+    [Fact]
+    public async Task ChargeSavedCard_ValidRequest_Returns200Ok()
+    {
+        // Arrange
+        var service = Substitute.For<ICardFundingService>();
+        var savedCardId = Guid.NewGuid();
+        var expectedResponse = new ChargeSavedCardResponseDto(
+            FundingTransactionId: Guid.NewGuid(),
+            Reference: "CBZCD-SAVED-100",
+            Status: "Completed",
+            GrossAmount: 5000m,
+            FeeAmount: 0m,
+            NetCreditedAmount: 5000m,
+            Currency: "NGN",
+            Provider: "Flutterwave");
+
+        service.ChargeSavedCardAsync(savedCardId, 5000m, Currency.NGN, Arg.Any<string>(), "usr_test_123", Arg.Any<CancellationToken>())
+            .Returns(expectedResponse);
+
+        var (host, client) = await CreateTestServer(service);
+        using (host)
+        {
+            var request = new ChargeSavedCardApiRequest(
+                SavedCardId: savedCardId,
+                Amount: 5000m,
+                Currency: Currency.NGN,
+                IdempotencyKey: "idem_test_charge");
+
+            // Act
+            var response = await client.PostAsJsonAsync("/api/v1/funding/card/charge-saved", request);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var result = await response.Content.ReadFromJsonAsync<ChargeSavedCardResponseDto>();
+            Assert.NotNull(result);
+            Assert.Equal("Completed", result.Status);
+            Assert.Equal(5000m, result.GrossAmount);
+        }
     }
 
     [Fact]

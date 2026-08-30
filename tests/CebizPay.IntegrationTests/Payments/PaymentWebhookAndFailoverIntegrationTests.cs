@@ -13,6 +13,7 @@ using CebizPay.Domain.Payments.Enums;
 using CebizPay.Infrastructure.Finance;
 using CebizPay.Infrastructure.Payments.Common;
 using CebizPay.Infrastructure.Payments.Flutterwave;
+using CebizPay.Infrastructure.Payments.Monnify;
 using CebizPay.Infrastructure.Payments.Paystack;
 using CebizPay.Infrastructure.Persistence;
 using CebizPay.Infrastructure.Persistence.Outbox;
@@ -67,14 +68,22 @@ public sealed class PaymentWebhookAndFailoverIntegrationTests : IClassFixture<In
             WebhookSecret = "pstk_secret_test_hash",
             SecretKey = "sk_test_pstk"
         });
+        var monnifyOptions = Options.Create(new MonnifyOptions
+        {
+            WebhookSecret = "mnfy_secret_test_hash",
+            SecretKey = "mnfy_secret_test_hash"
+        });
+        var feePolicyService = Substitute.For<IPlatformFeePolicyService>();
 
         var processor = new WebhookProcessor(
             signatureVerifier,
             dbContext,
             ledgerService,
+            feePolicyService,
             outboxService,
             flwOptions,
             pstkOptions,
+            monnifyOptions,
             NullLogger<WebhookProcessor>.Instance);
 
         var ledgerTxnId = Guid.NewGuid();
@@ -121,14 +130,18 @@ public sealed class PaymentWebhookAndFailoverIntegrationTests : IClassFixture<In
 
         var flwOptions = Options.Create(new FlutterwaveOptions { WebhookSecretHash = "flw_secret", SecretKey = "flw_secret" });
         var pstkOptions = Options.Create(new PaystackOptions { WebhookSecret = "pstk_secret", SecretKey = "pstk_secret" });
+        var monnifyOptions = Options.Create(new MonnifyOptions { WebhookSecret = "mnfy_secret", SecretKey = "mnfy_secret" });
+        var feePolicyService = Substitute.For<IPlatformFeePolicyService>();
 
         var processor = new WebhookProcessor(
             signatureVerifier,
             dbContext,
             ledgerPostingService,
+            feePolicyService,
             outboxService,
             flwOptions,
             pstkOptions,
+            monnifyOptions,
             NullLogger<WebhookProcessor>.Instance);
 
         // 1. Create wallet with initial funds

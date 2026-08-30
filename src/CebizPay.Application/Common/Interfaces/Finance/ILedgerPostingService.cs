@@ -162,6 +162,72 @@ public interface ILedgerPostingService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Posts an external funding account deposit (e.g. Monnify Reserved Virtual Account) with full platform fee policy accounting.
+    /// Invariant: DEBIT Inbound Clearing (grossAmount), CREDIT Customer Wallet (netCreditedAmount), CREDIT Platform Fee (feeAmount).
+    /// Total Debits == Total Credits.
+    /// Materializes recipient wallet available balance (+netCreditedAmount) and records FundingTransaction as COMPLETED.
+    /// </summary>
+    Task<(LedgerTransaction Transaction, FundingTransaction Funding)> PostExternalFundingAccountCreditCoreAsync(
+        Guid walletId,
+        Guid externalFundingAccountId,
+        decimal grossAmount,
+        decimal feeAmount,
+        decimal netCreditedAmount,
+        decimal providerFeeAmount,
+        Currency currency,
+        PaymentProvider provider,
+        string providerTransactionReference,
+        string? providerEventReference,
+        Guid? feePolicyId,
+        int? feePolicyVersion,
+        FeeBearer? feeBearer,
+        FundingChannel channel = FundingChannel.VirtualAccount,
+        string? description = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts a card funding credit (one-time or tokenized charge) with full platform fee policy accounting.
+    /// Invariant: DEBIT Inbound Clearing (grossAmount), CREDIT Customer Wallet (netCreditedAmount), CREDIT Platform Fee (feeAmount).
+    /// Total Debits == Total Credits.
+    /// Materializes recipient wallet available balance (+netCreditedAmount) and records FundingTransaction as COMPLETED.
+    /// </summary>
+    Task<(LedgerTransaction Transaction, FundingTransaction Funding)> PostCardFundingCreditCoreAsync(
+        Guid walletId,
+        decimal grossAmount,
+        decimal feeAmount,
+        decimal netCreditedAmount,
+        decimal providerFeeAmount,
+        Currency currency,
+        PaymentProvider provider,
+        string providerTransactionReference,
+        string? providerEventReference,
+        Guid? feePolicyId,
+        int? feePolicyVersion,
+        FeeBearer? feeBearer,
+        string? description = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Posts an atomic double-entry reversal for a card refund against the customer wallet.
+    /// Performs row-level locking on the customer wallet and verifies balance sufficiency.
+    /// If customer balance is insufficient for full immediate reversal, does NOT create a negative wallet balance,
+    /// and instead returns a flag or triggers RecoveryOutstanding.
+    ///
+    /// Ledger entries created:
+    ///   DEBIT  Customer Wallet Account    amount
+    ///   CREDIT Inbound Clearing Account   amount
+    /// </summary>
+    Task<(LedgerTransaction Transaction, CebizPay.Domain.Payments.Entities.CardRefund Refund)> PostCardRefundReversalCoreAsync(
+        Guid refundId,
+        Guid fundingTransactionId,
+        decimal amount,
+        Currency currency,
+        string refundReference,
+        string? providerRefundReference,
+        string? description = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Posts an atomic corporate payroll disbursement from an organization wallet to an employee wallet.
     /// Performs ordered row-level locking on both wallets to prevent deadlocks and double-spends.
     /// Re-validates organization balance sufficiency after acquiring lock.

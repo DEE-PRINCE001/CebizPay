@@ -7,6 +7,7 @@ using CebizPay.Infrastructure.Identity;
 using CebizPay.Infrastructure.Messaging;
 using CebizPay.Infrastructure.Options;
 using CebizPay.Infrastructure.Payments.Flutterwave;
+using CebizPay.Infrastructure.Payments.Monnify;
 using CebizPay.Infrastructure.Payments.Paystack;
 using CebizPay.Infrastructure.Persistence;
 using CebizPay.Infrastructure.Security;
@@ -118,6 +119,8 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IIdempotencyService, CebizPay.Infrastructure.Finance.IdempotencyService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IFeePolicyService, CebizPay.Infrastructure.Finance.FeePolicyService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IBankTransferFeePolicyService, CebizPay.Infrastructure.Finance.BankTransferFeePolicyService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IPlatformFeePolicyService, CebizPay.Infrastructure.Finance.PlatformFeePolicyService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IExternalFundingAccountService, CebizPay.Infrastructure.Finance.ExternalFundingAccountService>();
 
         // Configure Payments & VAS Providers Options with validation
         services.AddOptions<FlutterwaveOptions>()
@@ -130,6 +133,11 @@ public static class DependencyInjection
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        services.AddOptions<MonnifyOptions>()
+            .Bind(configuration.GetSection(MonnifyOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         services.AddOptions<VtuGateOptions>()
             .Bind(configuration.GetSection(VtuGateOptions.SectionName))
             .ValidateDataAnnotations()
@@ -137,6 +145,7 @@ public static class DependencyInjection
 
         services.AddHttpClient<CebizPay.Infrastructure.Payments.Flutterwave.FlutterwaveClient>();
         services.AddHttpClient<CebizPay.Infrastructure.Payments.Paystack.PaystackClient>();
+        services.AddHttpClient<CebizPay.Infrastructure.Payments.Monnify.IMonnifyClient, CebizPay.Infrastructure.Payments.Monnify.MonnifyClient>();
         services.AddHttpClient<CebizPay.Infrastructure.Vas.VtuGate.VtuGateClient>();
 
         // Configure VAS Services
@@ -145,10 +154,14 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Vas.IVasPurchaseExecutor, CebizPay.Infrastructure.Vas.VasPurchaseExecutor>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Vas.IVasReconciliationService, CebizPay.Infrastructure.Vas.VasReconciliationService>();
 
+        // Configure Payment Routing & Providers
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentRoutingService, CebizPay.Infrastructure.Payments.Common.PaymentRoutingService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentProvider, CebizPay.Infrastructure.Payments.Flutterwave.FlutterwavePaymentProvider>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentProvider, CebizPay.Infrastructure.Payments.Paystack.PaystackPaymentProvider>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentProvider, CebizPay.Infrastructure.Payments.Monnify.MonnifyPaymentProvider>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IVirtualAccountProvider, CebizPay.Infrastructure.Payments.Flutterwave.FlutterwavePaymentProvider>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IVirtualAccountProvider, CebizPay.Infrastructure.Payments.Paystack.PaystackPaymentProvider>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IVirtualAccountProvider, CebizPay.Infrastructure.Payments.Monnify.MonnifyPaymentProvider>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardPaymentProvider, CebizPay.Infrastructure.Payments.Flutterwave.FlutterwavePaymentProvider>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardPaymentProvider, CebizPay.Infrastructure.Payments.Paystack.PaystackPaymentProvider>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentProviderFactory, CebizPay.Infrastructure.Payments.Common.PaymentProviderFactory>();
@@ -159,6 +172,9 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentReconciliationService, CebizPay.Infrastructure.Payments.Common.PaymentReconciliationService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IVirtualAccountService, CebizPay.Infrastructure.Payments.VirtualAccounts.VirtualAccountService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardFundingService, CebizPay.Infrastructure.Payments.Funding.CardFundingService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ISavedCardService, CebizPay.Infrastructure.Payments.Funding.SavedCardService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardRefundService, CebizPay.Infrastructure.Payments.Funding.CardRefundService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardVerificationService, CebizPay.Infrastructure.Payments.Funding.CardVerificationService>();
 
         // Configure Payroll & Loan services
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payroll.IPayrollDeductionProvider, CebizPay.Infrastructure.Payroll.PayrollLoanDeductionProvider>();

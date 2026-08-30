@@ -27,13 +27,42 @@ public sealed class BankTransferCommandHandler : IRequestHandler<BankTransferCom
     private readonly ICurrentUserService _currentUserService;
     private readonly ITransactionPinService _pinService;
     private readonly IBankTransferFeePolicyService _feePolicyService;
+    private readonly IPlatformFeePolicyService? _platformFeePolicyService;
     private readonly ILedgerPostingService _ledgerService;
     private readonly IIdempotencyService _idempotencyService;
     private readonly IOutboxService _outboxService;
     private readonly IBankAccountResolver _accountResolver;
+    private readonly IBankTransferExecutor? _transferExecutor;
 
     /// <summary>
     /// Initializes a new instance of <see cref="BankTransferCommandHandler"/>.
+    /// </summary>
+    public BankTransferCommandHandler(
+        IApplicationDbContext dbContext,
+        ICurrentUserService currentUserService,
+        ITransactionPinService pinService,
+        IBankTransferFeePolicyService feePolicyService,
+        IPlatformFeePolicyService? platformFeePolicyService,
+        ILedgerPostingService ledgerService,
+        IIdempotencyService idempotencyService,
+        IOutboxService outboxService,
+        IBankAccountResolver accountResolver,
+        IBankTransferExecutor? transferExecutor = null)
+    {
+        _dbContext = dbContext;
+        _currentUserService = currentUserService;
+        _pinService = pinService;
+        _feePolicyService = feePolicyService;
+        _platformFeePolicyService = platformFeePolicyService;
+        _ledgerService = ledgerService;
+        _idempotencyService = idempotencyService;
+        _outboxService = outboxService;
+        _accountResolver = accountResolver;
+        _transferExecutor = transferExecutor;
+    }
+
+    /// <summary>
+    /// Backward-compatible constructor for testing.
     /// </summary>
     public BankTransferCommandHandler(
         IApplicationDbContext dbContext,
@@ -44,15 +73,8 @@ public sealed class BankTransferCommandHandler : IRequestHandler<BankTransferCom
         IIdempotencyService idempotencyService,
         IOutboxService outboxService,
         IBankAccountResolver accountResolver)
+        : this(dbContext, currentUserService, pinService, feePolicyService, null, ledgerService, idempotencyService, outboxService, accountResolver, null)
     {
-        _dbContext = dbContext;
-        _currentUserService = currentUserService;
-        _pinService = pinService;
-        _feePolicyService = feePolicyService;
-        _ledgerService = ledgerService;
-        _idempotencyService = idempotencyService;
-        _outboxService = outboxService;
-        _accountResolver = accountResolver;
     }
 
     /// <inheritdoc/>
@@ -155,9 +177,28 @@ public sealed class BankTransferCommandHandler : IRequestHandler<BankTransferCom
         }
 
         // ─── 7. Calculate Fee ─────────────────────────────────────────────────
-        var feePolicy = await _feePolicyService.GetActivePolicyAsync(cancellationToken);
-        var feeAmount = feePolicy?.CalculateFee(request.Amount, currency) ?? 0m;
-        var feePolicyVersion = feePolicy?.Version;
+        decimal feeAmount = 0m;
+        int? feePolicyVersion = null;
+        Guid? feePolicyId = null;
+
+        if (_platformFeePolicyService != null)
+        {
+            var policy = await _platformFeePolicyService.GetActivePolicyAsync(FeeOperationType.BankTransfer, cancellationToken);
+            if (policy != null)
+            {
+                feeAmount = policy.CalculateFee(request.Amount, currency);
+                feePolicyVersion = policy.Version;
+                feePolicyId = policy.Id;
+            }
+        }
+        else if (_feePolicyService != null)
+        {
+            var feePolicy = await _feePolicyService.GetActivePolicyAsync(cancellationToken);
+            feeAmount = feePolicy?.CalculateFee(request.Amount, currency) ?? 0m;
+            feePolicyVersion = feePolicy?.Version;
+            feePolicyId = feePolicy?.Id;
+        }
+
         var totalDebit = request.Amount + feeAmount;
 
         // ─── 8. Optimistic pre-check on balance ──────────────────────────────
@@ -221,7 +262,7 @@ public sealed class BankTransferCommandHandler : IRequestHandler<BankTransferCom
                 destinationBankCode: request.DestinationBankCode,
                 destinationAccountNumber: request.DestinationAccountNumber,
                 destinationAccountName: destinationRes.AccountName,
-                feePolicyId: feePolicy?.Id,
+                feePolicyId: feePolicyId,
                 feePolicyVersion: feePolicyVersion,
                 reference: reference,
                 idempotencyKey: request.IdempotencyKey,
@@ -289,6 +330,19 @@ public sealed class BankTransferCommandHandler : IRequestHandler<BankTransferCom
             // ─── 16. Save & Commit Transaction ────────────────────────────────
             await _dbContext.SaveChangesAsync(cancellationToken);
             await dbTx.CommitAsync(cancellationToken);
+
+            // ─── 17. Dispatch External Provider Execution (Outside DB Lock Boundary) ─
+            if (_transferExecutor != null)
+            {
+                try
+                {
+                    await _transferExecutor.ExecuteAsync(bankTransfer, cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // PaymentAttempt tracks provider outcome/error; transfer creation commit remains valid
+                }
+            }
 
             return response;
         }

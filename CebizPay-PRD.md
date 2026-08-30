@@ -247,21 +247,38 @@ or stored server-side.
 secrets stored in iOS Keychain / Android Keystore.
 • Auth tokens: OAuth2, 15-minute access tokens, refresh tokens with a 30-day sliding window,
 revoked on explicit logout.
-4.2 Identity Verification: KYC and KYB
-• KYC (mobile-originated, Super-Admin-approved): Individual submits a government ID (NIMC
-Card, Driver’s License, or International Passport) plus a liveness selfie. Edge-detection rejects
-blurry, low-contrast, or overly reflective captures; two failed automated attempts route to manual
-Admin review.
-• KYB (Organization Portal-originated, Super-Admin-approved): Two-step registration — (1)
-company name, email, phone; (2) year established, CAC Certificate upload, company logo upload
-(JPEG/PNG/PDF, max 5MB). Status is set to PENDING until Super Admin validates it.
-• Review workflow: Admin navigates to the entity detail, opens View on the submitted document,
-then selects Verify (confirms via modal, writes an audit entry, notifies the entity) or Reject
-(requires a reason, writes an audit entry, notifies the entity).
-• Lifecycle gating: – PENDING/REJECTED Individuals may transact but are capped below ₦50,000 per outbound
-transaction. – PENDING/REJECTED Organizations may log in and configure HRIS/hierarchy but cannot execute
-payroll or transfer wallet funds. – Only VERIFIED Individuals may accept a Staff invitation with full benefits, and only VERIFIED
-Organizations may activate automated payroll or corporate savings plans.
+4.2 Identity Verification, Compliance & Risk (KYC, KYB, CDD & EDD)
+• Regulatory Authority & Framework: Built in strict accordance with the Central Bank of Nigeria (Customer Due Diligence) Regulations, 2023, the Money Laundering (Prevention and Prohibition) Act, 2022, and the Terrorism (Prevention and Prohibition) Act, 2022. CebizPay maintains independent compliance authority, internal risk ratings, and CDD/EDD state.
+• Strategic Multi-Provider Verification Architecture: Verification is capability-oriented and avoids vendor lock-in. Verification providers are selected based on specialized strength:
+  – Individual Identity, BVN & NIN Verification: Primary: Dojah | Fallback: Smile ID.
+  – Liveness & Biometric Verification: Primary: Smile ID (SmartSelfie™ ISO-certified liveness & 1:1 facial biometric matching) | Fallback: Dojah.
+  – Government Document Verification (NIMC, Driver’s License, International Passport): Primary: Smile ID | Fallback: Dojah.
+  – AML, PEP & Sanctions Screening: Primary: Dojah | Fallback: Smile ID.
+  – Bank Account Name Resolution: Primary: Flutterwave | Fallback 1: Paystack | Fallback 2: Monnify.
+  – Corporate / CAC Business Verification: Primary: Dojah | Fallback: Smile ID.
+  – Beneficial Owner & Director Verification: Primary: Dojah | Fallback: Smile ID.
+  Note: Customers are NOT routed to every provider blindly. Provider fallback is invoked only upon verified technical outages or explicit risk-escalation policies. A provider outage or timeout is NEVER interpreted as customer verification failure.
+• Individual Tiered KYC Framework (Natural Persons):
+  – Tier 1 (Basic): Phone number, basic name, initial OTP. Outbound transaction cap < ₦50,000 per transaction and strict daily limits.
+  – Tier 2 (Standard): Verified BVN / NIN, basic ID match, validated phone. Moderate daily and single transaction limits.
+  – Tier 3 (Full / Unrestricted): Validated government ID document, live biometric/liveness match, verified residential address / utility proof. Full platform limits unlocked.
+• Legal Persons & Organizations (KYB & Corporate CDD):
+  – Tiered KYC does NOT apply to legal persons. Organizations follow a distinct corporate CDD regime per CBN Regulations:
+  – Required Artifacts: CAC Registration/Incorporation Certificate, Memorandum & Articles of Association (MemArt), Tax Identification Number (TIN), registered business address verification, official company email/phone.
+  – Beneficial Ownership & Governance: Identification and identity verification of all Ultimate Beneficial Owners (individuals holding >= 5% equity or controlling interest), Directors, and authorized account signatories.
+• Risk-Based Customer Due Diligence (CDD) & Enhanced Due Diligence (EDD):
+  – Risk Engine: CebizPay computes explainable risk ratings (Low, Medium, High) based on customer category, PEP status, sanctions screening, geographic risk, and transaction velocity.
+  – Standard CDD: Applied to Low and Medium risk individuals and organizations.
+  – Enhanced Due Diligence (EDD): Mandatorily triggered for High-Risk customers, Politically Exposed Persons (PEPs), family/close associates of PEPs, complex corporate shareholding structures, and transactions exceeding high-risk velocity thresholds.
+  – EDD Requirements: Mandatory documentation of Source of Funds, Source of Wealth, detailed business purpose, senior management / Compliance Officer manual sign-off, and ongoing continuous monitoring.
+• Internal Compliance Authority vs Provider Synchronization:
+  – CebizPay Internal Compliance State (Pending, Approved, EDD_Required, Suspended, Rejected) is the authoritative source of truth for customer permissions and platform transaction eligibility. External verification results provide evidence (`VerificationEvidence`), not automatic unconstrained approval.
+  – Provider KYC Synchronization: Downstream synchronization pushes verified internal identity data to banking rails (e.g. Monnify) to clear external provider transaction limit profiles. External provider limits act as physical constraints on rail dispatch but never override internal risk decisions.
+• Lifecycle Gating & Access Control:
+  – PENDING / REJECTED Individuals may transact with Tier 1 outbound transaction caps (< ₦50,000).
+  – PENDING / REJECTED Organizations may log in and configure HRIS/hierarchy but CANNOT execute payroll or transfer wallet funds.
+  – Only VERIFIED Individuals may accept a Staff invitation with full benefits.
+  – Only VERIFIED Organizations with approved KYB/CDD may activate automated payroll or corporate savings plans.
 4.3 Dashboards & Analytics
 
 Metric Family Super Admin View Organization View Mobile View
@@ -325,23 +342,44 @@ dashboard.
 • An Organization’s staff invitation (email token, PENDING status until accepted) and the Mobile App’s
 “Join Organisation” flow (entering an invitation code) are two entry points into a single binding
 process — see §5.2 for the end-to-end sequence.
-4.6 Wallets, Ledger & Treasury
+4.6 Wallets, Ledger, Treasury & External Funding
 • Ledger immutability: entries are never deleted or edited; reversals are recorded as new
 offsetting entries. Enforced platform-wide since Organization, Individual, and Super Admin views
-all read the same ledger table.
-• Funding: via dedicated virtual accounts (Wema Bank, Sterling Bank, Moniepoint) or via a
-saved/new debit card (zero-auth or ₦50 micro-charge validation before saving a card). Identical
-flow on Organization and Mobile surfaces; Super Admin has read-only visibility.
+all read the same ledger table. The central double-entry ledger is authoritative for all balances.
+• External Funding Accounts (Virtual Accounts): A wallet may have MULTIPLE external funding
+accounts across partner institutions (Wema Bank, Sterling Bank, Moniepoint). Monnify is the
+primary provider for virtual-account provisioning and initial external funding rails. External accounts
+belong directly to a Wallet (not directly to a User) to ensure seamless portability across Monnify,
+other BaaS providers, and future CebizPay MFB/core-banking accounts.
+• Card Funding Capabilities: V1 supports (1) Save card, (2) Charge saved card, (3) One-time
+card funding, (4) Delete saved card, (5) Micro-charge / zero-auth verification, and (6) Refunds.
+Primary provider for card funding is Flutterwave, with Paystack as fallback.
+• Card Credential Security (PCI-DSS): CebizPay MUST NOT store PAN, CVV, PIN, or raw card
+credentials on-device or on internal servers. Only secure provider tokens/references and non-sensitive
+display metadata (masked last 4 digits, brand, expiration month/year) are retained.
+• Outbound Bank Transfers (Payouts): Routed with capability priority: Monnify (Primary) →
+Flutterwave (Fallback) → Paystack (Secondary Fallback).
+• Provider Failover & Financial Safety Invariants:
+  – BusinessFailure (e.g. invalid account, blocked recipient): DO NOT fail over automatically.
+  – TechnicalFailure (e.g. gateway 5xx, network failure): Fallback provider dispatch is permitted.
+  – Unknown / Timeout: DO NOT immediately fail over. Reconcile the current provider status first to
+    prevent duplicate payouts or double card debits.
+• Configurable Fee Economics: Funding and transfer fees are not hardcoded and are configurable
+by Super Admin. Calculation models supported: (1) FREE, (2) FIXED, (3) PERCENTAGE, (4) PERCENTAGE + CAP.
+Fee burden/bearer is independently configurable:
+  – CUSTOMER_PAYS: Fee is added to requested amount (e.g. ₦100,000 requested + ₦700 fee = ₦100,700 paid,
+    ₦100,000 credited to wallet).
+  – DEDUCT_FROM_FUNDS: Fee is deducted from gross funds received (e.g. ₦100,000 received - ₦700 fee =
+    ₦99,300 credited to wallet).
+  – PLATFORM_ABSORBS: Customer receives gross amount (₦100,000 received = ₦100,000 credited), and platform
+    absorbs provider and processing costs.
+Provider costs and CebizPay platform fees remain conceptually separate accounting layers.
 • Transfers: To Bank (external) or To Wallet (internal, resolves recipient name before send) —
 identical pattern on Organization and Mobile.
 • Withdrawals: Via Card or Via Merchant (mobile); the Organization equivalent is payroll
 disbursement plus ad hoc bank/wallet transfer.
-• Card management: list masked cards, add/delete — identical pattern on Organization and
-Mobile.
 • Fund validation: every outbound transfer is blocked if the amount plus fees exceeds available
 balance.
-• Failover: automatic switch to a secondary payment gateway within 3 seconds if the primary is
-unavailable.
 4.7 Payroll & Disbursement Engine
 • Execution modes: Pay All, By Department, By Role, By Level, By Individual (Personal).
 • Flow: select mode → calculate aggregate total → enter Transaction PIN/biometric → validate
@@ -596,6 +634,90 @@ boolean is_active
         decimal loan_repayable
         string currency }
 
+    EXTERNAL_FUNDING_ACCOUNT { uuid id PK
+        uuid wallet_id FK
+        string provider "MONNIFY | FUTURE_MFB | BAAS"
+        string provider_customer_reference
+        string provider_account_reference
+        string account_number
+        string bank_name
+        string bank_code
+        string account_name
+        string currency
+        string status "ACTIVE | SUSPENDED | CLOSED"
+        boolean is_primary }
+
+    SAVED_CARD { uuid id PK
+        uuid wallet_id FK
+        string provider "FLUTTERWAVE | PAYSTACK"
+        string provider_token
+        string masked_pan "e.g. **** **** **** 4123"
+        string card_brand
+        string expiry_month
+        string expiry_year
+        string status "ACTIVE | EXPIRED | REVOKED" }
+
+    COMPLIANCE_PROFILE { uuid id PK
+        uuid owner_id
+        string owner_type "INDIVIDUAL | ORGANIZATION"
+        string tier_level "TIER_1 | TIER_2 | TIER_3"
+        string kyb_status "PENDING | VERIFIED | REJECTED"
+        string risk_rating "LOW | MEDIUM | HIGH"
+        string cdd_status "STANDARD | ENHANCED | RESTRICTED"
+        string compliance_decision "APPROVED | UNDER_REVIEW | REJECTED"
+        boolean edd_required }
+
+    RISK_ASSESSMENT { uuid id PK
+        uuid compliance_profile_id FK
+        decimal risk_score
+        string risk_level "LOW | MEDIUM | HIGH"
+        text risk_reasons
+        datetime assessed_at }
+
+    EDD_CASE { uuid id PK
+        uuid compliance_profile_id FK
+        string trigger_reason "PEP | HIGH_RISK_GEO | TRANSACTION_VELOCITY | ADVERSE_MEDIA"
+        string status "PENDING | IN_REVIEW | APPROVED | REJECTED"
+        string source_of_funds
+        string source_of_wealth
+        uuid approved_by_user_id FK
+        datetime approved_at }
+
+    BENEFICIAL_OWNER { uuid id PK
+        uuid organization_id FK
+        string full_name
+        string bvn
+        string nin
+        decimal equity_percentage
+        boolean is_politically_exposed
+        string verification_status }
+
+    DIRECTOR_DETAIL { uuid id PK
+        uuid organization_id FK
+        string full_name
+        string bvn
+        string nin
+        string tax_id
+        string status }
+
+    VERIFICATION_EVIDENCE { uuid id PK
+        uuid compliance_profile_id FK
+        string capability "IDENTITY | BVN | NIN | LIVENESS | CAC | AML_PEP | BANK_ACCOUNT"
+        string provider "DOJAH | SMILE_ID | FLUTTERWAVE | PAYSTACK | MONNIFY"
+        string provider_reference
+        string raw_status "MATCH | MISMATCH | NOT_FOUND | UNAVAILABLE | ERROR"
+        text sanitized_evidence_json
+        datetime verified_at }
+
+    FUNDING_FEE_POLICY { uuid id PK
+        string calculation_model "FREE | FIXED | PERCENTAGE | PERCENTAGE_WITH_CAP"
+        string fee_bearer "CUSTOMER_PAYS | DEDUCT_FROM_FUNDS | PLATFORM_ABSORBS"
+        decimal fixed_fee
+        decimal percentage_rate
+        decimal min_fee
+        decimal max_fee
+        boolean is_enabled }
+
     PAYROLL_TRANSACTION { uuid id PK
         uuid organization_id FK
         decimal total_amount
@@ -672,6 +794,8 @@ boolean is_active
     INDIVIDUAL_USER ||--o{ KYC_DOCUMENT : provides
     INDIVIDUAL_USER ||--o{ WALLET : owns
     ORGANIZATION ||--o{ WALLET : owns
+    WALLET ||--o{ EXTERNAL_FUNDING_ACCOUNT : has
+    WALLET ||--o{ SAVED_CARD : holds
     ORGANIZATION ||--o{ PAYROLL_TRANSACTION : executes
     PAYROLL_TRANSACTION ||--o{ PAYMENT_VOUCHER : generates
     ORGANIZATION ||--o{ LOAN : approves
@@ -744,45 +868,97 @@ handled via secure gateway iframes (Paystack/Flutterwave-class providers).
 • NDPR Compliance: explicit consent prompts precede analytics tracking or PII processing;
 personal data is hashed and encrypted at rest per §4.1.
 10. Assumptions & Dependencies
-1.
-2.
-3.
-4.
-5.
-6.
-All displayed figures and identifiers reflect production data sourced from live relational tables at
+1. All displayed figures and identifiers reflect production data sourced from live relational tables at
 runtime.
-The system integrates a multi-bank Banking-as-a-Service provider (e.g., Paystack, Monnify, or
-Anchor) to provision virtual account numbers shown on Organization and Mobile funding screens.
-NGN is the primary operational currency; International NGN and USDT apply specifically to
+2. The system integrates Monnify as the primary provider for reserved dedicated virtual account
+provisioning and incoming bank transfer rails (supporting Wema Bank, Sterling Bank, Moniepoint routing),
+with architecture structured to permit multiple external funding accounts per wallet and future
+portability to CebizPay MFB / core banking.
+3. NGN is the primary operational currency; International NGN and USDT apply specifically to
 contractor/foreign-staff payroll, using real-time FX rates at execution time. The ERP module
 additionally supports USD, GHS, EUR, and INR display via the same FX middleware.
-Web application biometric prompts use WebAuthn (TouchID/FaceID), falling back to numeric PIN
+4. Web application biometric prompts use WebAuthn (TouchID/FaceID), falling back to numeric PIN
 entry on unsupported hardware.
-Marking an ERP Invoice Closed (Paid) automatically generates a corresponding Receipt document
+5. Marking an ERP Invoice Closed (Paid) automatically generates a corresponding Receipt document
 with matching line items and reference numbers.
-Third-party payment gateways (e.g., Paystack, Flutterwave) provide card tokenization and
-micro-charge validation services used during card onboarding.
+6. Third-party payment gateways (Flutterwave primary, Paystack fallback) provide card tokenization,
+micro-charge validation, and card checkout services used during card funding and card onboarding.
+
 11. Open Questions & Recommendations
 The following items warrant product decisions ahead of general availability:
-1.
-2.
-3.
-4.
-Thrift oversight: Thrift moves funds between Individual Users through rotational payouts but
+1. Thrift oversight: Thrift moves funds between Individual Users through rotational payouts but
 currently has no dedicated reporting, delinquency, or dispute-resolution surface on the Super
 Admin Portal. Recommendation: add a Thrift oversight module (directory, delinquency flags,
 dispute queue) to Super Admin.
-ERP compliance linkage: Organizations can issue invoices and record sales/purchases
+2. ERP compliance linkage: Organizations can issue invoices and record sales/purchases
 independently of their KYB/suspension status. Recommendation: extend Organization
 suspension to also freeze ERP write operations (invoice creation, voucher generation), and surface
 read-only ERP summary metrics on the Super Admin Organization Detail profile.
-Suspension notification: when an Organization is suspended and payroll is blocked, affected Staff
+3. Suspension notification: when an Organization is suspended and payroll is blocked, affected Staff
 currently receive no dedicated in-app notice. Recommendation: trigger a push/in-app
 notification tied to the Organization status-change event.
-Support reporting: customer support ticket volume and resolution metrics have no Super
+4. Support reporting: customer support ticket volume and resolution metrics have no Super
 Admin-facing reporting surface. Recommendation: confirm whether this should be added for
 platform-wide support-quality monitoring.
-If any of the above should instead remain out of scope for v1.0, or if there are additional clarifications
-needed on roles, data ownership, or module boundaries, please advise and this document will be updated
-accordingly.
+
+12. Change History / Decision Synchronization
+The following decisions have been updated and synchronized with locked platform architectural decisions:
+
+• Virtual Account Provider:
+  OLD DECISION: Generic BaaS provider examples (Paystack, Monnify, Anchor).
+  UPDATED DECISION: Monnify is the locked V1 primary provider for dedicated virtual accounts (DVA) and incoming funding.
+  REASON: Established Monnify as the primary virtual account and external funding rail while retaining provider-neutral domain abstractions.
+
+• Bank Transfer Provider Priority:
+  OLD DECISION: Flutterwave primary, Paystack fallback for all outbound payments.
+  UPDATED DECISION: Monnify primary, Flutterwave fallback, Paystack secondary fallback for outbound bank transfers.
+  REASON: Capability-specific provider routing optimizes transfer reliability and commercial terms without tight coupling.
+
+• Card Funding Provider Priority & Capabilities:
+  OLD DECISION: Unspecified card gateway routing and basic card linking.
+  UPDATED DECISION: Flutterwave primary, Paystack fallback. V1 supports: Save card, Charge saved card, One-time funding, Delete saved card, Micro-charge verification, and Refunds.
+  REASON: Comprehensive card lifecycle support with strict PCI-DSS zero raw credential storage (safe tokens only).
+
+• External Funding Account Model:
+  OLD DECISION: Single virtual account per user/organization.
+  UPDATED DECISION: Wallets may hold multiple external funding accounts across providers (Monnify, BaaS, future CebizPay MFB).
+  REASON: External funding accounts belong to the Wallet as funding rails, ensuring architectural portability to future core banking/MFB.
+
+• Funding Fee Models:
+  OLD DECISION: Unspecified / hardcoded funding fees.
+  UPDATED DECISION: Configurable calculation models (Free, Fixed, Percentage, Percentage + Cap) and fee-bearing models (Customer Pays, Deduct From Funds, Platform Absorbs) managed by Super Admin.
+  REASON: Business flexibility to manage platform revenue and fee economics independently from provider costs.
+
+• Provider Failover Invariants:
+  OLD DECISION: Generic 3-second gateway switch.
+  UPDATED DECISION: Failover permitted exclusively on TechnicalFailure. Business rejections never fail over. Unknown/timeout states require provider reconciliation before failover or retry.
+  REASON: Eliminates duplicate payouts, double card debits, and financial ledger corruption.
+
+• KYC/KYB Strategic Multi-Provider Routing:
+  OLD DECISION: Single generic KYC manual review without automated provider integration or capability routing.
+  UPDATED DECISION: Multi-provider capability-based routing:
+    – Individual ID / BVN / NIN: Dojah primary, Smile ID fallback.
+    – Liveness / Biometrics: Smile ID (SmartSelfie™) primary, Dojah fallback.
+    – Document Verification: Smile ID primary, Dojah fallback.
+    – AML / PEP / Sanctions: Dojah primary, Smile ID fallback.
+    – Bank Account Name Resolution: Flutterwave primary, Paystack fallback 1, Monnify fallback 2.
+    – CAC / Business Verification: Dojah primary, Smile ID fallback.
+    – Beneficial Owners / Directors: Dojah primary, Smile ID fallback.
+  REASON: Maximizes verification accuracy, leverages specialized provider strengths, and prevents single-provider dependency while avoiding wasteful multi-vendor routing for low-risk flows.
+
+• CBN Risk-Based CDD Compliance & Internal Compliance Authority:
+  OLD DECISION: Provider verification result automatically dictated account approval; individual tiered KYC applied generically.
+  UPDATED DECISION:
+    – Clear regulatory separation between Individual Tiered KYC (Tier 1, 2, 3) and Legal Person / Corporate CDD (CAC, MemArt, UBO >= 5%, Directors, TIN) under CBN Customer Due Diligence Regulations 2023.
+    – CebizPay internal compliance engine is authoritative for risk rating, CDD/EDD state, and customer transaction eligibility.
+    – External provider results serve as verification evidence (`VerificationEvidence`), not automatic unconstrained approval.
+    – Provider outage or timeout is never treated as verification failure.
+    – Downstream provider synchronization pushes internal verified state to external rails to unlock provider limit profiles.
+  REASON: Ensures full compliance with CBN CDD Regulations 2023, AML/CFT/CPF standards, and preserves sovereign platform compliance control.
+
+• Future MFB Portability:
+  OLD DECISION: Virtual accounts tightly bound to specific users/orgs.
+  UPDATED DECISION: External funding accounts attach to Wallets. When CebizPay acquires an MFB license, internal core-banking accounts attach as `ExternalFundingAccount` records with zero changes to Wallet, Ledger, or Application domain logic.
+  REASON: Guarantees frictionless transition to a licensed Microfinance Bank without technical debt or core rewrites.
+
+

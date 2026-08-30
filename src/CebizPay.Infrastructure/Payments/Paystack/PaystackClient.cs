@@ -516,6 +516,206 @@ public sealed partial class PaystackClient
         }
     }
 
+    /// <summary>
+    /// Verifies transaction outcome and extracts tokenized authorization details if available.
+    /// </summary>
+    public async Task<(PaymentProviderResult Result, CardTokenDetails? TokenDetails)> VerifyTransactionWithDetailsAsync(
+        string reference,
+        CancellationToken cancellationToken = default)
+    {
+        var cleanRef = reference.Trim();
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"transaction/verify/{cleanRef}");
+        ApplyAuthentication(request);
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var statusCode = (int)response.StatusCode;
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<PaystackVerifyTransactionResponse>(responseString);
+
+            if (response.IsSuccessStatusCode && parsed != null && parsed.Status && parsed.Data != null)
+            {
+                var pstkStatus = parsed.Data.Status?.ToLowerInvariant();
+                var safeMeta = JsonSerializer.Serialize(new
+                {
+                    paystack_id = parsed.Data.Id,
+                    gateway_response = parsed.Data.GatewayResponse,
+                    status = parsed.Data.Status,
+                    channel = parsed.Data.Channel
+                });
+
+                CardTokenDetails? tokenDetails = null;
+                if (parsed.Data.Authorization != null && !string.IsNullOrWhiteSpace(parsed.Data.Authorization.AuthorizationCode) && !string.IsNullOrWhiteSpace(parsed.Data.Authorization.Last4))
+                {
+                    tokenDetails = new CardTokenDetails(
+                        Token: parsed.Data.Authorization.AuthorizationCode.Trim(),
+                        Last4: parsed.Data.Authorization.Last4.Trim(),
+                        Brand: parsed.Data.Authorization.Brand ?? parsed.Data.Authorization.CardType ?? "Card",
+                        ExpiryMonth: parsed.Data.Authorization.ExpMonth,
+                        ExpiryYear: parsed.Data.Authorization.ExpYear,
+                        CardHolderName: null,
+                        Reusable: parsed.Data.Authorization.Reusable ?? true);
+                }
+
+                if (pstkStatus == "success")
+                {
+                    return (PaymentProviderResult.Success(cleanRef, safeMeta), tokenDetails);
+                }
+
+                if (pstkStatus == "failed" || pstkStatus == "abandoned")
+                {
+                    return (PaymentProviderResult.BusinessFailure("PAYMENT_FAILED", parsed.Data.GatewayResponse ?? $"Transaction status is '{pstkStatus}'", safeMeta), tokenDetails);
+                }
+
+                return (PaymentProviderResult.Unknown($"Transaction status is '{pstkStatus}'", safeMeta), tokenDetails);
+            }
+
+            if (statusCode >= 500)
+            {
+                return (PaymentProviderResult.TechnicalFailure(string.Format(CultureInfo.InvariantCulture, "HTTP_{0}", statusCode), parsed?.Message ?? "Server error"), null);
+            }
+
+            return (PaymentProviderResult.BusinessFailure(string.Format(CultureInfo.InvariantCulture, "STATUS_{0}", statusCode), parsed?.Message ?? "Verification failed"), null);
+        }
+        catch (Exception ex)
+        {
+            return (PaymentProviderResult.Unknown($"Paystack verify communication error: {ex.Message}"), null);
+        }
+    }
+
+    /// <summary>
+    /// Charges a reusable card authorization token via Paystack's charge authorization API.
+    /// </summary>
+    public async Task<CardChargeResult> ChargeAuthorizationAsync(
+        string authorizationCode,
+        string email,
+        decimal amount,
+        string reference,
+        string currency = "NGN",
+        CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "transaction/charge_authorization");
+        ApplyAuthentication(request);
+
+        var koboAmount = Math.Round(amount * 100, 0);
+        var payload = new PaystackChargeAuthorizationRequest(
+            AuthorizationCode: authorizationCode.Trim(),
+            Email: email.Trim(),
+            Amount: koboAmount,
+            Reference: reference.Trim(),
+            Currency: currency.Trim().ToUpperInvariant());
+
+        request.Content = JsonContent.Create(payload);
+
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            stopwatch.Stop();
+
+            var statusCode = (int)response.StatusCode;
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<PaystackChargeAuthorizationResponse>(responseString);
+
+            if (response.IsSuccessStatusCode && parsed != null && parsed.Status && parsed.Data != null)
+            {
+                var pstkStatus = parsed.Data.Status?.ToLowerInvariant();
+                var safeMeta = JsonSerializer.Serialize(new
+                {
+                    paystack_id = parsed.Data.Id,
+                    gateway_response = parsed.Data.GatewayResponse,
+                    status = parsed.Data.Status,
+                    channel = parsed.Data.Channel
+                });
+
+                CardTokenDetails? tokenDetails = null;
+                if (parsed.Data.Authorization != null && !string.IsNullOrWhiteSpace(parsed.Data.Authorization.AuthorizationCode) && !string.IsNullOrWhiteSpace(parsed.Data.Authorization.Last4))
+                {
+                    tokenDetails = new CardTokenDetails(
+                        Token: parsed.Data.Authorization.AuthorizationCode.Trim(),
+                        Last4: parsed.Data.Authorization.Last4.Trim(),
+                        Brand: parsed.Data.Authorization.Brand ?? parsed.Data.Authorization.CardType ?? "Card",
+                        ExpiryMonth: parsed.Data.Authorization.ExpMonth,
+                        ExpiryYear: parsed.Data.Authorization.ExpYear,
+                        CardHolderName: null,
+                        Reusable: parsed.Data.Authorization.Reusable ?? true);
+                }
+
+                if (pstkStatus == "success")
+                {
+                    return CardChargeResult.Success(reference.Trim(), safeMeta, tokenDetails);
+                }
+
+                if (pstkStatus == "failed" || pstkStatus == "abandoned")
+                {
+                    return CardChargeResult.BusinessFailure("PAYMENT_FAILED", parsed.Data.GatewayResponse ?? $"Transaction status is '{pstkStatus}'", safeMeta);
+                }
+
+                return CardChargeResult.Unknown($"Transaction status is '{pstkStatus}'", safeMeta);
+            }
+
+            if (statusCode >= 500)
+            {
+                return CardChargeResult.TechnicalFailure(string.Format(CultureInfo.InvariantCulture, "HTTP_{0}", statusCode), parsed?.Message ?? "Server error");
+            }
+
+            return CardChargeResult.BusinessFailure(string.Format(CultureInfo.InvariantCulture, "STATUS_{0}", statusCode), parsed?.Message ?? "Charge authorization failed");
+        }
+        catch (TaskCanceledException)
+        {
+            stopwatch.Stop();
+            return CardChargeResult.Unknown("Charge authorization timed out.");
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            return CardChargeResult.Unknown($"Paystack charge authorization communication error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Executes a refund for a transaction on Paystack.
+    /// </summary>
+    public async Task<CardRefundResult> RefundTransactionAsync(
+        string transactionReferenceOrId,
+        decimal? amount = null,
+        string? currency = null,
+        string? merchantNote = null,
+        CancellationToken cancellationToken = default)
+    {
+        var cleanRef = transactionReferenceOrId.Trim();
+        using var request = new HttpRequestMessage(HttpMethod.Post, "refund");
+        ApplyAuthentication(request);
+
+        decimal? koboAmount = amount.HasValue ? Math.Round(amount.Value * 100, 0) : null;
+        var payload = new PaystackRefundRequest(
+            Transaction: cleanRef,
+            Amount: koboAmount,
+            Currency: currency?.Trim().ToUpperInvariant(),
+            MerchantNote: merchantNote ?? "Customer refund request");
+
+        request.Content = JsonContent.Create(payload);
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            var responseString = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var parsed = TryDeserialize<PaystackRefundResponse>(responseString);
+
+            if (response.IsSuccessStatusCode && parsed != null && parsed.Status && parsed.Data != null)
+            {
+                return CardRefundResult.Success(parsed.Data.Id.ToString(CultureInfo.InvariantCulture), parsed.Data.Status ?? "processed");
+            }
+
+            return CardRefundResult.Failure(parsed?.Message ?? $"Refund request failed (HTTP {(int)response.StatusCode})");
+        }
+        catch (Exception ex)
+        {
+            return CardRefundResult.Failure($"Refund communication error: {ex.Message}");
+        }
+    }
+
     private static T? TryDeserialize<T>(string json) where T : class
     {
         try

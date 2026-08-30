@@ -18,12 +18,14 @@ using Xunit;
 namespace CebizPay.UnitTests.Payments;
 
 /// <summary>
-/// Unit tests for <see cref="CardFundingService"/> initialization and reconciliation.
+/// Unit tests for <see cref="CardFundingService"/> initialization, saved card charging, routing, and reconciliation.
 /// </summary>
 public sealed class CardFundingServiceTests
 {
     private readonly ICardPaymentProvider _flwCardProvider = Substitute.For<ICardPaymentProvider>();
     private readonly ICardPaymentProvider _pstkCardProvider = Substitute.For<ICardPaymentProvider>();
+    private readonly IPaymentRoutingService _routingService = Substitute.For<IPaymentRoutingService>();
+    private readonly IPlatformFeePolicyService _feePolicyService = Substitute.For<IPlatformFeePolicyService>();
     private readonly ILedgerPostingService _ledgerPosting = Substitute.For<ILedgerPostingService>();
     private readonly IOutboxService _outbox = Substitute.For<IOutboxService>();
 
@@ -31,6 +33,8 @@ public sealed class CardFundingServiceTests
     {
         _flwCardProvider.Provider.Returns(PaymentProvider.Flutterwave);
         _pstkCardProvider.Provider.Returns(PaymentProvider.Paystack);
+        _routingService.ResolvePrimaryProvider(PaymentCapability.CardFunding).Returns(PaymentProvider.Flutterwave);
+        _routingService.GetNextFallbackProvider(PaymentCapability.CardFunding, PaymentProvider.Flutterwave).Returns(PaymentProvider.Paystack);
     }
 
     private static ApplicationDbContext CreateDbContext()
@@ -47,6 +51,8 @@ public sealed class CardFundingServiceTests
     {
         return new CardFundingService(
             new[] { _flwCardProvider, _pstkCardProvider },
+            _routingService,
+            _feePolicyService,
             dbContext,
             _ledgerPosting,
             _outbox,
@@ -91,6 +97,37 @@ public sealed class CardFundingServiceTests
     }
 
     [Fact]
+    public async Task InitializeCardFundingAsync_WhenPrimaryFailsTechnically_FallsBackToPaystack()
+    {
+        // Arrange
+        using var db = CreateDbContext();
+        var wallet = Wallet.CreateIndividualWallet("usr_card_fallback", Currency.NGN);
+        db.Wallets.Add(wallet);
+        await db.SaveChangesAsync();
+
+        _flwCardProvider.InitializeCardPaymentAsync(Arg.Any<CardPaymentInitializationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(CardPaymentInitializationResult.Failure("Flutterwave 503 Service Unavailable"));
+
+        _pstkCardProvider.InitializeCardPaymentAsync(Arg.Any<CardPaymentInitializationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(CardPaymentInitializationResult.Success("https://checkout.paystack.com/pay/pstk123", "acc_code", "pstk_ref"));
+
+        var service = CreateService(db);
+
+        // Act
+        var response = await service.InitializeCardFundingAsync(
+            walletId: wallet.Id,
+            amount: 25000.00m,
+            currency: Currency.NGN,
+            provider: null, // use dynamic capability routing
+            callbackUrl: "https://cebizpay.com/callback");
+
+        // Assert
+        Assert.NotNull(response);
+        Assert.Equal("https://checkout.paystack.com/pay/pstk123", response.AuthorizationUrl);
+        Assert.Equal("Paystack", response.Provider);
+    }
+
+    [Fact]
     public async Task InitializeCardFundingAsync_WhenWalletInactive_ThrowsInvalidOperationException()
     {
         // Arrange
@@ -110,6 +147,107 @@ public sealed class CardFundingServiceTests
                 currency: Currency.NGN,
                 provider: PaymentProvider.Flutterwave,
                 callbackUrl: "https://cebizpay.com/callback"));
+    }
+
+    [Fact]
+    public async Task ChargeSavedCardAsync_WhenSuccessful_PostsLedgerCreditAndReturnsCompleted()
+    {
+        // Arrange
+        using var db = CreateDbContext();
+        var userId = "usr_saved_1";
+        var wallet = Wallet.CreateIndividualWallet(userId, Currency.NGN);
+        db.Wallets.Add(wallet);
+
+        var savedCard = SavedCard.Create(
+            userId: userId,
+            walletId: wallet.Id,
+            provider: PaymentProvider.Flutterwave,
+            providerToken: "flw_token_xyz",
+            last4: "4242",
+            brand: "Visa",
+            expiryMonth: "12",
+            expiryYear: "2030",
+            cardHolderName: "John Doe");
+        db.SavedCards.Add(savedCard);
+        await db.SaveChangesAsync();
+
+        _flwCardProvider.ChargeSavedCardAsync(Arg.Any<CardSavedChargeRequest>(), Arg.Any<CancellationToken>())
+            .Returns(CardChargeResult.Success("flw_tx_12345"));
+
+        var ledgerTxn = new LedgerTransaction(LedgerTransactionType.CardFunding, "FND-CARD-123", null, null);
+        var fundingTx = FundingTransaction.Create(wallet.Id, null, PaymentProvider.Flutterwave, "flw_tx_12345", FundingChannel.Card, 5000m, Currency.NGN);
+        _ledgerPosting.PostCardFundingCreditCoreAsync(
+            walletId: wallet.Id,
+            grossAmount: 5000m,
+            feeAmount: 0m,
+            netCreditedAmount: 5000m,
+            providerFeeAmount: 0m,
+            currency: Currency.NGN,
+            provider: PaymentProvider.Flutterwave,
+            providerTransactionReference: Arg.Any<string>(),
+            providerEventReference: Arg.Any<string?>(),
+            feePolicyId: Arg.Any<Guid?>(),
+            feePolicyVersion: Arg.Any<int?>(),
+            feeBearer: Arg.Any<FeeBearer?>(),
+            description: Arg.Any<string?>(),
+            cancellationToken: Arg.Any<CancellationToken>())
+            .Returns((ledgerTxn, fundingTx));
+
+        var service = CreateService(db);
+
+        // Act
+        var result = await service.ChargeSavedCardAsync(
+            savedCardId: savedCard.Id,
+            amount: 5000m,
+            currency: Currency.NGN,
+            idempotencyKey: "idem_charge_001",
+            actorUserId: userId);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal("Completed", result.Status);
+        Assert.Equal(5000m, result.GrossAmount);
+        _outbox.Received(1).Write(Arg.Any<CardFundingCompletedDomainEvent>());
+    }
+
+    [Fact]
+    public async Task ChargeSavedCardAsync_WhenBusinessFailure_DoesNotFallbackAndReturnsFailed()
+    {
+        // Arrange
+        using var db = CreateDbContext();
+        var userId = "usr_saved_2";
+        var wallet = Wallet.CreateIndividualWallet(userId, Currency.NGN);
+        db.Wallets.Add(wallet);
+
+        var savedCard = SavedCard.Create(
+            userId: userId,
+            walletId: wallet.Id,
+            provider: PaymentProvider.Flutterwave,
+            providerToken: "flw_token_fail",
+            last4: "1111",
+            brand: "Mastercard");
+        db.SavedCards.Add(savedCard);
+        await db.SaveChangesAsync();
+
+        _flwCardProvider.ChargeSavedCardAsync(Arg.Any<CardSavedChargeRequest>(), Arg.Any<CancellationToken>())
+            .Returns(CardChargeResult.BusinessFailure("INSUFFICIENT_FUNDS", "Insufficient funds on card"));
+
+        var service = CreateService(db);
+
+        // Act
+        var result = await service.ChargeSavedCardAsync(
+            savedCardId: savedCard.Id,
+            amount: 50000m,
+            currency: Currency.NGN,
+            idempotencyKey: "idem_charge_002",
+            actorUserId: userId);
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal("Failed", result.Status);
+        // Paystack must NEVER be called with a Flutterwave card token
+        await _pstkCardProvider.DidNotReceive().ChargeSavedCardAsync(Arg.Any<CardSavedChargeRequest>(), Arg.Any<CancellationToken>());
+        _outbox.Received(1).Write(Arg.Any<CardFundingFailedDomainEvent>());
     }
 
     [Fact]
@@ -135,8 +273,21 @@ public sealed class CardFundingServiceTests
             .Returns(PaymentProviderResult.Success("flw_tx_999"));
 
         var ledgerTxn = new LedgerTransaction(LedgerTransactionType.CardFunding, "FND-CBZCD-REC123", null, null);
-        _ledgerPosting.PostInboundFundingCreditCoreAsync(
-            Arg.Any<Guid>(), Arg.Any<Guid?>(), Arg.Any<decimal>(), Arg.Any<Currency>(), Arg.Any<PaymentProvider>(), Arg.Any<string>(), Arg.Any<FundingChannel>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+        _ledgerPosting.PostCardFundingCreditCoreAsync(
+            walletId: wallet.Id,
+            grossAmount: 10000m,
+            feeAmount: 0m,
+            netCreditedAmount: 10000m,
+            providerFeeAmount: 0m,
+            currency: Currency.NGN,
+            provider: PaymentProvider.Flutterwave,
+            providerTransactionReference: "CBZCD-REC123",
+            providerEventReference: Arg.Any<string?>(),
+            feePolicyId: Arg.Any<Guid?>(),
+            feePolicyVersion: Arg.Any<int?>(),
+            feeBearer: Arg.Any<FeeBearer?>(),
+            description: Arg.Any<string?>(),
+            cancellationToken: Arg.Any<CancellationToken>())
             .Returns((ledgerTxn, funding));
 
         var service = CreateService(db);

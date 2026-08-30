@@ -9,5 +9,8 @@ public enum PaymentProvider
     Flutterwave = 1,
 
     /// <summary>Paystack payment gateway.</summary>
-    Paystack = 2
+    Paystack = 2,
+
+    /// <summary>Monnify payment gateway / BaaS provider.</summary>
+    Monnify = 3
 }

@@ -123,6 +123,63 @@ public sealed class AdminFeesController : ControllerBase
         var result = await _sender.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetActiveBankTransferPolicy), null, result);
     }
+
+    /// <summary>
+    /// Returns the currently active platform fee policy for a specific operation type.
+    /// </summary>
+    [HttpGet("platform/active")]
+    public async Task<IActionResult> GetActivePlatformPolicy(
+        [FromQuery] FeeOperationType operationType,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetActivePlatformFeePolicyQuery(operationType), cancellationToken);
+        if (result == null)
+            return NotFound(new { message = $"No active platform fee policy is configured for operation type '{operationType}'." });
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Returns all historical platform fee policies, optionally filtered by operation type, ordered by version descending.
+    /// </summary>
+    [HttpGet("platform")]
+    public async Task<IActionResult> GetAllPlatformPolicies(
+        [FromQuery] FeeOperationType? operationType,
+        CancellationToken cancellationToken)
+    {
+        var result = await _sender.Send(new GetAllPlatformFeePoliciesQuery(operationType), cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Creates and activates a new platform fee policy version. Automatically deactivates the prior version for that operation type.
+    /// Super Admin only — authorization is enforced within the command handler.
+    /// Every policy change is audit-logged.
+    /// </summary>
+    [HttpPost("platform")]
+    public async Task<IActionResult> CreatePlatformPolicy(
+        [FromBody] CreatePlatformFeePolicyRequest request,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
+
+        var command = new CreatePlatformFeePolicyCommand(
+            OperationType: request.OperationType,
+            CalculationMethod: request.CalculationMethod,
+            FeeBearer: request.FeeBearer,
+            FixedAmount: request.FixedAmount,
+            PercentageRate: request.PercentageRate,
+            MinimumFee: request.MinimumFee,
+            MaximumFee: request.MaximumFee,
+            Currency: request.Currency,
+            CreatedByUserId: userId,
+            EffectiveFromUtc: request.EffectiveFromUtc);
+
+        var result = await _sender.Send(command, cancellationToken);
+        return CreatedAtAction(nameof(GetActivePlatformPolicy), new { operationType = request.OperationType }, result);
+    }
 }
 
 /// <summary>
@@ -150,4 +207,18 @@ public sealed record CreateBankTransferFeePolicyRequest(
     decimal? PercentageRate = null,
     decimal? MinimumFee = null,
     decimal? MaximumFee = null);
+
+/// <summary>
+/// Request body DTO for creating a generalized platform fee policy.
+/// </summary>
+public sealed record CreatePlatformFeePolicyRequest(
+    FeeOperationType OperationType,
+    FeeCalculationMethod CalculationMethod,
+    FeeBearer FeeBearer,
+    decimal? FixedAmount = null,
+    decimal? PercentageRate = null,
+    decimal? MinimumFee = null,
+    decimal? MaximumFee = null,
+    Currency Currency = Currency.NGN,
+    DateTime? EffectiveFromUtc = null);
 

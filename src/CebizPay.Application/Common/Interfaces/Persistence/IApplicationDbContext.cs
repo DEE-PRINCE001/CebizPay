@@ -137,8 +137,23 @@ public interface IApplicationDbContext
     /// <summary>Gets the dedicated virtual accounts entity set.</summary>
     IEntitySet<VirtualAccount> VirtualAccounts { get; }
 
+    /// <summary>Gets the external funding accounts entity set.</summary>
+    IEntitySet<ExternalFundingAccount> ExternalFundingAccounts { get; }
+
+    /// <summary>Gets the platform fee policies entity set.</summary>
+    IEntitySet<PlatformFeePolicy> PlatformFeePolicies { get; }
+
     /// <summary>Gets the funding transactions entity set.</summary>
     IEntitySet<FundingTransaction> FundingTransactions { get; }
+
+    /// <summary>Gets the tokenized saved cards entity set.</summary>
+    IEntitySet<SavedCard> SavedCards { get; }
+
+    /// <summary>Gets the card refunds entity set.</summary>
+    IEntitySet<CardRefund> CardRefunds { get; }
+
+    /// <summary>Gets the card verifications entity set.</summary>
+    IEntitySet<CardVerification> CardVerifications { get; }
 
     /// <summary>Gets the payroll batches entity set.</summary>
     IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollBatch> PayrollBatches { get; }

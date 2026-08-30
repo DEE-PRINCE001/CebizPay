@@ -33,6 +33,9 @@ public class Wallet
     /// <summary>Updated timestamp.</summary>
     public DateTime? UpdatedAtUtc { get; private set; }
 
+    /// <summary>External funding rails/accounts attached to this wallet.</summary>
+    public ICollection<ExternalFundingAccount> ExternalFundingAccounts { get; private set; } = new List<ExternalFundingAccount>();
+
     private Wallet() { } // EF Core
 
     /// <summary>

@@ -154,8 +154,23 @@ public class ApplicationDbContext
     /// <summary>Gets the dedicated virtual accounts entity set.</summary>
     public DbSet<CebizPay.Domain.Payments.Entities.VirtualAccount> VirtualAccounts => Set<CebizPay.Domain.Payments.Entities.VirtualAccount>();
 
+    /// <summary>Gets the external funding accounts entity set.</summary>
+    public DbSet<CebizPay.Domain.Finance.Entities.ExternalFundingAccount> ExternalFundingAccounts => Set<CebizPay.Domain.Finance.Entities.ExternalFundingAccount>();
+
+    /// <summary>Gets the platform fee policies entity set.</summary>
+    public DbSet<CebizPay.Domain.Finance.Entities.PlatformFeePolicy> PlatformFeePolicies => Set<CebizPay.Domain.Finance.Entities.PlatformFeePolicy>();
+
     /// <summary>Gets the funding transactions entity set.</summary>
     public DbSet<CebizPay.Domain.Payments.Entities.FundingTransaction> FundingTransactions => Set<CebizPay.Domain.Payments.Entities.FundingTransaction>();
+
+    /// <summary>Gets the tokenized saved cards entity set.</summary>
+    public DbSet<CebizPay.Domain.Payments.Entities.SavedCard> SavedCards => Set<CebizPay.Domain.Payments.Entities.SavedCard>();
+
+    /// <summary>Gets the card refunds entity set.</summary>
+    public DbSet<CebizPay.Domain.Payments.Entities.CardRefund> CardRefunds => Set<CebizPay.Domain.Payments.Entities.CardRefund>();
+
+    /// <summary>Gets the card verifications entity set.</summary>
+    public DbSet<CebizPay.Domain.Payments.Entities.CardVerification> CardVerifications => Set<CebizPay.Domain.Payments.Entities.CardVerification>();
 
     /// <summary>Gets the payroll batches entity set.</summary>
     public DbSet<CebizPay.Domain.Payroll.Entities.PayrollBatch> PayrollBatches => Set<CebizPay.Domain.Payroll.Entities.PayrollBatch>();
@@ -266,7 +281,12 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Payments.Entities.PaymentAttempt> IApplicationDbContext.PaymentAttempts => new EntitySet<CebizPay.Domain.Payments.Entities.PaymentAttempt>(PaymentAttempts);
     IEntitySet<CebizPay.Domain.Payments.Entities.WebhookEvent> IApplicationDbContext.WebhookEvents => new EntitySet<CebizPay.Domain.Payments.Entities.WebhookEvent>(WebhookEvents);
     IEntitySet<CebizPay.Domain.Payments.Entities.VirtualAccount> IApplicationDbContext.VirtualAccounts => new EntitySet<CebizPay.Domain.Payments.Entities.VirtualAccount>(VirtualAccounts);
+    IEntitySet<CebizPay.Domain.Finance.Entities.ExternalFundingAccount> IApplicationDbContext.ExternalFundingAccounts => new EntitySet<CebizPay.Domain.Finance.Entities.ExternalFundingAccount>(ExternalFundingAccounts);
+    IEntitySet<CebizPay.Domain.Finance.Entities.PlatformFeePolicy> IApplicationDbContext.PlatformFeePolicies => new EntitySet<CebizPay.Domain.Finance.Entities.PlatformFeePolicy>(PlatformFeePolicies);
     IEntitySet<CebizPay.Domain.Payments.Entities.FundingTransaction> IApplicationDbContext.FundingTransactions => new EntitySet<CebizPay.Domain.Payments.Entities.FundingTransaction>(FundingTransactions);
+    IEntitySet<CebizPay.Domain.Payments.Entities.SavedCard> IApplicationDbContext.SavedCards => new EntitySet<CebizPay.Domain.Payments.Entities.SavedCard>(SavedCards);
+    IEntitySet<CebizPay.Domain.Payments.Entities.CardRefund> IApplicationDbContext.CardRefunds => new EntitySet<CebizPay.Domain.Payments.Entities.CardRefund>(CardRefunds);
+    IEntitySet<CebizPay.Domain.Payments.Entities.CardVerification> IApplicationDbContext.CardVerifications => new EntitySet<CebizPay.Domain.Payments.Entities.CardVerification>(CardVerifications);
     IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollBatch> IApplicationDbContext.PayrollBatches => new EntitySet<CebizPay.Domain.Payroll.Entities.PayrollBatch>(PayrollBatches);
     IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollItem> IApplicationDbContext.PayrollItems => new EntitySet<CebizPay.Domain.Payroll.Entities.PayrollItem>(PayrollItems);
     IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollExecutionAttempt> IApplicationDbContext.PayrollExecutionAttempts => new EntitySet<CebizPay.Domain.Payroll.Entities.PayrollExecutionAttempt>(PayrollExecutionAttempts);

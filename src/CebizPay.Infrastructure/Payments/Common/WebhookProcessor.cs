@@ -14,6 +14,7 @@ using CebizPay.Domain.Payments.Entities;
 using CebizPay.Domain.Payments.Enums;
 using CebizPay.Domain.Payments.Events;
 using CebizPay.Infrastructure.Payments.Flutterwave;
+using CebizPay.Infrastructure.Payments.Monnify;
 using CebizPay.Infrastructure.Payments.Paystack;
 using CebizPay.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -32,9 +33,11 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
     private readonly IWebhookSignatureVerifier _signatureVerifier;
     private readonly ApplicationDbContext _dbContext;
     private readonly ILedgerPostingService _ledgerPostingService;
+    private readonly IPlatformFeePolicyService _feePolicyService;
     private readonly IOutboxService _outboxService;
     private readonly FlutterwaveOptions _flwOptions;
     private readonly PaystackOptions _pstkOptions;
+    private readonly MonnifyOptions _monnifyOptions;
     private readonly ILogger<WebhookProcessor> _logger;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -49,17 +52,21 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         IWebhookSignatureVerifier signatureVerifier,
         ApplicationDbContext dbContext,
         ILedgerPostingService ledgerPostingService,
+        IPlatformFeePolicyService feePolicyService,
         IOutboxService outboxService,
         IOptions<FlutterwaveOptions> flwOptions,
         IOptions<PaystackOptions> pstkOptions,
+        IOptions<MonnifyOptions> monnifyOptions,
         ILogger<WebhookProcessor> logger)
     {
         _signatureVerifier = signatureVerifier ?? throw new ArgumentNullException(nameof(signatureVerifier));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _ledgerPostingService = ledgerPostingService ?? throw new ArgumentNullException(nameof(ledgerPostingService));
+        _feePolicyService = feePolicyService ?? throw new ArgumentNullException(nameof(feePolicyService));
         _outboxService = outboxService ?? throw new ArgumentNullException(nameof(outboxService));
         _flwOptions = flwOptions?.Value ?? throw new ArgumentNullException(nameof(flwOptions));
         _pstkOptions = pstkOptions?.Value ?? throw new ArgumentNullException(nameof(pstkOptions));
+        _monnifyOptions = monnifyOptions?.Value ?? throw new ArgumentNullException(nameof(monnifyOptions));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -86,6 +93,9 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             PaymentProvider.Paystack => !string.IsNullOrWhiteSpace(_pstkOptions.WebhookSecret)
                 ? _pstkOptions.WebhookSecret
                 : _pstkOptions.SecretKey,
+            PaymentProvider.Monnify => !string.IsNullOrWhiteSpace(_monnifyOptions.WebhookSecret)
+                ? _monnifyOptions.WebhookSecret
+                : _monnifyOptions.SecretKey,
             _ => string.Empty
         };
 
@@ -134,7 +144,7 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         _dbContext.WebhookEvents.Add(webhookEvent);
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        // Step 4: Resolve target - Outbound PaymentAttempt, Inbound VirtualAccount, or Card Funding
+        // Step 4: Resolve target - Outbound PaymentAttempt, Inbound ExternalFundingAccount, Inbound VirtualAccount, or Card Funding
         PaymentAttempt? attempt = null;
         if (!string.IsNullOrWhiteSpace(parsed.ProviderReference))
         {
@@ -156,7 +166,22 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             return await ProcessOutboundAttemptWebhookAsync(provider, parsed, attempt, webhookEvent, cancellationToken).ConfigureAwait(false);
         }
 
-        // --- Handle Inbound Virtual Account Deposit (DVA) ---
+        // --- Handle Inbound ExternalFundingAccount Deposit (e.g. Monnify Reserved Virtual Account) ---
+        ExternalFundingAccount? externalFundingAccount = null;
+        if (!string.IsNullOrWhiteSpace(parsed.AccountNumber))
+        {
+            externalFundingAccount = await _dbContext.ExternalFundingAccounts
+                .Include(e => e.Wallet)
+                .FirstOrDefaultAsync(e => e.Provider == provider && e.AccountNumber == parsed.AccountNumber, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (externalFundingAccount != null)
+        {
+            return await ProcessExternalFundingAccountDepositAsync(provider, parsed, externalFundingAccount, webhookEvent, cancellationToken).ConfigureAwait(false);
+        }
+
+        // --- Handle Inbound Legacy Virtual Account Deposit (DVA) ---
         VirtualAccount? virtualAccount = null;
         if (!string.IsNullOrWhiteSpace(parsed.AccountNumber))
         {
@@ -184,13 +209,15 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             return await ProcessCardFundingWebhookAsync(provider, parsed, fundingTx, webhookEvent, cancellationToken).ConfigureAwait(false);
         }
 
-        // Unresolved reference
+        // Unresolved reference / Unmatched account
         var parsedRef = parsed.Reference ?? parsed.AccountNumber ?? string.Empty;
         LogWebhookAttemptNotFound(_logger, providerName, parsed.ProviderEventId, parsedRef);
-        webhookEvent.MarkIgnored("No matching PaymentAttempt, VirtualAccount, or FundingTransaction found for reference.");
+        RecordAudit(AuditActions.WebhookUnmatchedTransaction, AuditResourceTypes.WebhookEvent, webhookEvent.Id.ToString(),
+            JsonSerializer.Serialize(new { Provider = providerName, ProviderEventId = parsed.ProviderEventId, Reference = parsedRef, AccountNumber = parsed.AccountNumber }));
+        webhookEvent.MarkIgnored("No matching PaymentAttempt, ExternalFundingAccount, VirtualAccount, or FundingTransaction found for reference.");
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        return WebhookProcessingResult.Ignored(parsed.ProviderEventId, "No matching PaymentAttempt, VirtualAccount, or FundingTransaction found for reference.");
+        return WebhookProcessingResult.Ignored(parsed.ProviderEventId, "No matching PaymentAttempt, ExternalFundingAccount, VirtualAccount, or FundingTransaction found for reference.");
     }
 
     private async Task<WebhookProcessingResult> ProcessOutboundAttemptWebhookAsync(
@@ -349,6 +376,164 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         return WebhookProcessingResult.Processed(parsed.ProviderEventId, attempt.Id, "Informational webhook recorded.");
     }
 
+    private async Task<WebhookProcessingResult> ProcessExternalFundingAccountDepositAsync(
+        PaymentProvider provider,
+        ParsedWebhookPayload parsed,
+        ExternalFundingAccount externalFundingAccount,
+        WebhookEvent webhookEvent,
+        CancellationToken cancellationToken)
+    {
+        if (externalFundingAccount.Status != ExternalFundingAccountStatus.Active)
+        {
+            var errorMsg = $"External funding account '{externalFundingAccount.AccountNumber}' is not active (status: {externalFundingAccount.Status}).";
+            webhookEvent.MarkFailed(errorMsg);
+            RecordAudit(AuditActions.WebhookRejected, AuditResourceTypes.ExternalFundingAccount, externalFundingAccount.Id.ToString(),
+                JsonSerializer.Serialize(new { AccountNumber = externalFundingAccount.AccountNumber, Reason = errorMsg }));
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return WebhookProcessingResult.Error(parsed.ProviderEventId, errorMsg);
+        }
+
+        var wallet = externalFundingAccount.Wallet
+            ?? await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == externalFundingAccount.WalletId, cancellationToken).ConfigureAwait(false);
+
+        if (wallet == null || wallet.Status != WalletStatus.Active)
+        {
+            var errorMsg = "Recipient wallet for external funding account not found or is not active.";
+            webhookEvent.MarkFailed(errorMsg);
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return WebhookProcessingResult.Error(parsed.ProviderEventId, errorMsg);
+        }
+
+        if (!parsed.Amount.HasValue || parsed.Amount.Value <= 0)
+        {
+            var errorMsg = "Funding deposit amount is missing or non-positive.";
+            webhookEvent.MarkFailed(errorMsg);
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return WebhookProcessingResult.Error(parsed.ProviderEventId, errorMsg);
+        }
+
+        // Currency validation
+        Currency depositCurrency;
+        if (!string.IsNullOrWhiteSpace(parsed.Currency) && Enum.TryParse<Currency>(parsed.Currency, true, out var parsedCurrency))
+        {
+            depositCurrency = parsedCurrency;
+        }
+        else
+        {
+            depositCurrency = externalFundingAccount.Currency;
+        }
+
+        if (depositCurrency != externalFundingAccount.Currency || depositCurrency != wallet.Currency)
+        {
+            var errorMsg = $"Currency mismatch. Deposit: {depositCurrency}, Account: {externalFundingAccount.Currency}, Wallet: {wallet.Currency}";
+            webhookEvent.MarkFailed(errorMsg);
+            RecordAudit(AuditActions.WebhookRejected, AuditResourceTypes.ExternalFundingAccount, externalFundingAccount.Id.ToString(),
+                JsonSerializer.Serialize(new { AccountNumber = externalFundingAccount.AccountNumber, Reason = errorMsg }));
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return WebhookProcessingResult.Error(parsed.ProviderEventId, errorMsg);
+        }
+
+        if (!parsed.IsSuccess)
+        {
+            var errorMsg = $"Provider indicated non-successful status: {parsed.ProviderStatus}";
+            webhookEvent.MarkFailed(errorMsg);
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return WebhookProcessingResult.Error(parsed.ProviderEventId, errorMsg);
+        }
+
+        var depositReference = parsed.ProviderReference ?? parsed.Reference ?? parsed.ProviderEventId;
+
+        // Calculate platform fee
+        var feePolicy = await _feePolicyService.GetActivePolicyAsync(FeeOperationType.VirtualAccountFunding, cancellationToken).ConfigureAwait(false);
+        decimal feeAmount = 0m;
+        decimal netCreditedAmount = parsed.Amount.Value;
+        Guid? feePolicyId = null;
+        int? feePolicyVersion = null;
+        FeeBearer? feeBearer = FeeBearer.CustomerPays;
+
+        if (feePolicy != null)
+        {
+            var breakdown = feePolicy.CalculateBreakdown(parsed.Amount.Value, depositCurrency);
+            feeAmount = breakdown.Fee;
+            netCreditedAmount = breakdown.NetBeneficiaryCredit;
+            feePolicyId = feePolicy.Id;
+            feePolicyVersion = feePolicy.Version;
+            feeBearer = feePolicy.FeeBearer;
+        }
+
+        // Post inbound double-entry credit through central ledger
+        await using var dbTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var (txn, funding) = await _ledgerPostingService.PostExternalFundingAccountCreditCoreAsync(
+                walletId: wallet.Id,
+                externalFundingAccountId: externalFundingAccount.Id,
+                grossAmount: parsed.Amount.Value,
+                feeAmount: feeAmount,
+                netCreditedAmount: netCreditedAmount,
+                providerFeeAmount: 0m,
+                currency: depositCurrency,
+                provider: provider,
+                providerTransactionReference: depositReference,
+                providerEventReference: parsed.ProviderEventId,
+                feePolicyId: feePolicyId,
+                feePolicyVersion: feePolicyVersion,
+                feeBearer: feeBearer,
+                channel: FundingChannel.VirtualAccount,
+                description: $"Inbound deposit via {provider} account {externalFundingAccount.AccountNumber}",
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            RecordAudit(AuditActions.FundingReceived, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
+                JsonSerializer.Serialize(new
+                {
+                    AccountNumber = externalFundingAccount.AccountNumber,
+                    GrossAmount = parsed.Amount.Value,
+                    FeeAmount = feeAmount,
+                    NetCreditedAmount = netCreditedAmount,
+                    Currency = depositCurrency.ToString(),
+                    Reference = depositReference
+                }));
+
+            RecordAudit(AuditActions.PaymentFundingCompleted, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
+                JsonSerializer.Serialize(new
+                {
+                    FundingTransactionId = funding.Id,
+                    LedgerTransactionId = txn.Id,
+                    WalletId = wallet.Id,
+                    NetCreditedAmount = netCreditedAmount
+                }));
+
+            _outboxService.Write(new ExternalFundingAccountDepositCompletedDomainEvent(
+                FundingTransactionId: funding.Id,
+                WalletId: wallet.Id,
+                ExternalFundingAccountId: externalFundingAccount.Id,
+                LedgerTransactionId: txn.Id,
+                GrossAmount: parsed.Amount.Value,
+                FeeAmount: feeAmount,
+                NetCreditedAmount: netCreditedAmount,
+                Currency: depositCurrency,
+                Provider: provider,
+                ProviderTransactionReference: depositReference,
+                OccurredOnUtc: DateTime.UtcNow));
+
+            webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await dbTx.CommitAsync(cancellationToken).ConfigureAwait(false);
+
+            var currStr = depositCurrency.ToString();
+            LogVirtualAccountDepositSuccess(_logger, netCreditedAmount, currStr, wallet.Id);
+            return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "External funding account deposit credited.");
+        }
+        catch (Exception ex)
+        {
+            await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            LogVirtualAccountDepositException(_logger, parsed.ProviderEventId, ex);
+            webhookEvent.MarkFailed($"Credit failure: {ex.Message}");
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return WebhookProcessingResult.Error(parsed.ProviderEventId, ex.Message);
+        }
+    }
+
     private async Task<WebhookProcessingResult> ProcessInboundVirtualAccountDepositAsync(
         PaymentProvider provider,
         ParsedWebhookPayload parsed,
@@ -445,22 +630,62 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
                 return WebhookProcessingResult.Error(parsed.ProviderEventId, errorMsg);
             }
 
+            // Calculate platform fee breakdown
+            var feePolicy = await _feePolicyService.GetActivePolicyAsync(FeeOperationType.CardFunding, cancellationToken).ConfigureAwait(false);
+            decimal feeAmount = 0m;
+            decimal netCreditedAmount = fundingTx.Amount;
+            Guid? feePolicyId = null;
+            int? feePolicyVersion = null;
+            FeeBearer? feeBearer = FeeBearer.CustomerPays;
+
+            if (feePolicy != null)
+            {
+                var breakdown = feePolicy.CalculateBreakdown(fundingTx.Amount, fundingTx.Currency);
+                feeAmount = breakdown.Fee;
+                netCreditedAmount = breakdown.NetBeneficiaryCredit;
+                feePolicyId = feePolicy.Id;
+                feePolicyVersion = feePolicy.Version;
+                feeBearer = feePolicy.FeeBearer;
+            }
+
             await using var dbTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                var (txn, funding) = await _ledgerPostingService.PostInboundFundingCreditCoreAsync(
+                var (txn, funding) = await _ledgerPostingService.PostCardFundingCreditCoreAsync(
                     walletId: fundingTx.WalletId,
-                    virtualAccountId: null,
-                    amount: fundingTx.Amount,
+                    grossAmount: fundingTx.Amount,
+                    feeAmount: feeAmount,
+                    netCreditedAmount: netCreditedAmount,
+                    providerFeeAmount: 0m,
                     currency: fundingTx.Currency,
                     provider: provider,
                     providerTransactionReference: fundingTx.ProviderTransactionReference,
-                    channel: FundingChannel.Card,
+                    providerEventReference: parsed.ProviderEventId,
+                    feePolicyId: feePolicyId,
+                    feePolicyVersion: feePolicyVersion,
+                    feeBearer: feeBearer,
                     description: $"Card deposit via {provider} ({fundingTx.ProviderTransactionReference})",
                     cancellationToken: cancellationToken).ConfigureAwait(false);
 
                 RecordAudit(AuditActions.CardFundingCompleted, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
-                    JsonSerializer.Serialize(new { fundingTx.ProviderTransactionReference, fundingTx.Amount, fundingTx.Currency }));
+                    JsonSerializer.Serialize(new
+                    {
+                        fundingTx.ProviderTransactionReference,
+                        GrossAmount = fundingTx.Amount,
+                        FeeAmount = feeAmount,
+                        NetCreditedAmount = netCreditedAmount,
+                        Currency = fundingTx.Currency.ToString()
+                    }));
+
+                _outboxService.Write(new CardFundingCompletedDomainEvent(
+                    FundingTransactionId: funding.Id,
+                    WalletId: fundingTx.WalletId,
+                    LedgerTransactionId: txn.Id,
+                    Amount: fundingTx.Amount,
+                    Currency: fundingTx.Currency,
+                    Provider: provider,
+                    ProviderTransactionReference: fundingTx.ProviderTransactionReference,
+                    OccurredOnUtc: DateTime.UtcNow));
 
                 webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
                 await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -527,6 +752,7 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             {
                 PaymentProvider.Flutterwave => ParseFlutterwave(root, rawPayload),
                 PaymentProvider.Paystack => ParsePaystack(root, rawPayload),
+                PaymentProvider.Monnify => ParseMonnify(root, rawPayload),
                 _ => null
             };
         }
@@ -534,6 +760,88 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         {
             return null;
         }
+    }
+
+    private static ParsedWebhookPayload? ParseMonnify(JsonElement root, string rawPayload)
+    {
+        var eventType = root.TryGetProperty("eventType", out var ev) ? ev.GetString() : "SUCCESSFUL_TRANSACTION";
+        if (string.IsNullOrWhiteSpace(eventType)) eventType = "SUCCESSFUL_TRANSACTION";
+
+        if (!root.TryGetProperty("eventData", out var data))
+            return null;
+
+        var txRef = data.TryGetProperty("transactionReference", out var tr) ? tr.GetString() : null;
+        var payRef = data.TryGetProperty("paymentReference", out var pr) ? pr.GetString() : null;
+        var refProp = data.TryGetProperty("reference", out var rf) ? rf.GetString() : null;
+        var effectiveRef = refProp ?? txRef ?? payRef;
+
+        var statusProp = data.TryGetProperty("status", out var st) ? st.GetString()?.ToUpperInvariant() : null;
+        var paymentStatus = data.TryGetProperty("paymentStatus", out var ps) ? ps.GetString()?.ToUpperInvariant() : statusProp;
+        var currency = data.TryGetProperty("currency", out var curr)
+            ? curr.GetString()
+            : data.TryGetProperty("currencyCode", out var cc) ? cc.GetString() : "NGN";
+
+        string? accountNumber = null;
+        string? bankCode = null;
+        if (data.TryGetProperty("destinationAccountInformation", out var destInfo))
+        {
+            if (destInfo.TryGetProperty("accountNumber", out var an)) accountNumber = an.GetString();
+            if (destInfo.TryGetProperty("bankCode", out var bc)) bankCode = bc.GetString();
+        }
+        else if (data.TryGetProperty("destinationAccountNumber", out var dan))
+        {
+            accountNumber = dan.GetString();
+            if (data.TryGetProperty("destinationBankCode", out var dbc)) bankCode = dbc.GetString();
+        }
+
+        decimal? amount = null;
+        if (data.TryGetProperty("amountPaid", out var am) && am.ValueKind == JsonValueKind.Number)
+        {
+            amount = am.GetDecimal();
+        }
+        else if (data.TryGetProperty("amount", out var amt) && amt.ValueKind == JsonValueKind.Number)
+        {
+            amount = amt.GetDecimal();
+        }
+        else if (data.TryGetProperty("totalPayable", out var tp) && tp.ValueKind == JsonValueKind.Number)
+        {
+            amount = tp.GetDecimal();
+        }
+
+        var isSuccess = paymentStatus is "PAID" or "SUCCESS" or "SUCCESSFUL" || eventType.Contains("SUCCESSFUL", StringComparison.OrdinalIgnoreCase);
+        var isFailure = paymentStatus is "FAILED" or "EXPIRED" or "CANCELLED" or "REVERSED" || eventType.Contains("FAILED", StringComparison.OrdinalIgnoreCase) || eventType.Contains("REVERSED", StringComparison.OrdinalIgnoreCase);
+
+        var providerEventId = !string.IsNullOrWhiteSpace(txRef)
+            ? string.Format(CultureInfo.InvariantCulture, "mnfy_evt_{0}_{1}_{2}", eventType, txRef, paymentStatus ?? "unknown")
+            : !string.IsNullOrWhiteSpace(effectiveRef)
+                ? string.Format(CultureInfo.InvariantCulture, "mnfy_evt_{0}_{1}_{2}", eventType, effectiveRef, paymentStatus ?? "unknown")
+                : ComputePayloadHash(rawPayload);
+
+        var safeMeta = JsonSerializer.Serialize(new
+        {
+            transaction_reference = txRef,
+            payment_reference = payRef,
+            reference = refProp,
+            payment_status = paymentStatus,
+            event_type = eventType,
+            account_number = accountNumber,
+            bank_code = bankCode
+        });
+
+        return new ParsedWebhookPayload(
+            ProviderEventId: providerEventId,
+            EventType: eventType,
+            Reference: effectiveRef,
+            ProviderReference: txRef ?? payRef ?? refProp,
+            AccountNumber: accountNumber,
+            Amount: amount,
+            Currency: currency,
+            ProviderStatus: paymentStatus,
+            IsSuccess: isSuccess,
+            IsFailure: isFailure,
+            FailureCode: isFailure ? "DISBURSEMENT_FAILED" : null,
+            FailureReason: isFailure ? "Monnify reported disbursement as failed or reversed" : null,
+            SafeMetadata: safeMeta);
     }
 
     private static ParsedWebhookPayload? ParseFlutterwave(JsonElement root, string rawPayload)

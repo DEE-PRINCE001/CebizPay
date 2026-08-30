@@ -1,4 +1,5 @@
 using System.Text.Json;
+using CebizPay.Application.Common.Interfaces.Finance;
 using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Payments;
 using CebizPay.Domain.Entities;
@@ -10,6 +11,7 @@ using CebizPay.Infrastructure.Finance;
 using CebizPay.Infrastructure.Payments.Common;
 using CebizPay.Infrastructure.Payments.Flutterwave;
 using CebizPay.Infrastructure.Payments.Funding;
+using CebizPay.Infrastructure.Payments.Monnify;
 using CebizPay.Infrastructure.Payments.Paystack;
 using CebizPay.Infrastructure.Payments.VirtualAccounts;
 using CebizPay.Infrastructure.Persistence;
@@ -104,14 +106,25 @@ public sealed class VirtualAccountAndFundingIntegrationTests : IClassFixture<Inf
             WebhookSecret = "pstk_test_secret",
             SecretKey = "sk_test_paystack"
         });
+        var monnifyOptions = Options.Create(new MonnifyOptions
+        {
+            WebhookSecret = "mnfy_test_secret",
+            SecretKey = "mnfy_test_secret",
+            ApiKey = "mnfy_api_key",
+            ContractCode = "1234567890",
+            Enabled = true
+        });
+        var feePolicyService = Substitute.For<IPlatformFeePolicyService>();
 
         var processor = new WebhookProcessor(
             signatureVerifier,
             dbContext,
             ledgerService,
+            feePolicyService,
             outboxService,
             flwOptions,
             pstkOptions,
+            monnifyOptions,
             NullLogger<WebhookProcessor>.Instance);
 
         var depositAmount = 75000.00m;
@@ -172,6 +185,9 @@ public sealed class VirtualAccountAndFundingIntegrationTests : IClassFixture<Inf
         await using var dbContext = await CreateDbContextAsync();
         var outboxService = new OutboxService(dbContext);
         var ledgerService = new LedgerPostingService(dbContext);
+        var routingService = Substitute.For<IPaymentRoutingService>();
+        routingService.ResolvePrimaryProvider(PaymentCapability.CardFunding).Returns(PaymentProvider.Paystack);
+        var feePolicyServiceMock = Substitute.For<IPlatformFeePolicyService>();
 
         var userId = $"usr_card_{Guid.NewGuid():N}";
         var wallet = Wallet.CreateIndividualWallet(userId, Currency.NGN);
@@ -188,6 +204,8 @@ public sealed class VirtualAccountAndFundingIntegrationTests : IClassFixture<Inf
 
         var cardService = new CardFundingService(
             new[] { cardProvider },
+            routingService,
+            feePolicyServiceMock,
             dbContext,
             ledgerService,
             outboxService,
@@ -210,14 +228,18 @@ public sealed class VirtualAccountAndFundingIntegrationTests : IClassFixture<Inf
 
         var flwOptions = Options.Create(new FlutterwaveOptions());
         var pstkOptions = Options.Create(new PaystackOptions { WebhookSecret = "pstk_secret_test", SecretKey = "sk_test_123" });
+        var monnifyOptions = Options.Create(new MonnifyOptions { WebhookSecret = "mnfy_secret_test", SecretKey = "mnfy_secret_test" });
+        var feePolicyService = Substitute.For<IPlatformFeePolicyService>();
 
         var processor = new WebhookProcessor(
             signatureVerifier,
             dbContext,
             ledgerService,
+            feePolicyService,
             outboxService,
             flwOptions,
             pstkOptions,
+            monnifyOptions,
             NullLogger<WebhookProcessor>.Instance);
 
         var webhookPayload = JsonSerializer.Serialize(new

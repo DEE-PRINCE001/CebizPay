@@ -25,6 +25,7 @@ public sealed class WebhookSignatureVerifier : IWebhookSignatureVerifier
         {
             PaymentProvider.Flutterwave => VerifyFlutterwave(headers, secret),
             PaymentProvider.Paystack => VerifyPaystack(rawPayload, headers, secret),
+            PaymentProvider.Monnify => VerifyMonnify(rawPayload, headers, secret),
             _ => false
         };
     }
@@ -48,6 +49,28 @@ public sealed class WebhookSignatureVerifier : IWebhookSignatureVerifier
     {
         // Paystack sends HMAC-SHA512 signature in 'x-paystack-signature' header
         var headerSignature = GetHeaderValue(headers, "x-paystack-signature");
+        if (string.IsNullOrWhiteSpace(headerSignature) || string.IsNullOrEmpty(rawPayload))
+            return false;
+
+        var keyBytes = Encoding.UTF8.GetBytes(secret.Trim());
+        var payloadBytes = Encoding.UTF8.GetBytes(rawPayload);
+
+        using var hmac = new HMACSHA512(keyBytes);
+        var hashBytes = hmac.ComputeHash(payloadBytes);
+        var computedHex = Convert.ToHexStringLower(hashBytes);
+
+        var headerBytes = Encoding.UTF8.GetBytes(headerSignature.Trim().ToLowerInvariant());
+        var computedBytes = Encoding.UTF8.GetBytes(computedHex);
+
+        return CryptographicOperations.FixedTimeEquals(headerBytes, computedBytes);
+    }
+
+    private static bool VerifyMonnify(string rawPayload, IReadOnlyDictionary<string, string> headers, string secret)
+    {
+        // Monnify sends HMAC-SHA512 signature in 'monnify-signature' header
+        var headerSignature = GetHeaderValue(headers, "monnify-signature")
+            ?? GetHeaderValue(headers, "Monnify-Signature");
+
         if (string.IsNullOrWhiteSpace(headerSignature) || string.IsNullOrEmpty(rawPayload))
             return false;
 

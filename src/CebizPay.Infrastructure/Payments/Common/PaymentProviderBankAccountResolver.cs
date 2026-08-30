@@ -1,5 +1,8 @@
 using CebizPay.Application.Common.Interfaces.Finance;
+using CebizPay.Application.Common.Interfaces.Payments;
+using CebizPay.Domain.Payments.Enums;
 using CebizPay.Infrastructure.Payments.Flutterwave;
+using CebizPay.Infrastructure.Payments.Monnify;
 using CebizPay.Infrastructure.Payments.Paystack;
 using Microsoft.Extensions.Logging;
 
@@ -7,25 +10,42 @@ namespace CebizPay.Infrastructure.Payments.Common;
 
 /// <summary>
 /// Provider-backed implementation of <see cref="IBankAccountResolver"/> resolving bank account beneficiary names
-/// via external payment providers (Flutterwave / Paystack) with strict format pre-validation.
+/// via external payment providers (Monnify / Flutterwave / Paystack) with capability routing and strict format pre-validation.
 /// </summary>
 public sealed partial class PaymentProviderBankAccountResolver : IBankAccountResolver
 {
+    private readonly IMonnifyClient? _monnifyClient;
     private readonly FlutterwaveClient _flutterwaveClient;
     private readonly PaystackClient _paystackClient;
+    private readonly IPaymentRoutingService? _routingService;
     private readonly ILogger<PaymentProviderBankAccountResolver> _logger;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="PaymentProviderBankAccountResolver"/> class.
     /// </summary>
     public PaymentProviderBankAccountResolver(
+        IMonnifyClient monnifyClient,
+        FlutterwaveClient flutterwaveClient,
+        PaystackClient paystackClient,
+        IPaymentRoutingService? routingService,
+        ILogger<PaymentProviderBankAccountResolver> logger)
+    {
+        _monnifyClient = monnifyClient;
+        _flutterwaveClient = flutterwaveClient ?? throw new ArgumentNullException(nameof(flutterwaveClient));
+        _paystackClient = paystackClient ?? throw new ArgumentNullException(nameof(paystackClient));
+        _routingService = routingService;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Backward-compatible constructor for testing and legacy registrations.
+    /// </summary>
+    public PaymentProviderBankAccountResolver(
         FlutterwaveClient flutterwaveClient,
         PaystackClient paystackClient,
         ILogger<PaymentProviderBankAccountResolver> logger)
+        : this(null!, flutterwaveClient, paystackClient, null, logger)
     {
-        _flutterwaveClient = flutterwaveClient ?? throw new ArgumentNullException(nameof(flutterwaveClient));
-        _paystackClient = paystackClient ?? throw new ArgumentNullException(nameof(paystackClient));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
     /// <inheritdoc/>
@@ -57,46 +77,47 @@ public sealed partial class PaymentProviderBankAccountResolver : IBankAccountRes
         var cleanBankCode = bankCode.Trim();
         var cleanAccountNumber = accountNumber.Trim();
 
-        // Attempt 1: Resolve with primary provider (Flutterwave)
-        try
+        var route = _routingService?.GetRoute(PaymentCapability.BankAccountResolution)
+            ?? new[] { PaymentProvider.Monnify, PaymentProvider.Flutterwave, PaymentProvider.Paystack };
+
+        foreach (var provider in route)
         {
-            var flwResult = await _flutterwaveClient.ResolveAccountAsync(cleanBankCode, cleanAccountNumber, cancellationToken).ConfigureAwait(false);
-            if (flwResult.Succeeded && !string.IsNullOrWhiteSpace(flwResult.AccountName))
+            if (cancellationToken.IsCancellationRequested)
+                break;
+
+            try
             {
-                return flwResult;
+                var result = provider switch
+                {
+                    PaymentProvider.Monnify when _monnifyClient != null =>
+                        await _monnifyClient.ResolveAccountAsync(cleanBankCode, cleanAccountNumber, cancellationToken).ConfigureAwait(false),
+                    PaymentProvider.Flutterwave =>
+                        await _flutterwaveClient.ResolveAccountAsync(cleanBankCode, cleanAccountNumber, cancellationToken).ConfigureAwait(false),
+                    PaymentProvider.Paystack =>
+                        await _paystackClient.ResolveAccountAsync(cleanBankCode, cleanAccountNumber, cancellationToken).ConfigureAwait(false),
+                    _ => null
+                };
+
+                if (result != null && result.Succeeded && !string.IsNullOrWhiteSpace(result.AccountName))
+                {
+                    return result;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                var providerName = provider.ToString();
+                LogProviderResolutionWarning(_logger, providerName, ex);
             }
         }
-        catch (Exception ex)
-        {
-            LogFlutterwaveResolutionWarning(_logger, ex);
-        }
 
-        // Attempt 2: Resolve with secondary provider (Paystack)
-        try
-        {
-            var pstkResult = await _paystackClient.ResolveAccountAsync(cleanBankCode, cleanAccountNumber, cancellationToken).ConfigureAwait(false);
-            if (pstkResult.Succeeded && !string.IsNullOrWhiteSpace(pstkResult.AccountName))
-            {
-                return pstkResult;
-            }
-
-            return pstkResult;
-        }
-        catch (Exception ex)
-        {
-            LogPaystackResolutionError(_logger, ex);
-            return new BankAccountResolutionResult(
-                Succeeded: false,
-                AccountName: null,
-                BankCode: cleanBankCode,
-                AccountNumber: cleanAccountNumber,
-                ErrorMessage: "Failed to resolve destination bank account name from payment providers.");
-        }
+        return new BankAccountResolutionResult(
+            Succeeded: false,
+            AccountName: null,
+            BankCode: cleanBankCode,
+            AccountNumber: cleanAccountNumber,
+            ErrorMessage: "Failed to resolve destination bank account name from available payment providers.");
     }
 
-    [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Flutterwave account resolution encountered an error. Attempting Paystack fallback.")]
-    private static partial void LogFlutterwaveResolutionWarning(ILogger logger, Exception exception);
-
-    [LoggerMessage(EventId = 2, Level = LogLevel.Error, Message = "Paystack account resolution encountered an error.")]
-    private static partial void LogPaystackResolutionError(ILogger logger, Exception exception);
+    [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "{Provider} account resolution encountered an error. Attempting next provider in route.")]
+    private static partial void LogProviderResolutionWarning(ILogger logger, string provider, Exception exception);
 }

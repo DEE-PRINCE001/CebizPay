@@ -58,12 +58,16 @@ These are now **locked project decisions**.
 | Organizations            | Multi-tenant                                             |
 | Organization membership  | User can belong to multiple organizations simultaneously |
 | Wallet model             | One primary corporate wallet per organization in V1      |
+| External funding rails   | Multiple `ExternalFundingAccount` records per wallet     |
+| Virtual Account provider | Monnify primary (provider-neutral abstraction)           |
+| Card Funding provider    | Flutterwave primary, Paystack fallback                   |
+| Bank Transfer provider   | Monnify primary, Flutterwave fallback, Paystack fallback |
+| Funding fee model        | Configurable calculation + configurable fee bearer       |
+| Future MFB portability   | Provider-neutral rails abstract future core banking/MFB  |
 | Currency                 | NGN transactional currency in V1                         |
 | Other currencies         | Reporting/FX architecture only in V1                     |
-| Ledger                   | Central ledger for every monetary movement               |
+| Ledger                   | Central double-entry ledger for every monetary movement  |
 | Ledger entries           | Immutable                                                |
-| Payment provider         | Flutterwave primary                                      |
-| Payment fallback         | Paystack                                                 |
 | Messaging                | RabbitMQ                                                 |
 | Cache/state              | Redis                                                    |
 | Initial Redis hosting    | Render Redis                                             |
@@ -102,9 +106,10 @@ We will build:
        |               |
        +---------------+----------------
                        |
-                External Providers
-                 /             \
-          Flutterwave         Paystack
+               External Providers
+             /         |         \
+      Monnify     Flutterwave    Paystack
+    (VA & Payout) (Card & Payout)(Card & Payout)
 ```
 
 The application will have strong internal module boundaries so that high-scale or high-risk domains can later be extracted into services without redesigning the entire system.
@@ -239,12 +244,16 @@ Owns:
 
 Owns:
 
-* Provider abstraction
-* Payment attempts
-* Provider references
-* Provider webhooks
-* Reconciliation
-* Provider failover
+* Capability-oriented provider abstractions (`IVirtualAccountProvider`, `ICardPaymentProvider`, `IBankTransferProvider`, `IBankAccountResolver`, `IProviderCustomerProfileProvider`, `IPaymentReconciliationProvider`)
+* External funding account lifecycle (`ExternalFundingAccount` attached to `Wallet`)
+* Dedicated virtual account provisioning (Monnify primary)
+* Card funding lifecycle, saved cards, token management, and micro-charge verification (Flutterwave primary, Paystack fallback)
+* Outbound bank transfer execution and provider routing (Monnify primary, Flutterwave fallback, Paystack secondary fallback)
+* Sequential `PaymentAttempt` tracking and auditability
+* Provider failover orchestration (TechnicalFailure-only failover, strict UNKNOWN reconciliation prerequisite)
+* Provider webhook ingestion, signature authentication, deduplication, and asynchronous worker dispatch
+* Provider reconciliation engine (scheduled, manual, mismatch resolution)
+* Configurable fee engine and fee bearer calculation
 
 ## VAS
 
@@ -561,39 +570,103 @@ The PRD specifies that Organization KYB status gates outbound payroll and wallet
 
 ---
 
-# 11. KYC/KYB
+# 11. KYC, KYB, Risk Engine & Regulatory Compliance (CBN CDD 2023)
 
-## Individual KYC
+### 11.1 Regulatory Authority & Framework
+Compliance architecture is governed strictly by the **Central Bank of Nigeria (Customer Due Diligence) Regulations, 2023**, the **Money Laundering (Prevention and Prohibition) Act, 2022**, and the **Terrorism (Prevention and Prohibition) Act, 2022**.
 
-Supports:
+**Core Compliance Principles**:
+1. **Sovereign Compliance Authority**: CebizPay internal compliance engines, risk ratings, and compliance officer reviews remain authoritative for customer approvals and transaction eligibility. External verification partners provide raw verification evidence (`VerificationEvidence`), not unconstrained authorization.
+2. **Distinct Regulatory Models**:
+   - **Individuals (Natural Persons)**: Governed by the **CBN Three-Tiered KYC Framework**.
+   - **Organizations (Legal Persons & Arrangements)**: Governed by separate **Corporate CDD Requirements** (CAC incorporation, MemArt, UBOs >= 5%, Directors, Signatories, TIN). Tiered KYC must NEVER be applied to legal persons.
+3. **Provider Outage != Verification Failure**: External provider downtime or timeouts must never automatically reject a customer; transactions queue for retry or administrative review.
 
-* Government ID
-* NIMC Card
-* Driver's License
-* International Passport
-* Liveness selfie
-* Automated quality checks
-* Manual Admin review after failed automated attempts
+---
 
-## Organization KYB
+### 11.2 Individual Tiered KYC Architecture (Natural Persons)
 
-Two-step registration:
+| Tier Level | Identification Requirements | Verification Method | Transaction & Balance Caps |
+| :--- | :--- | :--- | :--- |
+| **Tier 1 (Basic)** | Phone number, Legal Full Name, Initial OTP verification | Internal OTP + Database deduplication | Outbound cap < ₦50,000 / transaction; ₦300,000 cumulative daily limit |
+| **Tier 2 (Standard)** | Tier 1 + BVN / NIN validation + Basic government ID | Automated BVN/NIN resolution via Dojah (Fallback: Smile ID) | ₦200,000 / transaction; ₦1,000,000 cumulative daily limit |
+| **Tier 3 (Full)** | Tier 2 + Proof of Address (utility bill) + Live Facial Biometric Match | Smile ID SmartSelfie™ + ID OCR + Address Geocoding | Unrestricted platform limits (subject to provider rail constraints) |
 
-1. Company name/email/phone
-2. Year established + CAC certificate + company logo
+---
 
-Documents are reviewed by Super Admin.
+### 11.3 Legal Persons & Corporate KYB Architecture
 
-Statuses:
+Corporate onboarding enforces full corporate due diligence:
+1. **Corporate Identity**: CAC Certificate of Incorporation, Memorandum and Articles of Association (MemArt), Tax Identification Number (TIN), Registered Business Address.
+2. **Ultimate Beneficial Ownership (UBO)**: Mandatory capture and identity verification (BVN/NIN + Government ID) of all natural persons holding **5% or more equity** or controlling interest.
+3. **Governance & Signatories**: Identity verification for all registered Directors and authorized banking/wallet signatories.
+4. **Automated CAC Resolution**: Primary lookup via Dojah CAC API (Fallback: Smile ID Business Verification).
+
+---
+
+### 11.4 Strategic Multi-Provider KYC/KYB Routing Matrix
+
+| Capability | Primary Provider | Fallback Provider | Rationale & SLA |
+| :--- | :--- | :--- | :--- |
+| **Individual ID / BVN / NIN** | **Dojah** | **Smile ID** | Direct NIBSS/NIMC integration with high uptime; Smile ID provides robust failover |
+| **Liveness & 1:1 Biometrics** | **Smile ID** | **Dojah** | ISO/IEC 30107-3 Level 2 certified SmartSelfie™ optimized for African demographics |
+| **Document OCR & Verification** | **Smile ID** | **Dojah** | High-precision MRZ and visual inspection for NIMC, Passports, Driver's Licenses |
+| **AML, PEP & Sanctions** | **Dojah** | **Smile ID** | Real-time screening against UN, OFAC, EU, PEP, and domestic adverse media databases |
+| **Bank Account Name Resolution**| **Flutterwave** | **Paystack** / **Monnify**| Rapid interbank NUBAN inquiry via NIP switch |
+| **CAC / Business Verification** | **Dojah** | **Smile ID** | Direct Corporate Affairs Commission registry integration |
+| **Beneficial Owner Verification**| **Dojah** | **Smile ID** | Cross-references CAC shareholding filings with NIBSS/NIMC identity records |
+
+---
+
+### 11.5 Provider Result Normalization Model
+
+All external verification responses must normalize into a standard domain result model:
 
 ```text
-PENDING
-VERIFIED
-REJECTED
-SUSPENDED
+ProviderVerificationResult
+├── Match           → Identity parameters match external database with high confidence (>= 90%).
+├── Mismatch        → Explicit discrepancy in name, DOB, or photo.
+├── NotFound        → Identifier (BVN/NIN/CAC) does not exist in registry.
+├── Pending         → Asynchronous verification in progress (e.g. manual document check).
+├── Unavailable     → Provider infrastructure timeout / network partition (triggers fallback).
+├── Error           → Provider rejected request format / authentication failure.
+└── ReviewRequired  → Fuzzy match score (70–89%) or ambiguous document capture.
 ```
 
-The PRD specifies different transactional restrictions based on these statuses.
+---
+
+### 11.6 Risk Engine & CDD / EDD Workflows
+
+```text
+Customer Registration
+        ↓
+Risk Assessment Engine (Computes Risk Score: 0 - 100)
+  ├── Customer Category (Individual, SME, Large Corporate)
+  ├── PEP / Sanctions Match Result (Dojah/Smile ID)
+  ├── Geographic Risk & Industry Sector
+  └── Initial Velocity Profile
+        ↓
+Risk Level Classification
+  ├── Low Risk (Score < 30)     → Standard CDD (Tier 1/2 automated approval)
+  ├── Medium Risk (Score 30-69)  → Standard CDD (Tier 2/3 automated approval + periodic review)
+  └── High Risk (Score >= 70)   → Enhanced Due Diligence (EDD Required)
+                                      ↓
+                                Mandatory EDD Workflow:
+                                ├── Source of Funds Documentation
+                                ├── Source of Wealth Documentation
+                                ├── Purpose & Nature of Relationship
+                                ├── Senior Management / Compliance Officer Manual Sign-off
+                                └── Ongoing Continuous Transaction Monitoring
+```
+
+---
+
+### 11.7 KYC/KYB PII Data Security & NDPR / PCI-DSS Invariants
+
+1. **Zero Plaintext Storage in Logs/Telemetry**: BVN, NIN, Passport numbers, and biometric vectors must never be written to application logs, audit logs, or error traces.
+2. **Audit Sanitization**: `AuditSanitizer` automatically masks BVN/NIN (e.g. `222*****123`) before persisting `AuditLog.AfterJson`.
+3. **Encryption at Rest**: Sensitive identity fields are encrypted using database-level AES-256-GCM encryption.
+4. **Encrypted Blob Storage**: ID document scans and selfie captures reside in private, encrypted cloud storage accessible only via short-lived signed URLs.
 
 ---
 
@@ -818,102 +891,211 @@ The PRD explicitly specifies bcrypt/Argon2 hashing and these lockout rules.
 
 ---
 
-# 19. Payment Provider Architecture
+# 19. Capability-Oriented Payment Provider Architecture
 
-Flutterwave is primary.
+Payment integrations follow **capability-oriented provider abstractions**. The core Domain and Application layers remain strictly provider-neutral and are never coupled to external provider SDKs, proprietary DTOs, endpoint URLs, or credentials.
 
-Paystack is fallback.
+### Provider Capability Routing Matrix
 
-Application layer:
+| Capability | Primary Provider | Fallback Provider | Secondary Fallback | Core Abstraction |
+| :--- | :--- | :--- | :--- | :--- |
+| **Virtual Accounts (DVA)** | **Monnify** | BaaS Rails | Future CebizPay MFB | `IVirtualAccountProvider` |
+| **Card Funding** | **Flutterwave** | **Paystack** | — | `ICardPaymentProvider` |
+| **Bank Transfers (Payouts)** | **Monnify** | **Flutterwave** | **Paystack** | `IBankTransferProvider` / `IBankTransferExecutor` |
+| **Account Resolution** | **Flutterwave** | **Paystack** | **Monnify** | `IBankAccountResolver` |
+| **Provider KYC & Limits** | **Monnify** | — | — | `IProviderCustomerProfileProvider` |
+| **Reconciliation** | Provider-specific | Provider-specific | Provider-specific | `IPaymentReconciliationProvider` |
+| **Individual KYC & ID (BVN/NIN)**| **Dojah** | **Smile ID** | — | `IKycVerificationProvider` |
+| **Liveness & Biometrics** | **Smile ID** | **Dojah** | — | `IBiometricVerificationProvider` |
+| **Document Verification** | **Smile ID** | **Dojah** | — | `IDocumentVerificationProvider` |
+| **AML, PEP & Sanctions** | **Dojah** | **Smile ID** | — | `IAmlScreeningProvider` |
+| **Corporate KYB & CAC** | **Dojah** | **Smile ID** | — | `IKybVerificationProvider` |
+
+### Application Layer Boundaries
 
 ```text
-IPaymentProvider
+Application Layer
+├── IVirtualAccountProvider
+├── ICardPaymentProvider
+├── IBankTransferProvider / IBankTransferExecutor
+├── IBankAccountResolver
+├── IProviderCustomerProfileProvider
+├── IPaymentReconciliationProvider
+├── IKycVerificationProvider
+├── IBiometricVerificationProvider
+├── IDocumentVerificationProvider
+├── IAmlScreeningProvider
+├── IKybVerificationProvider
+└── IRiskEngineService
+        ↓
+Infrastructure Adapters
+├── MonnifyPaymentProvider (VA, Payouts, KYC Sync, Reconciliation)
+├── FlutterwavePaymentProvider (Cards, Payouts, Account Resolution, Reconciliation)
+├── PaystackPaymentProvider (Cards Fallback, Payouts Fallback, Account Resolution, Reconciliation)
+├── DojahVerificationAdapter (BVN, NIN, CAC, AML/PEP, Signatories)
+└── SmileIdVerificationAdapter (SmartSelfie™ Liveness, 1:1 Biometrics, Document OCR, Fallback ID)
 ```
 
-Infrastructure:
-
-```text
-FlutterwavePaymentProvider
-PaystackPaymentProvider
-```
-
-Flow:
-
-```text
-Application
-    ↓
-IPaymentProvider
-    ↓
-Flutterwave
-    ↓
-Failure handling / fallback policy
-    ↓
-Paystack where appropriate
-```
-
-Provider-specific models must not leak into Domain/Application.
+No provider-specific models, recipient codes, or request tokens leak into the Domain or Application layers.
 
 ---
 
-# 20. Payment Failover
+# 20. Payment Failover & Financial Safety Invariants
 
-PRD specifies automatic switching to a secondary gateway within 3 seconds when the primary is unavailable.
+Provider failover is state-aware, attempt-tracked, idempotent, and concurrency-safe.
 
-However:
+### 20.1 Result Classification Invariants
 
-**Fallback does not mean blindly retrying every failed transaction.**
-
-We distinguish:
+Every provider operation must map to the authoritative `PaymentProviderResult` classification:
 
 ```text
-Business rejection
-→ do not automatically retry
-
-Technical failure
-→ fallback may be appropriate
-
-Timeout / unknown provider state
-→ reconcile before retry
-
-Known success
-→ never retry
+PaymentProviderResultStatus
+├── Success           → External operation definitively succeeded.
+├── BusinessFailure   → Terminal rejection (e.g. invalid account, blocked recipient). NEVER fail over.
+├── TechnicalFailure  → Gateway 5xx / connection failure. Fallback provider dispatch is permitted.
+└── Unknown           → Timeout / network partition / ambiguous state. NEVER fail over immediately.
 ```
 
-This prevents duplicate financial operations.
+### 20.2 Strict Failover Rules
+
+1. **Business Failure**: If a provider rejects an operation with a business rule violation (e.g., account frozen, insufficient destination bank liquidity, invalid NUBAN), **DO NOT fail over automatically**. Fail the transaction cleanly to prevent invalid retry loops.
+2. **Technical Failure**: When the primary provider suffers a verified infrastructure outage (HTTP 502/503/504 or network drop before processing):
+   - **Bank Transfers**: Monnify (Primary) → Flutterwave (Fallback 1) → Paystack (Fallback 2).
+   - **Card Funding**: Flutterwave (Primary) → Paystack (Fallback).
+3. **UNKNOWN / Timeout State — Absolute Reconciliation Invariant**:
+   - If a provider request times out, returns HTTP 504, or produces an ambiguous response:
+   - **DO NOT immediately fail over to the fallback provider.**
+   - **DO NOT immediately retry on another rail.**
+   - The system MUST query the status endpoint or wait for a webhook to definitively reconcile the in-flight attempt before any secondary dispatch.
+   - *Rationale*: Charging Paystack while Flutterwave's charge actually succeeded causes double card charges. Dispatching a Paystack payout while Monnify's transfer is processing causes duplicate disbursements.
 
 ---
 
-# 21. Payment Provider Data
+# 21. External Funding Account & Card Token Architecture
 
-Separate:
+### 21.1 External Funding Account Model
 
-```text
-CEBIZPAY transaction
-```
-
-from:
+A CebizPay `Wallet` may have **multiple external funding accounts** across multiple partner institutions and providers:
 
 ```text
-Provider transaction
+Wallet (Financial Aggregate)
+  ├── ExternalFundingAccount #1 (Monnify - Wema Bank)
+  ├── ExternalFundingAccount #2 (Monnify - Sterling Bank)
+  ├── ExternalFundingAccount #3 (Future BaaS / Partner)
+  └── ExternalFundingAccount #4 (Future CebizPay MFB Account)
 ```
 
-Example:
+**Key Invariants**:
+- `ExternalFundingAccount` belongs directly to a `Wallet` (not directly to a `User`).
+- The `Wallet` remains the authoritative CebizPay financial object; external accounts serve as funding and access rails.
+- Supported fields: `Id`, `WalletId`, `Provider`, `ProviderCustomerReference`, `ProviderAccountReference`, `AccountNumber`, `BankName`, `BankCode`, `AccountName`, `Currency`, `Status` (Active/Suspended/Closed), `IsPrimary`, `CreatedAtUtc`, `UpdatedAtUtc`.
+- Guarantees **Future MFB Portability**: When CebizPay acquires an MFB license, core banking accounts are attached as new `ExternalFundingAccount` records without altering Wallet, Ledger, or Application use cases.
+
+### 21.2 Card Token & Saved Card Security (PCI-DSS Level 1)
+
+CebizPay enforces strict PCI-DSS zero raw credential storage:
+- **Never store, log, or transmit**: PAN, CVV/CVC, card PIN, or raw magnetic stripe/chip data.
+- Card entry occurs through provider-hosted secure fields / iframes (Flutterwave Standard / Inline, Paystack Popup).
+- `SavedCard` entity stores only: `Id`, `WalletId`, `UserId`, `Provider`, `ProviderToken` (reusable authorization token), `MaskedPan` (e.g. `**** **** **** 4123`), `CardBrand` (Visa, Mastercard, Verve), `ExpiryMonth`, `ExpiryYear`, `Status` (Active, Expired, Revoked), `CreatedAtUtc`.
+- **Card Lifecycle Support**: (1) Save card, (2) Charge saved card, (3) One-time card funding, (4) Delete/Revoke saved card, (5) Micro-charge verification (zero-auth or ₦50 refundable charge), and (6) Refunds.
+
+### 21.3 Refund Handling & Non-Negative Wallet Invariant
+
+When external providers issue refunds or reversals:
+- The provider event is reconciled and matched to the original `FundingTransaction` and `LedgerTransaction`.
+- **Invariant**: A reversal/refund MUST NOT make a wallet balance negative (`AvailableBalance >= 0`).
+- If insufficient funds remain in the wallet at reversal time:
+  - **DO NOT silently debit the wallet below zero.**
+  - Debit up to available balance and record the remainder in a **Recovery Outstanding** tracking state for automatic deduction from subsequent deposits.
+
+---
+
+# 21.4 Webhook Architecture & Security
+
+Webhook ingestion is hardened against forgery, replay attacks, and duplicate delivery:
 
 ```text
-CEBIZPAY Transaction
-reference = CP-123
-
-Payment Attempt
-provider = FLUTTERWAVE
-
-Provider reference
-FLW-999
-
-Webhook
-FLW-999 → SUCCESS
+Provider Webhook
+      ↓
+PaymentsWebhookController (Anonymous endpoint, TLS 1.3)
+      ↓
+IWebhookSignatureVerifier (Constant-time HMAC / Secret Hash validation)
+      ↓
+Webhook Event Deduplication (Unique constraint on [Provider, ProviderEventId])
+      ↓
+Durable Persistence (WebhookEvents table in PostgreSQL)
+      ↓
+Immediate 200 OK Acknowledgment
+      ↓
+Transactional Outbox / RabbitMQ Queue
+      ↓
+Background Worker (PaymentWebhookConsumer / PaymentReconciliationWorker)
+      ↓
+Central Double-Entry Ledger Posting & Wallet Mutation
 ```
 
-Provider references must be unique.
+**Security Rules**:
+- **Signature Verification**: Paystack HMAC-SHA512 (`x-paystack-signature`), Flutterwave secret hash (`verif-hash`), Monnify SHA-512 signature (`monnify-signature`). All comparisons use `CryptographicOperations.FixedTimeEquals`.
+- **Deduplication**: Webhooks with identical `ProviderEventId` or payload hash are acknowledged idempotently with HTTP 200 without re-executing ledger writes.
+- **Asynchronous Execution**: Heavy financial processing, ledger row locking, and external calls occur asynchronously in background workers, never blocking provider webhook timeout SLAs.
+
+---
+
+# 21.5 Configurable Fee Engine & Accounting Models
+
+Funding and payment fees are completely decoupled from hardcoded logic and managed by Super Admin.
+
+### 21.5.1 Fee Calculation Models
+- **FREE**: ₦0 fee.
+- **FIXED**: Flat amount (e.g. ₦100 per transaction).
+- **PERCENTAGE**: Percentage rate (e.g. 1.5%).
+- **PERCENTAGE + CAP**: Percentage rate subject to configurable minimum and maximum caps (e.g. 1.5% capped at ₦2,000).
+
+### 21.5.2 Fee Bearer Models
+- **CUSTOMER_PAYS**: Fee is added to requested funding amount. Payer is billed `RequestedAmount + Fee`; wallet receives `RequestedAmount`.
+- **DEDUCT_FROM_FUNDS**: Fee is deducted from gross inbound funds. Payer sends `GrossAmount`; platform deducts `Fee`; wallet receives `GrossAmount - Fee`.
+- **PLATFORM_ABSORBS**: Payer sends `GrossAmount`; wallet receives `GrossAmount`; CebizPay absorbs the provider cost and processing fee as a platform expense.
+
+### 21.5.3 Ledger Double-Entry Representation
+
+Total fee economics separates **Provider Cost** from **CebizPay Platform Fee Revenue**:
+
+```text
+Scenario: DEDUCT_FROM_FUNDS (₦100,000 deposit, ₦700 platform fee, ₦150 provider cost)
+  DEBIT   Inbound Clearing Account         ₦100,000
+  CREDIT  Customer Wallet Account           ₦99,300
+  CREDIT  Platform Fee Revenue Account         ₦700
+
+Provider Settlement / Cost:
+  DEBIT   Provider Expense Account             ₦150
+  CREDIT  Provider Settlement Clearing         ₦150
+```
+
+---
+
+# 21.6 Customer KYC vs Provider KYC vs Provider Limits
+
+The system maintains strict architectural separation between three distinct identity/limit domains:
+
+```text
+[CebizPay Customer & KYC Policy]
+       ↓
+  Authoritative for internal permissions (Pending/Rejected cap < ₦50k; Verified uncapped)
+       ↓
+[Internal Limit / Eligibility Profile]
+       ↓
+  Calculates single-transaction, daily volume, and velocity rules
+       ↓
+[Provider Adapter Layer]
+       ↓
+  Maps internal identity to external compliance requirements
+       ↓
+[Provider KYC Sync & Provider Limit Profile]
+       ↓
+  External enforcement constraints (Monnify Tier limits, BVN/NIN validation status)
+```
+
+**Guiding Rule**: Provider limit profiles NEVER become the source of truth for CebizPay authorization. However, external provider limits act as physical constraints on transaction dispatch. If an internal user is verified but exceeds Monnify's daily aggregate limit, the system gracefully handles the external provider rejection without corrupting internal KYC status.
 
 ---
 
@@ -2024,11 +2206,26 @@ Currency:
 NGN transactional currency in V1
 
 Ledger:
-Central immutable ledger
+Central double-entry immutable ledger
 
-Payments:
-Flutterwave primary
-Paystack fallback
+External Funding Accounts:
+Multiple ExternalFundingAccount records per Wallet
+
+Virtual Accounts (DVA):
+Monnify primary
+
+Card Funding:
+Flutterwave primary, Paystack fallback
+
+Bank Transfers (Payouts):
+Monnify primary, Flutterwave fallback, Paystack fallback
+
+Funding Fee Model:
+Configurable calculation (Free, Fixed, Percentage, Percentage+Cap)
+Configurable fee bearer (CustomerPays, DeductFromFunds, PlatformAbsorbs)
+
+Future MFB Portability:
+Core banking accounts attach as ExternalFundingAccount without mutating domain core
 
 Messaging:
 RabbitMQ
@@ -2134,3 +2331,70 @@ The new conversation should be instructed:
 The PRD remains the **source of truth for product requirements**.
 
 This specification is the **source of truth for our engineering decisions** unless we explicitly revise one.
+
+---
+
+# 52. Change History / Superseded Decisions
+
+The following decisions have been updated and synchronized across all authoritative engineering documentation:
+
+### 1. Payment Provider Architecture & Hierarchy
+* **OLD DECISION**: Flutterwave primary, Paystack fallback across all payment and payout operations.
+* **UPDATED DECISION**: Capability-specific routing:
+  - Virtual Account Provisioning: Monnify primary (`IVirtualAccountProvider`)
+  - Card Funding: Flutterwave primary, Paystack fallback (`ICardPaymentProvider`)
+  - Bank Transfers / Payouts: Monnify primary, Flutterwave fallback, Paystack secondary fallback (`IBankTransferProvider`)
+  - Account Resolution: Flutterwave, Paystack, Monnify (`IBankAccountResolver`)
+* **REASON**: Optimizes transaction routing, fee economics, and provider capabilities while maintaining loose coupling through provider-neutral domain abstractions.
+
+### 2. External Funding Account Architecture
+* **OLD DECISION**: Dedicated virtual accounts were represented as a single `VirtualAccount` entity tied to an `IndividualId` or `OrganizationId`.
+* **UPDATED DECISION**: Multiple `ExternalFundingAccount` records belong directly to a `Wallet`. Supports simultaneous accounts across providers (Monnify Wema, Sterling, Moniepoint) and future CebizPay MFB core-banking accounts.
+* **REASON**: The Wallet is the core CebizPay financial ledger object. Decoupling external accounts onto the Wallet allows multi-provider funding and guarantees zero-downtime portability to a future MFB license.
+
+### 3. Card Funding Lifecycle & Tokenization
+* **OLD DECISION**: Basic checkout initialization without token persistence or micro-charge support.
+* **UPDATED DECISION**: Full V1 card funding lifecycle: (1) Save card, (2) Charge saved card, (3) One-time card funding, (4) Delete/Revoke card, (5) Micro-charge / zero-auth verification, and (6) Refunds. Zero raw PAN/CVV/PIN storage (safe provider tokens and masked display metadata only).
+* **REASON**: Enforces PCI-DSS compliance while unlocking frictionless repeat card funding and thrift automated collections.
+
+### 4. Fee Engine & Accounting Models
+* **OLD DECISION**: Hardcoded/fixed transfer fees.
+* **UPDATED DECISION**: Configurable fee calculation models (`FREE`, `FIXED`, `PERCENTAGE`, `PERCENTAGE_WITH_CAP`) and configurable fee bearer models (`CUSTOMER_PAYS`, `DEDUCT_FROM_FUNDS`, `PLATFORM_ABSORBS`) managed by Super Admin. Provider costs and CebizPay platform fees are recorded in separate ledger accounts.
+* **REASON**: Enables dynamic commercial models and full double-entry ledger transparency.
+
+### 5. Failover Invariants & UNKNOWN State Safety
+* **OLD DECISION**: Blind 3-second failover to secondary provider.
+* **UPDATED DECISION**: Strict classification:
+  - `BusinessFailure`: NEVER fail over.
+  - `TechnicalFailure`: Fallback allowed.
+  - `Unknown` / Timeout: Strict prerequisite to reconcile in-flight attempt before any retry or failover.
+* **REASON**: Prevents double card charges, duplicate bank disbursements, and financial ledger corruption.
+
+### 6. KYC/KYB Strategic Multi-Provider Routing & Provider Evidence Model
+* **OLD DECISION**: Single generic manual KYC review without automated provider integration or capability routing.
+* **UPDATED DECISION**: Multi-provider capability-based routing:
+  - Individual ID / BVN / NIN: Dojah primary, Smile ID fallback (`IKycVerificationProvider`)
+  - Liveness & 1:1 Biometrics: Smile ID (SmartSelfie™) primary, Dojah fallback (`IBiometricVerificationProvider`)
+  - Document OCR & Verification: Smile ID primary, Dojah fallback (`IDocumentVerificationProvider`)
+  - AML, PEP & Sanctions: Dojah primary, Smile ID fallback (`IAmlScreeningProvider`)
+  - Bank Account Name Resolution: Flutterwave primary, Paystack fallback 1, Monnify fallback 2 (`IBankAccountResolver`)
+  - CAC / Business Verification: Dojah primary, Smile ID fallback (`IKybVerificationProvider`)
+  - Beneficial Owners / Directors: Dojah primary, Smile ID fallback (`IKybVerificationProvider`)
+* **REASON**: Maximizes verification accuracy, leverages specialized vendor strengths, and prevents single-provider vendor lock-in without redundantly routing low-risk customers through multiple providers.
+
+### 7. CBN Customer Due Diligence 2023 & Sovereign Compliance Authority
+* **OLD DECISION**: External verification results directly drove user status; Individual Tiered KYC applied generically.
+* **UPDATED DECISION**:
+  - Full alignment with Central Bank of Nigeria (Customer Due Diligence) Regulations, 2023.
+  - Clear architectural separation between Individual Tiered KYC (Tier 1, 2, 3) and Corporate CDD (CAC, MemArt, UBO >= 5%, Directors, Signatories, TIN).
+  - Sovereign Compliance Authority: CebizPay internal compliance engine and compliance officer reviews remain authoritative. External provider results provide verification evidence (`VerificationEvidence`), not unconstrained authorization.
+  - Provider outage or timeout is never treated as customer verification failure.
+  - Downstream provider KYC synchronization pushes internal verified identity data to external banking rails (Monnify) to unlock provider transaction limit profiles.
+* **REASON**: Enforces strict compliance with CBN CDD Regulations 2023 and AML/CFT/CPF legislation while retaining sovereign platform control over customer risk.
+
+### 8. Future MFB Portability
+* **OLD DECISION**: Virtual accounts modeled as static single-provider records tied to users.
+* **UPDATED DECISION**: External accounts attach to `Wallet` as `ExternalFundingAccount` records. When CebizPay secures an MFB license, internal core-banking accounts attach as `ExternalFundingAccount` records with zero modifications to Wallet, Ledger, or Application use cases.
+* **REASON**: Guarantees seamless, zero-downtime evolution into a licensed Microfinance Bank without technical debt or domain rewrites.
+
+

@@ -136,6 +136,66 @@ public sealed partial class FlutterwavePaymentProvider : IPaymentProvider, IVirt
         return _client.VerifyTransactionAsync(providerReference, cancellationToken);
     }
 
+    /// <inheritdoc/>
+    public Task<CardChargeResult> ChargeSavedCardAsync(
+        CardSavedChargeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var names = (request.CustomerName ?? "Customer").Trim().Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
+        var firstName = names.Length > 0 ? names[0] : "Customer";
+        var lastName = names.Length > 1 ? names[1] : "CebizPay";
+
+        return _client.ChargeTokenizedCardAsync(
+            token: request.ProviderToken,
+            amount: request.Amount,
+            currency: request.Currency.ToString(),
+            email: request.Email,
+            txRef: request.Reference,
+            firstName: firstName,
+            lastName: lastName,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<CardRefundResult> RefundCardPaymentAsync(
+        CardRefundRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return _client.RefundTransactionAsync(
+            transactionIdOrRef: request.ProviderTransactionReference,
+            amount: request.Amount,
+            comments: request.Reason,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<CardVerificationResult> VerifyCardAsync(
+        CardVerificationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var initResult = await _client.InitializePaymentAsync(
+            amount: request.Amount > 0 ? request.Amount : 50m, // Flutterwave standard nominal authorization
+            currency: request.Currency.ToString(),
+            email: request.Email,
+            txRef: request.Reference,
+            redirectUrl: request.CallbackUrl,
+            customerName: request.CustomerName,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (initResult.Succeeded && !string.IsNullOrWhiteSpace(initResult.AuthorizationUrl))
+        {
+            return CardVerificationResult.Success(initResult.AuthorizationUrl, request.Reference);
+        }
+
+        return CardVerificationResult.Failure(initResult.ErrorMessage ?? "Card verification session initialization failed.");
+    }
+
     [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Parent BankTransfer not found for PaymentAttempt {AttemptId} (LedgerTransactionId: {TxId})")]
     private static partial void LogBankTransferNotFound(ILogger logger, Guid attemptId, Guid txId);
 }

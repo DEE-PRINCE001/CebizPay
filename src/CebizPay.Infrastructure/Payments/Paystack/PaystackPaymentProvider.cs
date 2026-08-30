@@ -167,6 +167,59 @@ public sealed partial class PaystackPaymentProvider : IPaymentProvider, IVirtual
         return _client.VerifyTransactionAsync(providerReference, cancellationToken);
     }
 
+    /// <inheritdoc/>
+    public Task<CardChargeResult> ChargeSavedCardAsync(
+        CardSavedChargeRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return _client.ChargeAuthorizationAsync(
+            authorizationCode: request.ProviderToken,
+            email: request.Email,
+            amount: request.Amount,
+            reference: request.Reference,
+            currency: request.Currency.ToString(),
+            cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public Task<CardRefundResult> RefundCardPaymentAsync(
+        CardRefundRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        return _client.RefundTransactionAsync(
+            transactionReferenceOrId: request.ProviderTransactionReference,
+            amount: request.Amount,
+            currency: request.Currency.ToString(),
+            merchantNote: request.Reason,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<CardVerificationResult> VerifyCardAsync(
+        CardVerificationRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var initResult = await _client.InitializeTransactionAsync(
+            amount: request.Amount > 0 ? request.Amount : 50m, // Paystack nominal verification charge
+            email: request.Email,
+            reference: request.Reference,
+            callbackUrl: request.CallbackUrl,
+            cancellationToken: cancellationToken).ConfigureAwait(false);
+
+        if (initResult.Succeeded && !string.IsNullOrWhiteSpace(initResult.AuthorizationUrl))
+        {
+            return CardVerificationResult.Success(initResult.AuthorizationUrl, request.Reference);
+        }
+
+        return CardVerificationResult.Failure(initResult.ErrorMessage ?? "Paystack card verification session initialization failed.");
+    }
+
     [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Parent BankTransfer not found for PaymentAttempt {AttemptId} (LedgerTransactionId: {TxId})")]
     private static partial void LogBankTransferNotFound(ILogger logger, Guid attemptId, Guid txId);
 

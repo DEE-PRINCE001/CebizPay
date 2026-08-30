@@ -873,6 +873,318 @@ public sealed class LedgerPostingService : ILedgerPostingService
     }
 
     /// <inheritdoc/>
+    public async Task<(LedgerTransaction Transaction, FundingTransaction Funding)> PostExternalFundingAccountCreditCoreAsync(
+        Guid walletId,
+        Guid externalFundingAccountId,
+        decimal grossAmount,
+        decimal feeAmount,
+        decimal netCreditedAmount,
+        decimal providerFeeAmount,
+        Currency currency,
+        PaymentProvider provider,
+        string providerTransactionReference,
+        string? providerEventReference,
+        Guid? feePolicyId,
+        int? feePolicyVersion,
+        FeeBearer? feeBearer,
+        FundingChannel channel = FundingChannel.VirtualAccount,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (grossAmount <= 0)
+            throw new ArgumentException("Gross funding amount must be positive.", nameof(grossAmount));
+        if (feeAmount < 0)
+            throw new ArgumentException("Fee amount cannot be negative.", nameof(feeAmount));
+        if (netCreditedAmount < 0)
+            throw new ArgumentException("Net credited amount cannot be negative.", nameof(netCreditedAmount));
+        if (string.IsNullOrWhiteSpace(providerTransactionReference))
+            throw new ArgumentException("ProviderTransactionReference is required.", nameof(providerTransactionReference));
+
+        // Lock recipient wallet with row-level lock
+        var recipientWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", walletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == walletId, cancellationToken);
+
+        if (recipientWallet == null)
+            throw new InvalidOperationException($"Recipient wallet '{walletId}' not found.");
+        if (recipientWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"Recipient wallet '{walletId}' is not active.");
+        if (recipientWallet.Currency != currency)
+            throw new InvalidOperationException($"Recipient wallet currency '{recipientWallet.Currency}' does not match funding currency '{currency}'.");
+
+        // Load or create funding transaction
+        var fundingTx = await _dbContext.FundingTransactions
+            .FirstOrDefaultAsync(f => f.Provider == provider && f.ProviderTransactionReference == providerTransactionReference, cancellationToken)
+            ?? _dbContext.FundingTransactions.Local
+                .FirstOrDefault(f => f.Provider == provider && f.ProviderTransactionReference == providerTransactionReference);
+
+        if (fundingTx == null)
+        {
+            fundingTx = FundingTransaction.CreateWithExternalAccount(
+                walletId: walletId,
+                externalFundingAccountId: externalFundingAccountId,
+                provider: provider,
+                providerTransactionReference: providerTransactionReference,
+                providerEventReference: providerEventReference,
+                fundingChannel: channel,
+                grossAmount: grossAmount,
+                feeAmount: feeAmount,
+                netCreditedAmount: netCreditedAmount,
+                providerFeeAmount: providerFeeAmount,
+                feePolicyId: feePolicyId,
+                feePolicyVersion: feePolicyVersion,
+                feeBearer: feeBearer,
+                currency: currency);
+
+            _dbContext.FundingTransactions.Add(fundingTx);
+        }
+
+        if (fundingTx.Status == FundingTransactionStatus.Completed && fundingTx.LedgerTransactionId.HasValue)
+        {
+            // Already credited idempotently
+            var existingTxn = await _dbContext.LedgerTransactions.FindAsync(new object[] { fundingTx.LedgerTransactionId.Value }, cancellationToken);
+            return (existingTxn!, fundingTx);
+        }
+
+        // Get clearing account and customer wallet ledger account
+        var clearingAccount = await GetOrCreateInboundClearingAccountAsync(currency, cancellationToken);
+        var customerAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == walletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local
+                .FirstOrDefault(l => l.WalletId == walletId)
+            ?? throw new InvalidOperationException($"Ledger account for wallet '{walletId}' not found.");
+
+        LedgerAccount? feeAccount = null;
+        if (feeAmount > 0)
+        {
+            feeAccount = await GetOrCreatePlatformFeeAccountAsync(currency, cancellationToken);
+        }
+
+        // Credit recipient wallet available balance with net credited amount
+        recipientWallet.Credit(netCreditedAmount);
+
+        // Build LedgerTransaction
+        var reference = $"FND-EXT-{providerTransactionReference}";
+        var transaction = new LedgerTransaction(
+            LedgerTransactionType.VirtualAccountDeposit,
+            reference,
+            idempotencyKey: providerTransactionReference,
+            description: description ?? $"Inbound deposit via {provider} reserved account ({providerTransactionReference})");
+        transaction.Complete(DateTime.UtcNow);
+
+        // Double-entry entries:
+        // DEBIT  Inbound Clearing Account   (grossAmount)
+        // CREDIT Customer Wallet Account    (netCreditedAmount)
+        // CREDIT Platform Fee Account       (feeAmount, if > 0)
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, clearingAccount.Id, LedgerEntryDirection.Debit, grossAmount, currency, 1),
+            new(transaction.Id, customerAccount.Id, LedgerEntryDirection.Credit, netCreditedAmount, currency, 2)
+        };
+
+        if (feeAmount > 0 && feeAccount != null)
+        {
+            entries.Add(new LedgerEntry(transaction.Id, feeAccount.Id, LedgerEntryDirection.Credit, feeAmount, currency, 3));
+        }
+
+        fundingTx.MarkCompleted(transaction.Id);
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return (transaction, fundingTx);
+    }
+
+    /// <inheritdoc/>
+    public async Task<(LedgerTransaction Transaction, FundingTransaction Funding)> PostCardFundingCreditCoreAsync(
+        Guid walletId,
+        decimal grossAmount,
+        decimal feeAmount,
+        decimal netCreditedAmount,
+        decimal providerFeeAmount,
+        Currency currency,
+        PaymentProvider provider,
+        string providerTransactionReference,
+        string? providerEventReference,
+        Guid? feePolicyId,
+        int? feePolicyVersion,
+        FeeBearer? feeBearer,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (grossAmount <= 0)
+            throw new ArgumentException("Gross funding amount must be positive.", nameof(grossAmount));
+        if (feeAmount < 0)
+            throw new ArgumentException("Fee amount cannot be negative.", nameof(feeAmount));
+        if (netCreditedAmount < 0)
+            throw new ArgumentException("Net credited amount cannot be negative.", nameof(netCreditedAmount));
+        if (string.IsNullOrWhiteSpace(providerTransactionReference))
+            throw new ArgumentException("ProviderTransactionReference is required.", nameof(providerTransactionReference));
+
+        currency.EnsureTransactionalV1();
+
+        // Lock recipient wallet with row-level lock
+        var recipientWallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", walletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == walletId, cancellationToken);
+
+        if (recipientWallet == null)
+            throw new InvalidOperationException($"Recipient wallet '{walletId}' not found.");
+        if (recipientWallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"Recipient wallet '{walletId}' is not active.");
+        if (recipientWallet.Currency != currency)
+            throw new InvalidOperationException($"Recipient wallet currency '{recipientWallet.Currency}' does not match funding currency '{currency}'.");
+
+        // Load or create funding transaction
+        var fundingTx = await _dbContext.FundingTransactions
+            .FirstOrDefaultAsync(f => f.Provider == provider && f.ProviderTransactionReference == providerTransactionReference, cancellationToken)
+            ?? _dbContext.FundingTransactions.Local
+                .FirstOrDefault(f => f.Provider == provider && f.ProviderTransactionReference == providerTransactionReference);
+
+        if (fundingTx == null)
+        {
+            fundingTx = FundingTransaction.Create(
+                walletId: walletId,
+                virtualAccountId: null,
+                provider: provider,
+                providerTransactionReference: providerTransactionReference,
+                fundingChannel: FundingChannel.Card,
+                amount: grossAmount,
+                currency: currency);
+            _dbContext.FundingTransactions.Add(fundingTx);
+        }
+
+        if (fundingTx.Status == FundingTransactionStatus.Completed && fundingTx.LedgerTransactionId.HasValue)
+        {
+            var existingTxn = await _dbContext.LedgerTransactions.FindAsync(new object[] { fundingTx.LedgerTransactionId.Value }, cancellationToken);
+            return (existingTxn!, fundingTx);
+        }
+
+        var clearingAccount = await GetOrCreateInboundClearingAccountAsync(currency, cancellationToken);
+        var customerAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == walletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.WalletId == walletId)
+            ?? throw new InvalidOperationException($"Ledger account for wallet '{walletId}' not found.");
+
+        LedgerAccount? feeAccount = null;
+        if (feeAmount > 0)
+        {
+            feeAccount = await GetOrCreatePlatformFeeAccountAsync(currency, cancellationToken);
+        }
+
+        // Credit recipient wallet available balance with net credited amount
+        recipientWallet.Credit(netCreditedAmount);
+
+        var reference = $"FND-CARD-{providerTransactionReference}";
+        var transaction = new LedgerTransaction(
+            LedgerTransactionType.CardFunding,
+            reference,
+            idempotencyKey: providerTransactionReference,
+            description: description ?? $"Inbound card funding via {provider} ({providerTransactionReference})");
+        transaction.Complete(DateTime.UtcNow);
+
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, clearingAccount.Id, LedgerEntryDirection.Debit, grossAmount, currency, 1),
+            new(transaction.Id, customerAccount.Id, LedgerEntryDirection.Credit, netCreditedAmount, currency, 2)
+        };
+
+        if (feeAmount > 0 && feeAccount != null)
+        {
+            entries.Add(new LedgerEntry(transaction.Id, feeAccount.Id, LedgerEntryDirection.Credit, feeAmount, currency, 3));
+        }
+
+        fundingTx.MarkCompleted(transaction.Id);
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return (transaction, fundingTx);
+    }
+
+    /// <inheritdoc/>
+    public async Task<(LedgerTransaction Transaction, CardRefund Refund)> PostCardRefundReversalCoreAsync(
+        Guid refundId,
+        Guid fundingTransactionId,
+        decimal amount,
+        Currency currency,
+        string refundReference,
+        string? providerRefundReference,
+        string? description = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (amount <= 0)
+            throw new ArgumentException("Refund amount must be positive.", nameof(amount));
+        if (string.IsNullOrWhiteSpace(refundReference))
+            throw new ArgumentException("RefundReference is required.", nameof(refundReference));
+
+        currency.EnsureTransactionalV1();
+
+        var refund = await _dbContext.CardRefunds
+            .FirstOrDefaultAsync(r => r.Id == refundId, cancellationToken)
+            ?? _dbContext.CardRefunds.Local.FirstOrDefault(r => r.Id == refundId)
+            ?? throw new InvalidOperationException($"CardRefund '{refundId}' not found.");
+
+        if (refund.Status == CardRefundStatus.Succeeded && refund.LedgerTransactionId.HasValue)
+        {
+            var existingTxn = await _dbContext.LedgerTransactions.FindAsync(new object[] { refund.LedgerTransactionId.Value }, cancellationToken);
+            return (existingTxn!, refund);
+        }
+
+        // Lock wallet row
+        var wallet = _dbContext.Database.IsNpgsql()
+            ? await _dbContext.Wallets.FromSqlRaw("SELECT * FROM \"Wallets\" WHERE \"Id\" = {0} FOR UPDATE", refund.WalletId).FirstOrDefaultAsync(cancellationToken)
+            : await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == refund.WalletId, cancellationToken);
+
+        if (wallet == null)
+            throw new InvalidOperationException($"Wallet '{refund.WalletId}' not found.");
+
+        if (wallet.AvailableBalance < amount)
+        {
+            // Insufficient balance for immediate full wallet debit - do NOT create negative balance
+            refund.MarkRecoveryOutstanding($"Customer wallet balance ({wallet.AvailableBalance:F2} {currency}) insufficient for full refund reversal of {amount:F2} {currency}.");
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            return (null!, refund);
+        }
+
+        // Debit customer wallet
+        wallet.Debit(amount);
+
+        var clearingAccount = await GetOrCreateInboundClearingAccountAsync(currency, cancellationToken);
+        var customerAccount = await _dbContext.LedgerAccounts
+            .FirstOrDefaultAsync(l => l.WalletId == refund.WalletId, cancellationToken)
+            ?? _dbContext.LedgerAccounts.Local.FirstOrDefault(l => l.WalletId == refund.WalletId)
+            ?? throw new InvalidOperationException($"Ledger account for wallet '{refund.WalletId}' not found.");
+
+        var reference = $"REF-CARD-{refundReference}";
+        var transaction = new LedgerTransaction(
+            LedgerTransactionType.Refund,
+            reference,
+            idempotencyKey: refund.IdempotencyKey,
+            description: description ?? $"Card payment refund reversal for {fundingTransactionId}");
+        transaction.Complete(DateTime.UtcNow);
+
+        // Double-entry reversal:
+        // DEBIT  Customer Wallet Account  (amount)
+        // CREDIT Inbound Clearing Account (amount)
+        var entries = new List<LedgerEntry>
+        {
+            new(transaction.Id, customerAccount.Id, LedgerEntryDirection.Debit, amount, currency, 1),
+            new(transaction.Id, clearingAccount.Id, LedgerEntryDirection.Credit, amount, currency, 2)
+        };
+
+        refund.MarkSucceeded(providerRefundReference, transaction.Id);
+
+        _dbContext.LedgerTransactions.Add(transaction);
+        _dbContext.LedgerEntries.AddRange(entries);
+
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return (transaction, refund);
+    }
+
+    /// <inheritdoc/>
     public async Task<LedgerTransaction> PostPayrollDisbursementCoreAsync(
         Guid organizationWalletId,
         Guid employeeWalletId,

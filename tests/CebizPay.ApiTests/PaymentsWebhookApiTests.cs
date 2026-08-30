@@ -170,4 +170,64 @@ public sealed class PaymentsWebhookApiTests
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
     }
+
+    [Fact]
+    public async Task MonnifyWebhook_ValidSignatureAndPayload_ShouldReturn200Ok()
+    {
+        // Arrange
+        var processor = Substitute.For<IWebhookProcessor>();
+        processor.ProcessWebhookAsync(
+            PaymentProvider.Monnify,
+            Arg.Any<string>(),
+            Arg.Any<IReadOnlyDictionary<string, string>>(),
+            Arg.Any<CancellationToken>())
+            .Returns(WebhookProcessingResult.Processed("mnfy_evt_123", Guid.NewGuid(), "Processed successfully"));
+
+        var (host, client) = await CreateTestServer(processor);
+        using (host)
+        {
+            var content = new StringContent("""{"eventType":"SUCCESSFUL_TRANSACTION","eventData":{"transactionReference":"TX-123"}}""", Encoding.UTF8, "application/json");
+            var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/payments/webhooks/monnify")
+            {
+                Content = content
+            };
+            request.Headers.Add("monnify-signature", "valid-monnify-signature");
+
+            // Act
+            var response = await client.SendAsync(request);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task MonnifyWebhook_InvalidSignature_ShouldReturn401Unauthorized()
+    {
+        // Arrange
+        var processor = Substitute.For<IWebhookProcessor>();
+        processor.ProcessWebhookAsync(
+            PaymentProvider.Monnify,
+            Arg.Any<string>(),
+            Arg.Any<IReadOnlyDictionary<string, string>>(),
+            Arg.Any<CancellationToken>())
+            .Returns(WebhookProcessingResult.InvalidSignature());
+
+        var (host, client) = await CreateTestServer(processor);
+        using (host)
+        {
+            var content = new StringContent("""{"eventType":"SUCCESSFUL_TRANSACTION"}""", Encoding.UTF8, "application/json");
+            var request = new HttpRequestMessage(HttpMethod.Post, "/api/v1/payments/webhooks/monnify")
+            {
+                Content = content
+            };
+            request.Headers.Add("monnify-signature", "invalid-signature");
+
+            // Act
+            var response = await client.SendAsync(request);
+
+            // Assert
+            Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+        }
+    }
 }

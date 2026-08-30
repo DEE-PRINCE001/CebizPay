@@ -99,6 +99,7 @@ public sealed class ArchitectureTests
             .HaveDependencyOnAny(
                 "Flutterwave",
                 "Paystack",
+                "Monnify",
                 "Stripe")
             .GetResult();
 
@@ -107,6 +108,7 @@ public sealed class ArchitectureTests
             .HaveDependencyOnAny(
                 "Flutterwave",
                 "Paystack",
+                "Monnify",
                 "Stripe")
             .GetResult();
 

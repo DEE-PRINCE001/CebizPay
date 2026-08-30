@@ -206,6 +206,11 @@ public static class Permissions
     /// Super Admin only — not granted to ordinary Admins or Auditors by default.
     /// </summary>
     public const string FeesManageBankTransferPolicy = "Fees.ManageBankTransferPolicy";
+    /// <summary>
+    /// Create, activate, or deactivate generalized platform fee policies across all financial operations.
+    /// Super Admin only — not granted to ordinary Admins or Auditors by default.
+    /// </summary>
+    public const string FeesManagePlatformPolicy = "Fees.ManagePlatformPolicy";
 
     // Value-Added Services (VAS - Airtime & Data)
     /// <summary>View VAS transactions and catalog bundles.</summary>

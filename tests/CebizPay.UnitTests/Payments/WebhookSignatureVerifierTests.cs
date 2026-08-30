@@ -125,4 +125,66 @@ public sealed class WebhookSignatureVerifierTests
         // Assert
         Assert.False(result);
     }
+
+    [Fact]
+    public void VerifySignature_MonnifyValidHmacSha512_ShouldReturnTrue()
+    {
+        // Arrange
+        const string secretKey = "mnfy_secret_key_12345";
+        const string payload = """{"eventType":"SUCCESSFUL_TRANSACTION","eventData":{"transactionReference":"MNFY-123","amountPaid":50000}}""";
+
+        using var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(secretKey));
+        var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(payload));
+        var validSignature = Convert.ToHexStringLower(hashBytes);
+
+        var headers = new Dictionary<string, string>
+        {
+            { "monnify-signature", validSignature }
+        };
+
+        // Act
+        var result = _verifier.VerifySignature(PaymentProvider.Monnify, payload, headers, secretKey);
+
+        // Assert
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void VerifySignature_MonnifyTamperedPayload_ShouldReturnFalse()
+    {
+        // Arrange
+        const string secretKey = "mnfy_secret_key_12345";
+        const string originalPayload = """{"eventType":"SUCCESSFUL_TRANSACTION","eventData":{"transactionReference":"MNFY-123","amountPaid":50000}}""";
+        const string tamperedPayload = """{"eventType":"SUCCESSFUL_TRANSACTION","eventData":{"transactionReference":"MNFY-123","amountPaid":99999}}""";
+
+        using var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(secretKey));
+        var hashBytes = hmac.ComputeHash(Encoding.UTF8.GetBytes(originalPayload));
+        var validSignature = Convert.ToHexStringLower(hashBytes);
+
+        var headers = new Dictionary<string, string>
+        {
+            { "monnify-signature", validSignature }
+        };
+
+        // Act
+        var result = _verifier.VerifySignature(PaymentProvider.Monnify, tamperedPayload, headers, secretKey);
+
+        // Assert
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void VerifySignature_MonnifyMissingSignatureHeader_ShouldReturnFalse()
+    {
+        // Arrange
+        const string secretKey = "mnfy_secret_key_12345";
+        const string payload = """{"eventType":"SUCCESSFUL_TRANSACTION"}""";
+        var headers = new Dictionary<string, string>();
+
+        // Act
+        var result = _verifier.VerifySignature(PaymentProvider.Monnify, payload, headers, secretKey);
+
+        // Assert
+        Assert.False(result);
+    }
 }

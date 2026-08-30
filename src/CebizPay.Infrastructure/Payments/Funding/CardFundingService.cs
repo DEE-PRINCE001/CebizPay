@@ -1,3 +1,4 @@
+using System.Text.Json;
 using CebizPay.Application.Common.Interfaces.Finance;
 using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Payments;
@@ -14,11 +15,15 @@ using Microsoft.Extensions.Logging;
 namespace CebizPay.Infrastructure.Payments.Funding;
 
 /// <summary>
-/// Service implementation for initializing and reconciling card funding payments.
+/// Service implementation for initializing, charging tokenized cards, and reconciling card funding payments.
+/// Enforces capability-based provider routing (Flutterwave primary, Paystack fallback on technical failure),
+/// PlatformFeePolicy evaluation, and central double-entry ledger settlement.
 /// </summary>
 public sealed partial class CardFundingService : ICardFundingService
 {
     private readonly IEnumerable<ICardPaymentProvider> _providers;
+    private readonly IPaymentRoutingService _routingService;
+    private readonly IPlatformFeePolicyService _feePolicyService;
     private readonly ApplicationDbContext _dbContext;
     private readonly ILedgerPostingService _ledgerPosting;
     private readonly IOutboxService _outbox;
@@ -29,12 +34,16 @@ public sealed partial class CardFundingService : ICardFundingService
     /// </summary>
     public CardFundingService(
         IEnumerable<ICardPaymentProvider> providers,
+        IPaymentRoutingService routingService,
+        IPlatformFeePolicyService feePolicyService,
         ApplicationDbContext dbContext,
         ILedgerPostingService ledgerPosting,
         IOutboxService outbox,
         ILogger<CardFundingService> logger)
     {
         _providers = providers ?? throw new ArgumentNullException(nameof(providers));
+        _routingService = routingService ?? throw new ArgumentNullException(nameof(routingService));
+        _feePolicyService = feePolicyService ?? throw new ArgumentNullException(nameof(feePolicyService));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _ledgerPosting = ledgerPosting ?? throw new ArgumentNullException(nameof(ledgerPosting));
         _outbox = outbox ?? throw new ArgumentNullException(nameof(outbox));
@@ -56,7 +65,7 @@ public sealed partial class CardFundingService : ICardFundingService
         Guid walletId,
         decimal amount,
         Currency currency,
-        PaymentProvider provider,
+        PaymentProvider? provider,
         string callbackUrl,
         CancellationToken cancellationToken = default)
     {
@@ -112,17 +121,38 @@ public sealed partial class CardFundingService : ICardFundingService
             }
         }
 
+        // Calculate platform fee breakdown for card funding
+        var feePolicy = await _feePolicyService.GetActivePolicyAsync(FeeOperationType.CardFunding, cancellationToken).ConfigureAwait(false);
+        decimal feeAmount = 0m;
+        decimal netCreditedAmount = amount;
+        Guid? feePolicyId = null;
+        int? feePolicyVersion = null;
+        FeeBearer? feeBearer = FeeBearer.CustomerPays;
+
+        if (feePolicy != null)
+        {
+            var breakdown = feePolicy.CalculateBreakdown(amount, currency);
+            feeAmount = breakdown.Fee;
+            netCreditedAmount = breakdown.NetBeneficiaryCredit;
+            feePolicyId = feePolicy.Id;
+            feePolicyVersion = feePolicy.Version;
+            feeBearer = feePolicy.FeeBearer;
+        }
+
+        // Resolve primary provider via capability routing if not explicitly specified
+        var selectedProvider = provider ?? _routingService.ResolvePrimaryProvider(PaymentCapability.CardFunding);
         var providerRef = $"CBZCD-{Guid.NewGuid():N}";
+
         var fundingTx = FundingTransaction.Create(
             walletId: walletId,
             virtualAccountId: null,
-            provider: provider,
+            provider: selectedProvider,
             providerTransactionReference: providerRef,
             fundingChannel: FundingChannel.Card,
             amount: amount,
             currency: currency);
 
-        var providerAdapter = GetProvider(provider);
+        var providerAdapter = GetProvider(selectedProvider);
         var request = new CardPaymentInitializationRequest(
             Amount: amount,
             Currency: currency,
@@ -131,10 +161,41 @@ public sealed partial class CardFundingService : ICardFundingService
             CallbackUrl: callbackUrl,
             CustomerName: name);
 
-        var result = await providerAdapter.InitializeCardPaymentAsync(request, cancellationToken).ConfigureAwait(false);
+        CardPaymentInitializationResult result;
+        try
+        {
+            result = await providerAdapter.InitializeCardPaymentAsync(request, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            LogCardFundingInitFailed(_logger, selectedProvider.ToString(), ex.Message);
+            result = CardPaymentInitializationResult.Failure(ex.Message);
+        }
+
+        // Fallback routing if primary returned technical failure
         if (!result.Succeeded || string.IsNullOrWhiteSpace(result.AuthorizationUrl))
         {
-            var providerName = provider.ToString();
+            var fallback = _routingService.GetNextFallbackProvider(PaymentCapability.CardFunding, selectedProvider);
+            if (fallback.HasValue && fallback.Value != selectedProvider)
+            {
+                var fallbackAdapter = GetProvider(fallback.Value);
+                selectedProvider = fallback.Value;
+                fundingTx = FundingTransaction.Create(
+                    walletId: walletId,
+                    virtualAccountId: null,
+                    provider: selectedProvider,
+                    providerTransactionReference: providerRef,
+                    fundingChannel: FundingChannel.Card,
+                    amount: amount,
+                    currency: currency);
+
+                result = await fallbackAdapter.InitializeCardPaymentAsync(request, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        if (!result.Succeeded || string.IsNullOrWhiteSpace(result.AuthorizationUrl))
+        {
+            var providerName = selectedProvider.ToString();
             var errorMsg = result.ErrorMessage ?? "Unknown error";
             LogCardFundingInitFailed(_logger, providerName, errorMsg);
             throw new InvalidOperationException($"Card funding initialization failed: {result.ErrorMessage}");
@@ -147,7 +208,14 @@ public sealed partial class CardFundingService : ICardFundingService
             action: AuditActions.CardFundingInitiated,
             resourceType: AuditResourceTypes.FundingTransaction,
             resourceId: fundingTx.Id.ToString(),
-            afterJson: $"{{\"provider\":\"{provider}\",\"reference\":\"{providerRef}\",\"amount\":{amount}}}",
+            afterJson: JsonSerializer.Serialize(new
+            {
+                Provider = selectedProvider.ToString(),
+                Reference = providerRef,
+                Amount = amount,
+                FeeAmount = feeAmount,
+                NetCreditedAmount = netCreditedAmount
+            }),
             organizationId: orgId);
         _dbContext.AuditLogs.Add(audit);
 
@@ -156,7 +224,7 @@ public sealed partial class CardFundingService : ICardFundingService
             WalletId: walletId,
             Amount: amount,
             Currency: currency,
-            Provider: provider,
+            Provider: selectedProvider,
             ProviderTransactionReference: providerRef,
             OccurredOnUtc: DateTime.UtcNow));
 
@@ -169,7 +237,240 @@ public sealed partial class CardFundingService : ICardFundingService
             FundingTransactionId: fundingTx.Id,
             Reference: providerRef,
             AuthorizationUrl: result.AuthorizationUrl,
-            Provider: provider.ToString());
+            Provider: selectedProvider.ToString());
+    }
+
+    /// <inheritdoc/>
+    public async Task<ChargeSavedCardResponseDto> ChargeSavedCardAsync(
+        Guid savedCardId,
+        decimal amount,
+        Currency currency,
+        string idempotencyKey,
+        string actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        if (savedCardId == Guid.Empty)
+            throw new ArgumentException("SavedCardId is required.", nameof(savedCardId));
+        if (amount <= 0)
+            throw new ArgumentException("Amount must be positive.", nameof(amount));
+        if (string.IsNullOrWhiteSpace(idempotencyKey))
+            throw new ArgumentException("IdempotencyKey is required.", nameof(idempotencyKey));
+        if (string.IsNullOrWhiteSpace(actorUserId))
+            throw new ArgumentException("ActorUserId is required.", nameof(actorUserId));
+
+        currency.EnsureTransactionalV1();
+
+        var savedCard = await _dbContext.SavedCards
+            .FirstOrDefaultAsync(c => c.Id == savedCardId && c.UserId == actorUserId.Trim(), cancellationToken)
+            .ConfigureAwait(false);
+
+        if (savedCard == null)
+            throw new InvalidOperationException($"SavedCard '{savedCardId}' not found for user.");
+
+        if (savedCard.Status != SavedCardStatus.Active)
+            throw new InvalidOperationException($"Saved card is {savedCard.Status} and cannot be charged.");
+
+        var wallet = await _dbContext.Wallets
+            .FirstOrDefaultAsync(w => w.Id == savedCard.WalletId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (wallet == null)
+            throw new InvalidOperationException($"Wallet '{savedCard.WalletId}' not found.");
+        if (wallet.Status != WalletStatus.Active)
+            throw new InvalidOperationException($"Wallet '{savedCard.WalletId}' is not active.");
+        if (wallet.Currency != currency)
+            throw new InvalidOperationException($"Wallet currency '{wallet.Currency}' does not match requested charge currency '{currency}'.");
+
+        // Calculate fee breakdown
+        var feePolicy = await _feePolicyService.GetActivePolicyAsync(FeeOperationType.CardFunding, cancellationToken).ConfigureAwait(false);
+        decimal feeAmount = 0m;
+        decimal netCreditedAmount = amount;
+        Guid? feePolicyId = null;
+        int? feePolicyVersion = null;
+        FeeBearer? feeBearer = FeeBearer.CustomerPays;
+
+        if (feePolicy != null)
+        {
+            var breakdown = feePolicy.CalculateBreakdown(amount, currency);
+            feeAmount = breakdown.Fee;
+            netCreditedAmount = breakdown.NetBeneficiaryCredit;
+            feePolicyId = feePolicy.Id;
+            feePolicyVersion = feePolicy.Version;
+            feeBearer = feePolicy.FeeBearer;
+        }
+
+        var providerRef = $"CBZCD-SAVED-{Guid.NewGuid():N}";
+        var fundingTx = FundingTransaction.Create(
+            walletId: wallet.Id,
+            virtualAccountId: null,
+            provider: savedCard.Provider,
+            providerTransactionReference: providerRef,
+            fundingChannel: FundingChannel.Card,
+            amount: amount,
+            currency: currency);
+
+        _dbContext.FundingTransactions.Add(fundingTx);
+
+        var auditInitiated = AuditLog.Create(
+            actorId: actorUserId,
+            action: AuditActions.CardFundingInitiated,
+            resourceType: AuditResourceTypes.FundingTransaction,
+            resourceId: fundingTx.Id.ToString(),
+            afterJson: JsonSerializer.Serialize(new
+            {
+                Provider = savedCard.Provider.ToString(),
+                SavedCardId = savedCard.Id,
+                Reference = providerRef,
+                Amount = amount
+            }));
+        _dbContext.AuditLogs.Add(auditInitiated);
+
+        _outbox.Write(new CardFundingInitiatedDomainEvent(
+            FundingTransactionId: fundingTx.Id,
+            WalletId: wallet.Id,
+            Amount: amount,
+            Currency: currency,
+            Provider: savedCard.Provider,
+            ProviderTransactionReference: providerRef,
+            OccurredOnUtc: DateTime.UtcNow));
+
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // Execute charge on primary provider
+        var providerAdapter = GetProvider(savedCard.Provider);
+        var email = $"{actorUserId}@cebizpay.internal";
+        var chargeRequest = new CardSavedChargeRequest(
+            ProviderToken: savedCard.ProviderToken,
+            Amount: amount,
+            Currency: currency,
+            Email: email,
+            Reference: providerRef,
+            CustomerName: savedCard.CardHolderName);
+
+        var chargeResult = await providerAdapter.ChargeSavedCardAsync(chargeRequest, cancellationToken).ConfigureAwait(false);
+
+        if (chargeResult.Status == PaymentProviderResultStatus.Success)
+        {
+            // Post central double-entry ledger credit
+            var (txn, completedFunding) = await _ledgerPosting.PostCardFundingCreditCoreAsync(
+                walletId: wallet.Id,
+                grossAmount: amount,
+                feeAmount: feeAmount,
+                netCreditedAmount: netCreditedAmount,
+                providerFeeAmount: 0m,
+                currency: currency,
+                provider: savedCard.Provider,
+                providerTransactionReference: providerRef,
+                providerEventReference: null,
+                feePolicyId: feePolicyId,
+                feePolicyVersion: feePolicyVersion,
+                feeBearer: feeBearer,
+                description: $"Saved card charge via {savedCard.Provider} ({savedCard.Last4})",
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+
+            var auditCompleted = AuditLog.Create(
+                actorId: actorUserId,
+                action: AuditActions.CardFundingCompleted,
+                resourceType: AuditResourceTypes.FundingTransaction,
+                resourceId: completedFunding.Id.ToString(),
+                afterJson: JsonSerializer.Serialize(new
+                {
+                    completedFunding.Id,
+                    LedgerTransactionId = txn.Id,
+                    GrossAmount = amount,
+                    FeeAmount = feeAmount,
+                    NetCreditedAmount = netCreditedAmount
+                }));
+            _dbContext.AuditLogs.Add(auditCompleted);
+
+            _outbox.Write(new CardFundingCompletedDomainEvent(
+                FundingTransactionId: completedFunding.Id,
+                WalletId: wallet.Id,
+                LedgerTransactionId: txn.Id,
+                Amount: amount,
+                Currency: currency,
+                Provider: savedCard.Provider,
+                ProviderTransactionReference: providerRef,
+                OccurredOnUtc: DateTime.UtcNow));
+
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            return new ChargeSavedCardResponseDto(
+                FundingTransactionId: completedFunding.Id,
+                Reference: providerRef,
+                Status: "Completed",
+                GrossAmount: amount,
+                FeeAmount: feeAmount,
+                NetCreditedAmount: netCreditedAmount,
+                Currency: currency.ToString(),
+                Provider: savedCard.Provider.ToString());
+        }
+
+        if (chargeResult.Status == PaymentProviderResultStatus.BusinessFailure)
+        {
+            var reason = chargeResult.FailureReason ?? "Card charge failed";
+            fundingTx.MarkFailed(reason);
+
+            // Invalidate token if provider reported token failure
+            if (reason.Contains("invalid", StringComparison.OrdinalIgnoreCase) || reason.Contains("expired", StringComparison.OrdinalIgnoreCase))
+            {
+                savedCard.MarkInvalid();
+            }
+
+            var auditFailed = AuditLog.Create(
+                actorId: actorUserId,
+                action: AuditActions.CardFundingFailed,
+                resourceType: AuditResourceTypes.FundingTransaction,
+                resourceId: fundingTx.Id.ToString(),
+                afterJson: JsonSerializer.Serialize(new { fundingTx.Id, Reason = reason }));
+            _dbContext.AuditLogs.Add(auditFailed);
+
+            _outbox.Write(new CardFundingFailedDomainEvent(
+                FundingTransactionId: fundingTx.Id,
+                WalletId: wallet.Id,
+                Amount: amount,
+                Currency: currency,
+                Provider: savedCard.Provider,
+                ProviderTransactionReference: providerRef,
+                Reason: reason,
+                OccurredOnUtc: DateTime.UtcNow));
+
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            return new ChargeSavedCardResponseDto(
+                FundingTransactionId: fundingTx.Id,
+                Reference: providerRef,
+                Status: "Failed",
+                GrossAmount: amount,
+                FeeAmount: feeAmount,
+                NetCreditedAmount: 0m,
+                Currency: currency.ToString(),
+                Provider: savedCard.Provider.ToString());
+        }
+
+        // Unknown / Ambiguous status - MUST NOT trigger fallback charge; mark Unknown and reconcile
+        var unknownReason = chargeResult.FailureReason ?? "Transaction outcome unknown, pending reconciliation";
+        fundingTx.MarkUnknown(unknownReason);
+
+        var auditUnknown = AuditLog.Create(
+            actorId: actorUserId,
+            action: AuditActions.CardFundingInitiated,
+            resourceType: AuditResourceTypes.FundingTransaction,
+            resourceId: fundingTx.Id.ToString(),
+            afterJson: JsonSerializer.Serialize(new { fundingTx.Id, Status = "Unknown", Reason = unknownReason }));
+        _dbContext.AuditLogs.Add(auditUnknown);
+
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        return new ChargeSavedCardResponseDto(
+            FundingTransactionId: fundingTx.Id,
+            Reference: providerRef,
+            Status: "Unknown",
+            GrossAmount: amount,
+            FeeAmount: feeAmount,
+            NetCreditedAmount: 0m,
+            Currency: currency.ToString(),
+            Provider: savedCard.Provider.ToString());
     }
 
     /// <inheritdoc/>
@@ -192,17 +493,39 @@ public sealed partial class CardFundingService : ICardFundingService
 
         if (queryResult.Status == PaymentProviderResultStatus.Success)
         {
+            var feePolicy = await _feePolicyService.GetActivePolicyAsync(FeeOperationType.CardFunding, cancellationToken).ConfigureAwait(false);
+            decimal feeAmount = 0m;
+            decimal netCreditedAmount = fundingTx.Amount;
+            Guid? feePolicyId = null;
+            int? feePolicyVersion = null;
+            FeeBearer? feeBearer = FeeBearer.CustomerPays;
+
+            if (feePolicy != null)
+            {
+                var breakdown = feePolicy.CalculateBreakdown(fundingTx.Amount, fundingTx.Currency);
+                feeAmount = breakdown.Fee;
+                netCreditedAmount = breakdown.NetBeneficiaryCredit;
+                feePolicyId = feePolicy.Id;
+                feePolicyVersion = feePolicy.Version;
+                feeBearer = feePolicy.FeeBearer;
+            }
+
             await using var dbTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                var (txn, funding) = await _ledgerPosting.PostInboundFundingCreditCoreAsync(
+                var (txn, funding) = await _ledgerPosting.PostCardFundingCreditCoreAsync(
                     walletId: fundingTx.WalletId,
-                    virtualAccountId: null,
-                    amount: fundingTx.Amount,
+                    grossAmount: fundingTx.Amount,
+                    feeAmount: feeAmount,
+                    netCreditedAmount: netCreditedAmount,
+                    providerFeeAmount: 0m,
                     currency: fundingTx.Currency,
                     provider: fundingTx.Provider,
                     providerTransactionReference: fundingTx.ProviderTransactionReference,
-                    channel: FundingChannel.Card,
+                    providerEventReference: null,
+                    feePolicyId: feePolicyId,
+                    feePolicyVersion: feePolicyVersion,
+                    feeBearer: feeBearer,
                     description: $"Card deposit reconciliation {fundingTx.ProviderTransactionReference}",
                     cancellationToken: cancellationToken).ConfigureAwait(false);
 
@@ -211,7 +534,13 @@ public sealed partial class CardFundingService : ICardFundingService
                     action: AuditActions.CardFundingCompleted,
                     resourceType: AuditResourceTypes.FundingTransaction,
                     resourceId: fundingTx.Id.ToString(),
-                    afterJson: $"{{\"providerReference\":\"{fundingTx.ProviderTransactionReference}\",\"amount\":{fundingTx.Amount}}}");
+                    afterJson: JsonSerializer.Serialize(new
+                    {
+                        ProviderReference = fundingTx.ProviderTransactionReference,
+                        GrossAmount = fundingTx.Amount,
+                        FeeAmount = feeAmount,
+                        NetCreditedAmount = netCreditedAmount
+                    }));
                 _dbContext.AuditLogs.Add(audit);
 
                 _outbox.Write(new CardFundingCompletedDomainEvent(

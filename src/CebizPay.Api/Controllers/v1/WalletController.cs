@@ -1,5 +1,7 @@
+using System.Security.Claims;
 using Asp.Versioning;
 using CebizPay.Application.UseCases.Wallet.Transfer;
+using CebizPay.Domain.Finance.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -97,6 +99,173 @@ public sealed class WalletController : ControllerBase
 
         var response = await _sender.Send(command, cancellationToken);
         return Ok(response);
+    }
+
+    /// <summary>
+    /// Validates and resolves the beneficiary account name for a destination bank account.
+    /// </summary>
+    [HttpGet("transfer/resolve-account")]
+    public async Task<IActionResult> ResolveBankAccount(
+        [FromQuery] string bankCode,
+        [FromQuery] string accountNumber,
+        [FromServices] CebizPay.Application.Common.Interfaces.Finance.IBankAccountResolver accountResolver,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(bankCode) || string.IsNullOrWhiteSpace(accountNumber))
+        {
+            return BadRequest(new { code = "INVALID_REQUEST", message = "bankCode and accountNumber query parameters are required." });
+        }
+
+        var result = await accountResolver.ResolveAsync(bankCode, accountNumber, cancellationToken);
+        if (!result.Succeeded)
+        {
+            return BadRequest(new { code = "ACCOUNT_RESOLUTION_FAILED", message = result.ErrorMessage ?? "Could not resolve bank account name." });
+        }
+
+        return Ok(new
+        {
+            accountNumber = result.AccountNumber,
+            accountName = result.AccountName,
+            bankCode = result.BankCode
+        });
+    }
+
+    /// <summary>
+    /// Retrieves all external funding accounts attached to the user's or organization's wallet.
+    /// </summary>
+    [HttpGet("external-accounts")]
+    public async Task<IActionResult> GetExternalAccounts(
+        [FromQuery] Guid? organizationId,
+        [FromQuery] CebizPay.Domain.Finance.Enums.Currency? currency,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
+
+        var query = new CebizPay.Application.UseCases.Wallet.ExternalAccounts.GetExternalFundingAccountsQuery(
+            CurrentUserId: userId,
+            OrganizationId: organizationId,
+            Currency: currency);
+
+        var result = await _sender.Send(query, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Gets a specific external funding account by ID.
+    /// </summary>
+    [HttpGet("external-accounts/{id:guid}")]
+    public async Task<IActionResult> GetExternalFundingAccountById(
+        [FromRoute] Guid id,
+        [FromQuery] Guid? organizationId,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
+
+        var query = new CebizPay.Application.UseCases.Wallet.ExternalAccounts.GetExternalFundingAccountByIdQuery(
+            AccountId: id,
+            CurrentUserId: userId,
+            OrganizationId: organizationId);
+
+        var result = await _sender.Send(query, cancellationToken);
+        if (result == null)
+            return NotFound(new { message = $"External funding account '{id}' not found." });
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Provisions a new Monnify reserved virtual account and links it as an external funding account.
+    /// </summary>
+    [HttpPost("external-accounts/monnify")]
+    public async Task<IActionResult> ProvisionMonnifyAccount(
+        [FromQuery] Guid? organizationId,
+        [FromQuery] Currency currency = Currency.NGN,
+        CancellationToken cancellationToken = default)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
+
+        var command = new CebizPay.Application.UseCases.Wallet.ExternalAccounts.ProvisionMonnifyExternalFundingAccountCommand(
+            CurrentUserId: userId,
+            OrganizationId: organizationId,
+            Currency: currency);
+
+        var result = await _sender.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Designates an external funding account as primary for the user's or organization's wallet.
+    /// </summary>
+    [HttpPost("external-accounts/{id:guid}/primary")]
+    public async Task<IActionResult> SetPrimaryAccount(
+        [FromRoute] Guid id,
+        [FromQuery] Guid? organizationId,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
+
+        var command = new CebizPay.Application.UseCases.Wallet.ExternalAccounts.SetPrimaryExternalFundingAccountCommand(
+            AccountId: id,
+            CurrentUserId: userId,
+            OrganizationId: organizationId);
+
+        var result = await _sender.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Deactivates / suspends an external funding account.
+    /// </summary>
+    [HttpDelete("external-accounts/{id:guid}")]
+    public async Task<IActionResult> DeactivateAccount(
+        [FromRoute] Guid id,
+        [FromQuery] Guid? organizationId,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
+
+        var command = new CebizPay.Application.UseCases.Wallet.ExternalAccounts.DeactivateExternalFundingAccountCommand(
+            AccountId: id,
+            CurrentUserId: userId,
+            OrganizationId: organizationId);
+
+        var result = await _sender.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Gets the details and double-entry ledger status of a funding transaction by ID.
+    /// </summary>
+    [HttpGet("funding/{id:guid}")]
+    public async Task<IActionResult> GetFundingTransaction(
+        [FromRoute] Guid id,
+        [FromQuery] Guid? organizationId,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
+
+        var query = new CebizPay.Application.UseCases.Wallet.ExternalAccounts.GetFundingTransactionByIdQuery(
+            FundingId: id,
+            CurrentUserId: userId,
+            OrganizationId: organizationId);
+
+        var result = await _sender.Send(query, cancellationToken);
+        if (result == null)
+            return NotFound(new { message = $"Funding transaction '{id}' not found." });
+
+        return Ok(result);
     }
 }
 

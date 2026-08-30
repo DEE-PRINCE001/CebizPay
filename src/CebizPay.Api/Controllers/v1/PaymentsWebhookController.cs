@@ -45,6 +45,15 @@ public sealed class PaymentsWebhookController : ControllerBase
         return await ProcessWebhookInternalAsync(PaymentProvider.Paystack, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// Webhook ingestion endpoint for Monnify payment notifications.
+    /// </summary>
+    [HttpPost("monnify")]
+    public async Task<IActionResult> MonnifyWebhook(CancellationToken cancellationToken)
+    {
+        return await ProcessWebhookInternalAsync(PaymentProvider.Monnify, cancellationToken).ConfigureAwait(false);
+    }
+
     private async Task<IActionResult> ProcessWebhookInternalAsync(PaymentProvider provider, CancellationToken cancellationToken)
     {
         string rawBody;

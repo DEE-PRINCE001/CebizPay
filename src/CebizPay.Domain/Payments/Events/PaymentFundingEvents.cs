@@ -40,6 +40,22 @@ public sealed record InboundVirtualAccountDepositCompletedDomainEvent(
     DateTime OccurredOnUtc);
 
 /// <summary>
+/// Domain event raised when an inbound deposit via ExternalFundingAccount (e.g. Monnify Reserved Virtual Account) is credited.
+/// </summary>
+public sealed record ExternalFundingAccountDepositCompletedDomainEvent(
+    Guid FundingTransactionId,
+    Guid WalletId,
+    Guid ExternalFundingAccountId,
+    Guid LedgerTransactionId,
+    decimal GrossAmount,
+    decimal FeeAmount,
+    decimal NetCreditedAmount,
+    Currency Currency,
+    PaymentProvider Provider,
+    string ProviderTransactionReference,
+    DateTime OccurredOnUtc);
+
+/// <summary>
 /// Domain event raised when a card funding checkout session is initiated.
 /// </summary>
 public sealed record CardFundingInitiatedDomainEvent(
