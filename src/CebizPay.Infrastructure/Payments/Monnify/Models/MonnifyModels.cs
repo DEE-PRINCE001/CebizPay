@@ -238,6 +238,10 @@ public sealed class MonnifySingleTransferRequest
     [JsonPropertyName("destinationAccountNumber")]
     public string DestinationAccountNumber { get; set; } = string.Empty;
 
+    /// <summary>Destination account holder name.</summary>
+    [JsonPropertyName("destinationAccountName")]
+    public string? DestinationAccountName { get; set; }
+
     /// <summary>Currency code (e.g. NGN).</summary>
     [JsonPropertyName("currency")]
     public string Currency { get; set; } = "NGN";

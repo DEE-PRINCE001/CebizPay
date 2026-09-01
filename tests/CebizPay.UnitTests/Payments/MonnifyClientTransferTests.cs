@@ -66,7 +66,8 @@ public sealed class MonnifyClientTransferTests
             amount: 15000m,
             currency: "NGN",
             reference: "CBZBT-REF-001",
-            narration: "Test Payout");
+            narration: "Test Payout",
+            destinationAccountName: "Alice Doe");
 
         // Assert
         Assert.NotNull(result);
@@ -74,6 +75,64 @@ public sealed class MonnifyClientTransferTests
         Assert.Equal("MNFY_DISB_123456", result.ProviderReference);
         Assert.NotNull(result.SafeMetadata);
         Assert.Contains("058", result.SafeMetadata);
+        Assert.Contains("Alice Doe", result.SafeMetadata);
+    }
+
+    [Theory]
+    [InlineData("PENDING")]
+    [InlineData("IN_PROGRESS")]
+    [InlineData("START")]
+    [InlineData("AWAITING_AUTHORIZATION")]
+    [InlineData("PROCESSING")]
+    [InlineData("QUEUED")]
+    public async Task InitiateTransferAsync_NonTerminalStatus_ShouldReturnUnknownResultAndNotFail(string nonTerminalStatus)
+    {
+        // Arrange
+        var authJson = JsonSerializer.Serialize(new MonnifyApiResponse<MonnifyAuthResponseBody>
+        {
+            RequestSuccessful = true,
+            ResponseBody = new MonnifyAuthResponseBody { AccessToken = "valid_token", ExpiresIn = 3600 }
+        });
+
+        var transferResponseJson = JsonSerializer.Serialize(new MonnifyApiResponse<MonnifySingleTransferResponseBody>
+        {
+            RequestSuccessful = true,
+            ResponseMessage = "Transfer in progress",
+            ResponseBody = new MonnifySingleTransferResponseBody
+            {
+                Reference = "CBZBT-REF-PENDING",
+                TransactionReference = "MNFY_PEND_123",
+                Amount = 50000m,
+                Currency = "NGN",
+                Status = nonTerminalStatus,
+                DestinationAccountName = "Bob Smith",
+                DestinationBankCode = "058",
+                DestinationAccountNumber = "0123456789"
+            }
+        });
+
+        var handler = new SequentialMockHttpMessageHandler(
+            (HttpStatusCode.OK, authJson),
+            (HttpStatusCode.OK, transferResponseJson));
+
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://sandbox.monnify.com") };
+        using var client = new MonnifyClient(httpClient, _validOptions, NullLogger<MonnifyClient>.Instance);
+
+        // Act
+        var result = await client.InitiateTransferAsync(
+            destinationBankCode: "058",
+            destinationAccountNumber: "0123456789",
+            amount: 50000m,
+            currency: "NGN",
+            reference: "CBZBT-REF-PENDING",
+            narration: "Pending Payout",
+            destinationAccountName: "Bob Smith");
+
+        // Assert - Critical Invariant: Non-terminal states are UNKNOWN, NEVER BusinessFailure or TechnicalFailure
+        Assert.NotNull(result);
+        Assert.Equal(PaymentProviderResultStatus.Unknown, result.Status);
+        Assert.NotEqual(PaymentProviderResultStatus.BusinessFailure, result.Status);
+        Assert.NotEqual(PaymentProviderResultStatus.TechnicalFailure, result.Status);
     }
 
     [Fact]
@@ -186,6 +245,48 @@ public sealed class MonnifyClientTransferTests
         Assert.NotNull(result);
         Assert.Equal(PaymentProviderResultStatus.Success, result.Status);
         Assert.Equal("MNFY_TX_SUMMARY_001", result.ProviderReference);
+    }
+
+    [Theory]
+    [InlineData("PENDING")]
+    [InlineData("IN_PROGRESS")]
+    [InlineData("START")]
+    [InlineData("AWAITING_AUTHORIZATION")]
+    public async Task GetTransferStatusAsync_NonTerminalStatus_ShouldReturnUnknown(string nonTerminalStatus)
+    {
+        // Arrange
+        var authJson = JsonSerializer.Serialize(new MonnifyApiResponse<MonnifyAuthResponseBody>
+        {
+            RequestSuccessful = true,
+            ResponseBody = new MonnifyAuthResponseBody { AccessToken = "valid_token", ExpiresIn = 3600 }
+        });
+
+        var summaryJson = JsonSerializer.Serialize(new MonnifyApiResponse<MonnifyDisbursementSummaryResponseBody>
+        {
+            RequestSuccessful = true,
+            ResponseBody = new MonnifyDisbursementSummaryResponseBody
+            {
+                Reference = "CBZBT-REF-005",
+                TransactionReference = "MNFY_TX_SUMMARY_002",
+                Amount = 10000m,
+                Status = nonTerminalStatus,
+                DestinationAccountName = "Alice Doe"
+            }
+        });
+
+        var handler = new SequentialMockHttpMessageHandler(
+            (HttpStatusCode.OK, authJson),
+            (HttpStatusCode.OK, summaryJson));
+
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://sandbox.monnify.com") };
+        using var client = new MonnifyClient(httpClient, _validOptions, NullLogger<MonnifyClient>.Instance);
+
+        // Act
+        var result = await client.GetTransferStatusAsync("CBZBT-REF-005");
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal(PaymentProviderResultStatus.Unknown, result.Status);
     }
 
     [Fact]

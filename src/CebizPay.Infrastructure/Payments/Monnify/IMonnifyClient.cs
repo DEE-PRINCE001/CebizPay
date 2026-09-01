@@ -43,6 +43,7 @@ public interface IMonnifyClient
         string currency,
         string reference,
         string narration,
+        string? destinationAccountName = null,
         string? sourceAccountNumber = null,
         CancellationToken cancellationToken = default);
 

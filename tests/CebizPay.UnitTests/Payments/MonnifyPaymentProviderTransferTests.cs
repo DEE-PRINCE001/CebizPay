@@ -45,7 +45,7 @@ public sealed class MonnifyPaymentProviderTransferTests
     }
 
     [Fact]
-    public async Task InitializePaymentAsync_ValidAttempt_ShouldCallMonnifyClientAndReturnSuccess()
+    public async Task InitializePaymentAsync_ValidAttempt_ShouldPassDestinationAccountNameAndReturnSuccess()
     {
         // Arrange
         await using var dbContext = CreateInMemoryDbContext();
@@ -82,6 +82,7 @@ public sealed class MonnifyPaymentProviderTransferTests
                 "NGN",
                 "CBZBT-INIT-001-A1-MONNIFY",
                 Arg.Any<string>(),
+                "Alice Doe",
                 "7820123456",
                 Arg.Any<CancellationToken>())
             .Returns(PaymentProviderResult.Success("MNFY_REF_SUCCESS_001"));
@@ -96,7 +97,7 @@ public sealed class MonnifyPaymentProviderTransferTests
         Assert.Equal(PaymentProviderResultStatus.Success, result.Status);
         Assert.Equal("MNFY_REF_SUCCESS_001", result.ProviderReference);
         await _mockClient.Received(1).InitiateTransferAsync(
-            "058", "0123456789", 20000m, "NGN", "CBZBT-INIT-001-A1-MONNIFY", Arg.Any<string>(), "7820123456", Arg.Any<CancellationToken>());
+            "058", "0123456789", 20000m, "NGN", "CBZBT-INIT-001-A1-MONNIFY", Arg.Any<string>(), "Alice Doe", "7820123456", Arg.Any<CancellationToken>());
     }
 
     [Fact]

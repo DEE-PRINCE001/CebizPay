@@ -227,6 +227,7 @@ public sealed partial class MonnifyClient : IMonnifyClient, IDisposable
         string currency,
         string reference,
         string narration,
+        string? destinationAccountName = null,
         string? sourceAccountNumber = null,
         CancellationToken cancellationToken = default)
     {
@@ -255,6 +256,7 @@ public sealed partial class MonnifyClient : IMonnifyClient, IDisposable
             Narration = string.IsNullOrWhiteSpace(narration) ? "CebizPay Transfer" : narration.Trim(),
             DestinationBankCode = destinationBankCode.Trim(),
             DestinationAccountNumber = destinationAccountNumber.Trim(),
+            DestinationAccountName = string.IsNullOrWhiteSpace(destinationAccountName) ? null : destinationAccountName.Trim(),
             Currency = string.IsNullOrWhiteSpace(currency) ? "NGN" : currency.Trim().ToUpperInvariant(),
             SourceAccountNumber = sourceAcc,
             Async = false
@@ -285,16 +287,21 @@ public sealed partial class MonnifyClient : IMonnifyClient, IDisposable
                     monnify_reference = txRef,
                     status = status,
                     fee = body.Fee,
-                    destination_account_name = body.DestinationAccountName,
+                    destination_account_name = body.DestinationAccountName ?? destinationAccountName,
                     destination_bank_code = body.DestinationBankCode
                 });
 
-                if (status is "SUCCESS" or "SUCCESSFUL" or "PENDING" or "IN_PROGRESS")
+                if (status is "SUCCESS" or "SUCCESSFUL" or "PAID")
                 {
                     return PaymentProviderResult.Success(txRef, safeMeta);
                 }
 
-                if (status is "FAILED" or "REVERSED")
+                if (status is "PENDING" or "IN_PROGRESS" or "START" or "AWAITING_AUTHORIZATION" or "PROCESSING" or "QUEUED" or "AWAITING_OTP")
+                {
+                    return PaymentProviderResult.Unknown($"Monnify disbursement is in progress (status: '{status}').", safeMeta);
+                }
+
+                if (status is "FAILED" or "REVERSED" or "REJECTED" or "EXPIRED" or "CANCELLED")
                 {
                     return PaymentProviderResult.BusinessFailure(
                         responseBody.ResponseCode ?? "DISBURSEMENT_FAILED",

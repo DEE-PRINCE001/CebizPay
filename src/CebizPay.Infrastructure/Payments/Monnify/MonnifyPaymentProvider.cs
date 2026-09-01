@@ -155,6 +155,7 @@ public sealed partial class MonnifyPaymentProvider : IVirtualAccountProvider, IP
             currency: attempt.Currency.ToString(),
             reference: attempt.RequestReference,
             narration: narration,
+            destinationAccountName: bankTransfer.DestinationAccountName,
             sourceAccountNumber: _options.SourceAccountNumber,
             cancellationToken: cancellationToken).ConfigureAwait(false);
     }
