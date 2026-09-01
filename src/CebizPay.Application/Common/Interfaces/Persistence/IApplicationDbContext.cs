@@ -152,6 +152,12 @@ public interface IApplicationDbContext
     /// <summary>Gets the card refunds entity set.</summary>
     IEntitySet<CardRefund> CardRefunds { get; }
 
+    /// <summary>Gets the reconciliation records entity set.</summary>
+    IEntitySet<ReconciliationRecord> ReconciliationRecords { get; }
+
+    /// <summary>Gets the recovery outstanding records entity set.</summary>
+    IEntitySet<RecoveryOutstandingRecord> RecoveryOutstandingRecords { get; }
+
     /// <summary>Gets the card verifications entity set.</summary>
     IEntitySet<CardVerification> CardVerifications { get; }
 
@@ -220,6 +226,33 @@ public interface IApplicationDbContext
 
     /// <summary>Gets the VAS transactions entity set.</summary>
     IEntitySet<CebizPay.Domain.Vas.Entities.VasTransaction> VasTransactions { get; }
+
+    /// <summary>Gets the compliance verification operations entity set.</summary>
+    IEntitySet<CebizPay.Domain.Compliance.Entities.VerificationOperation> VerificationOperations { get; }
+
+    /// <summary>Gets the compliance verification evidence entity set.</summary>
+    IEntitySet<CebizPay.Domain.Compliance.Entities.VerificationEvidence> VerificationEvidences { get; }
+
+    /// <summary>Gets the compliance webhook events entity set.</summary>
+    IEntitySet<CebizPay.Domain.Compliance.Entities.ComplianceWebhookEvent> ComplianceWebhookEvents { get; }
+
+    /// <summary>Gets the compliance risk assessments entity set.</summary>
+    IEntitySet<CebizPay.Domain.Compliance.Entities.RiskAssessment> RiskAssessments { get; }
+
+    /// <summary>Gets the compliance risk factor results entity set.</summary>
+    IEntitySet<CebizPay.Domain.Compliance.Entities.RiskFactorResult> RiskFactorResults { get; }
+
+    /// <summary>Gets the customer due diligence profiles entity set.</summary>
+    IEntitySet<CebizPay.Domain.Compliance.Entities.CddProfile> CddProfiles { get; }
+
+    /// <summary>Gets the enhanced due diligence cases entity set.</summary>
+    IEntitySet<CebizPay.Domain.Compliance.Entities.EddCase> EddCases { get; }
+
+    /// <summary>Gets the compliance decisions entity set.</summary>
+    IEntitySet<CebizPay.Domain.Compliance.Entities.ComplianceDecision> ComplianceDecisions { get; }
+
+    /// <summary>Gets the compliance restrictions entity set.</summary>
+    IEntitySet<CebizPay.Domain.Compliance.Entities.ComplianceRestriction> ComplianceRestrictions { get; }
 
     /// <summary>
     /// Saves changes asynchronously to the underlying database.

@@ -33,7 +33,7 @@ public sealed class PaymentVoucherDomainTests
             remarks: "August 2026 Salary");
 
         Assert.NotEqual(Guid.Empty, voucher.Id);
-        Assert.StartsWith("PV-202608-", voucher.VoucherReference);
+        Assert.StartsWith($"PV-{DateTime.UtcNow:yyyyMM}-", voucher.VoucherReference);
         Assert.Equal(batchId, voucher.PayrollBatchId);
         Assert.Equal(itemId, voucher.PayrollItemId);
         Assert.Equal(ledgerTxnId, voucher.LedgerTransactionId);

@@ -175,6 +175,65 @@ public sealed class ArchitectureTests
 
         Assert.True(apiResult.IsSuccessful, "API Controllers must not directly depend on provider options or secrets.");
     }
+
+    [Fact]
+    public void DomainAndApplication_ShouldNotDependOnComplianceProviderImplementations()
+    {
+        var domainResult = Types.InAssembly(typeof(Domain.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "CebizPay.Infrastructure.Compliance.Dojah",
+                "CebizPay.Infrastructure.Compliance.SmileId",
+                "CebizPay.Infrastructure.Compliance.Ninja",
+                "CebizPay.Infrastructure.Compliance.Services",
+                "CebizPay.Infrastructure.Compliance.Rules")
+            .GetResult();
+
+        var appResult = Types.InAssembly(typeof(Application.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "CebizPay.Infrastructure.Compliance.Dojah",
+                "CebizPay.Infrastructure.Compliance.SmileId",
+                "CebizPay.Infrastructure.Compliance.Ninja",
+                "CebizPay.Infrastructure.Compliance.Services",
+                "CebizPay.Infrastructure.Compliance.Rules")
+            .GetResult();
+
+        Assert.True(domainResult.IsSuccessful, "Domain layer must not depend on compliance provider or infrastructure implementations.");
+        Assert.True(appResult.IsSuccessful, "Application layer must not depend on compliance provider or infrastructure implementations.");
+    }
+
+    [Fact]
+    public void ApiControllers_ShouldNotDirectlyDependOnComplianceProviderOptions()
+    {
+        var apiResult = Types.InAssembly(typeof(Api.Controllers.v1.StaffSavingsController).Assembly)
+            .That()
+            .ResideInNamespace("CebizPay.Api.Controllers")
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "CebizPay.Infrastructure.Compliance.Dojah.DojahOptions",
+                "CebizPay.Infrastructure.Compliance.SmileId.SmileIdOptions",
+                "CebizPay.Infrastructure.Compliance.Ninja.NinjaOptions")
+            .GetResult();
+
+        Assert.True(apiResult.IsSuccessful, "API Controllers must not directly depend on compliance provider options.");
+    }
+
+    [Fact]
+    public void LedgerDomain_ShouldNotDependOnComplianceRiskRules()
+    {
+        var ledgerResult = Types.InAssembly(typeof(Domain.AssemblyReference).Assembly)
+            .That()
+            .ResideInNamespace("CebizPay.Domain.Finance")
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "CebizPay.Domain.Compliance.Entities.RiskAssessment",
+                "CebizPay.Domain.Compliance.Entities.EddCase")
+            .GetResult();
+
+        Assert.True(ledgerResult.IsSuccessful, "Finance Ledger domain must remain isolated from compliance risk assessments and EDD cases.");
+    }
 }
+
 
 

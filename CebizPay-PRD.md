@@ -258,24 +258,33 @@ revoked on explicit logout.
   – Corporate / CAC Business Verification: Primary: Dojah | Fallback: Smile ID.
   – Beneficial Owner & Director Verification: Primary: Dojah | Fallback: Smile ID.
   Note: Customers are NOT routed to every provider blindly. Provider fallback is invoked only upon verified technical outages or explicit risk-escalation policies. A provider outage or timeout is NEVER interpreted as customer verification failure.
-• Individual Tiered KYC Framework (Natural Persons):
-  – Tier 1 (Basic): Phone number, basic name, initial OTP. Outbound transaction cap < ₦50,000 per transaction and strict daily limits.
-  – Tier 2 (Standard): Verified BVN / NIN, basic ID match, validated phone. Moderate daily and single transaction limits.
-  – Tier 3 (Full / Unrestricted): Validated government ID document, live biometric/liveness match, verified residential address / utility proof. Full platform limits unlocked.
+• Layered & Versioned Transaction Limit Architecture:
+  – CebizPay decouples and layers transaction limits across four distinct tiers to maintain compliance safety and operational flexibility:
+    1. Statutory Regulatory Ceilings (CBN Guidelines): Hard non-overridable statutory ceilings established by the Central Bank of Nigeria (CBN Tier 1: ₦50,000 single / ₦300,000 daily; Tier 2: ₦200,000 single / ₦1,000,000 daily; Tier 3: unrestricted by statutory ceiling). Applies strictly to natural persons (individuals).
+    2. CebizPay Product Policies: Versioned, configurable business limits per product, operation channel, and customer tier. Clamped within statutory regulatory bounds (i.e. cannot exceed CBN ceilings).
+    3. Payment Provider Rail Constraints: Physical per-transaction and daily limits imposed by upstream payment infrastructure providers (e.g. Flutterwave, Paystack, Monnify, NIP).
+    4. Customer-Specific Risk Restrictions: Account-level caps placed directly on a specific customer or organization by compliance officers or risk engine policies (`ComplianceRestriction`).
+  – Effective Transaction Limit Calculation:
+    Effective Cap = Min(Regulatory Statutory Ceiling, Configured Product Policy, Provider Rail Limit, Customer Risk Restriction).
+• Individual Tiered KYC Framework (Natural Persons Only):
+  – Tier 1 (Basic): Phone number, basic name, initial OTP. Bound by statutory CBN Tier 1 caps (single cap <= ₦50,000; daily cap <= ₦300,000) and product policy.
+  – Tier 2 (Standard): Verified BVN / NIN, basic ID match, validated phone. Bound by statutory CBN Tier 2 caps (single cap <= ₦200,000; daily cap <= ₦1,000,000) and product policy.
+  – Tier 3 (Full / Unrestricted): Validated government ID document, live biometric/liveness match, verified residential address / utility proof. Full platform limits unlocked within provider rail and product policy constraints.
 • Legal Persons & Organizations (KYB & Corporate CDD):
   – Tiered KYC does NOT apply to legal persons. Organizations follow a distinct corporate CDD regime per CBN Regulations:
   – Required Artifacts: CAC Registration/Incorporation Certificate, Memorandum & Articles of Association (MemArt), Tax Identification Number (TIN), registered business address verification, official company email/phone.
   – Beneficial Ownership & Governance: Identification and identity verification of all Ultimate Beneficial Owners (individuals holding >= 5% equity or controlling interest), Directors, and authorized account signatories.
+  – Corporate Limits: Organizations operate under configurable Corporate Product Limits and provider constraints without being subjected to individual Tier 1/2 caps.
 • Risk-Based Customer Due Diligence (CDD) & Enhanced Due Diligence (EDD):
-  – Risk Engine: CebizPay computes explainable risk ratings (Low, Medium, High) based on customer category, PEP status, sanctions screening, geographic risk, and transaction velocity.
+  – Risk Engine: CebizPay computes explainable risk ratings (Low, Medium, High, Prohibited) based on customer category, PEP status, sanctions screening, geographic risk, and policy-driven volume thresholds.
   – Standard CDD: Applied to Low and Medium risk individuals and organizations.
-  – Enhanced Due Diligence (EDD): Mandatorily triggered for High-Risk customers, Politically Exposed Persons (PEPs), family/close associates of PEPs, complex corporate shareholding structures, and transactions exceeding high-risk velocity thresholds.
+  – Enhanced Due Diligence (EDD): Mandatorily triggered for High-Risk customers, Politically Exposed Persons (PEPs), family/close associates of PEPs, complex corporate shareholding structures, and transactions exceeding policy-driven volume thresholds.
   – EDD Requirements: Mandatory documentation of Source of Funds, Source of Wealth, detailed business purpose, senior management / Compliance Officer manual sign-off, and ongoing continuous monitoring.
 • Internal Compliance Authority vs Provider Synchronization:
   – CebizPay Internal Compliance State (Pending, Approved, EDD_Required, Suspended, Rejected) is the authoritative source of truth for customer permissions and platform transaction eligibility. External verification results provide evidence (`VerificationEvidence`), not automatic unconstrained approval.
   – Provider KYC Synchronization: Downstream synchronization pushes verified internal identity data to banking rails (e.g. Monnify) to clear external provider transaction limit profiles. External provider limits act as physical constraints on rail dispatch but never override internal risk decisions.
 • Lifecycle Gating & Access Control:
-  – PENDING / REJECTED Individuals may transact with Tier 1 outbound transaction caps (< ₦50,000).
+  – PENDING / REJECTED Individuals may transact only within effective Tier 1 transaction caps.
   – PENDING / REJECTED Organizations may log in and configure HRIS/hierarchy but CANNOT execute payroll or transfer wallet funds.
   – Only VERIFIED Individuals may accept a Staff invitation with full benefits.
   – Only VERIFIED Organizations with approved KYB/CDD may activate automated payroll or corporate savings plans.
@@ -956,9 +965,22 @@ The following decisions have been updated and synchronized with locked platform 
     – Downstream provider synchronization pushes internal verified state to external rails to unlock provider limit profiles.
   REASON: Ensures full compliance with CBN CDD Regulations 2023, AML/CFT/CPF standards, and preserves sovereign platform compliance control.
 
+• Unified Webhook Ingestion & Multi-Rail Reconciliation Hardening (Batch 7):
+  OLD DECISION: Webhooks processed inline or directly mutated ledger/wallet balances without durable neutral event layer.
+  UPDATED DECISION:
+    – Strict boundary separation: Webhook Ingestion $\to$ Signature Verification $\to$ SHA-256 Payload Hash $\to$ Durable `WebhookEvent` / `ComplianceWebhookEvent` Persistence $\to$ DB Deduplication $\to$ Fast HTTP 200 Acknowledgement.
+    – PostgreSQL row claiming via `FOR UPDATE SKIP LOCKED`, bounded exponential backoff with jitter, and dead-letter isolation.
+    – Webhooks are strictly external signals, NOT the financial ledger. Flow: `Webhook → validated event → internal operation → verified provider state → central ledger → wallet`.
+    – Authoritative `ReconciliationEngine` handles payment attempts, bank transfers, card funding, card refunds, and compliance verification operations.
+    – UNKNOWN status isolation: ambiguous provider responses trigger exponential polling backoff and NEVER trigger premature failover or ledger reversal.
+    – Zero negative wallet balance guarantee: refund/chargeback debits exceeding available balance create durable `RecoveryOutstandingRecord` shortfall items.
+    – Super Admin control plane: status requery, safe event retry, and auditable manual review dispositions (ConfirmSuccess, ConfirmFailure, ConfirmReversal, Dismiss).
+  REASON: Guarantees zero double credits, zero duplicate ledger postings, resilient recovery from provider outages, and regulatory auditability.
+
 • Future MFB Portability:
   OLD DECISION: Virtual accounts tightly bound to specific users/orgs.
   UPDATED DECISION: External funding accounts attach to Wallets. When CebizPay acquires an MFB license, internal core-banking accounts attach as `ExternalFundingAccount` records with zero changes to Wallet, Ledger, or Application domain logic.
   REASON: Guarantees frictionless transition to a licensed Microfinance Bank without technical debt or core rewrites.
+
 
 

@@ -584,13 +584,36 @@ Compliance architecture is governed strictly by the **Central Bank of Nigeria (C
 
 ---
 
-### 11.2 Individual Tiered KYC Architecture (Natural Persons)
+### 11.2 Layered & Versioned Transaction Limit Architecture
 
-| Tier Level | Identification Requirements | Verification Method | Transaction & Balance Caps |
-| :--- | :--- | :--- | :--- |
-| **Tier 1 (Basic)** | Phone number, Legal Full Name, Initial OTP verification | Internal OTP + Database deduplication | Outbound cap < ₦50,000 / transaction; ₦300,000 cumulative daily limit |
-| **Tier 2 (Standard)** | Tier 1 + BVN / NIN validation + Basic government ID | Automated BVN/NIN resolution via Dojah (Fallback: Smile ID) | ₦200,000 / transaction; ₦1,000,000 cumulative daily limit |
-| **Tier 3 (Full)** | Tier 2 + Proof of Address (utility bill) + Live Facial Biometric Match | Smile ID SmartSelfie™ + ID OCR + Address Geocoding | Unrestricted platform limits (subject to provider rail constraints) |
+CebizPay separates transaction limit enforcement into four decoupled layers to ensure strict regulatory compliance, operational flexibility, and fail-closed safety:
+
+1. **Statutory Regulatory Ceilings (CBN Three-Tiered KYC Framework)**:
+   - Hard, non-overridable ceilings established by Central Bank of Nigeria regulations.
+   - Applies strictly to **natural persons (individuals)** and never to legal persons.
+   - **Tier 1 (Basic)**: Single transaction cap $\le$ ₦50,000; Cumulative daily cap $\le$ ₦300,000.
+   - **Tier 2 (Standard)**: Single transaction cap $\le$ ₦200,000; Cumulative daily cap $\le$ ₦1,000,000.
+   - **Tier 3 (Full)**: Unrestricted by statutory ceiling (bounded by product policy and provider rail constraints).
+
+2. **CebizPay Versioned Product Policies (`TransactionLimitPolicy`)**:
+   - Versioned, configurable business limits per product, operation channel, and customer tier.
+   - Must strictly remain $\le$ Statutory Regulatory Ceilings (`ProductCap = Min(ConfiguredCap, RegulatoryCeiling)`).
+   - Allows tighter business thresholds (e.g., Tier 1 single cap configured to ₦30,000) while guaranteeing regulatory compliance.
+
+3. **Payment Provider Rail Constraints**:
+   - Physical constraints imposed by upstream payment infrastructure providers (e.g. Flutterwave Card Funding ₦2,000,000 cap; Monnify Payout ₦10,000,000 cap).
+
+4. **Customer-Specific Risk Restrictions (`ComplianceRestriction`)**:
+   - Account-level caps placed directly on an individual customer or organization by compliance officers or risk rules.
+
+**Effective Limit Rule**:
+$$\text{Effective Single Cap} = \min(\text{Regulatory Ceiling}, \text{Configured Product Policy}, \text{Provider Rail Cap}, \text{Customer Risk Cap})$$
+
+| Tier Level | Identification Requirements | Verification Method | Statutory CBN Ceiling | Policy Defaults |
+| :--- | :--- | :--- | :--- | :--- |
+| **Tier 1 (Basic)** | Phone number, Legal Full Name, Initial OTP verification | Internal OTP + Database deduplication | $\le$ ₦50,000 / txn; ₦300,000 / day | Configurable $\le$ ₦50,000 |
+| **Tier 2 (Standard)** | Tier 1 + BVN / NIN validation + Basic government ID | Automated BVN/NIN resolution via Dojah (Fallback: Smile ID) | $\le$ ₦200,000 / txn; ₦1,000,000 / day | Configurable $\le$ ₦200,000 |
+| **Tier 3 (Full)** | Tier 2 + Proof of Address (utility bill) + Live Facial Biometric Match | Smile ID SmartSelfie™ + ID OCR + Address Geocoding | Unrestricted by statutory ceiling | Default ₦10,000,000 / txn |
 
 ---
 
@@ -2396,5 +2419,18 @@ The following decisions have been updated and synchronized across all authoritat
 * **OLD DECISION**: Virtual accounts modeled as static single-provider records tied to users.
 * **UPDATED DECISION**: External accounts attach to `Wallet` as `ExternalFundingAccount` records. When CebizPay secures an MFB license, internal core-banking accounts attach as `ExternalFundingAccount` records with zero modifications to Wallet, Ledger, or Application use cases.
 * **REASON**: Guarantees seamless, zero-downtime evolution into a licensed Microfinance Bank without technical debt or domain rewrites.
+
+### 9. Unified Webhook Ingestion & Multi-Rail Reconciliation Hardening (Batch 7)
+* **OLD DECISION**: Provider webhooks were processed synchronously and could directly mutate ledger balances or retry blindly.
+* **UPDATED DECISION**:
+  - **Thin HTTP Boundary**: Webhook Ingestion $\to$ Signature Verification (HMAC-SHA512/SHA256) $\to$ SHA-256 Payload Hash $\to$ Durable `WebhookEvent` / `ComplianceWebhookEvent` Persistence $\to$ DB Deduplication $\to$ Immediate HTTP 200 Fast Acknowledgement.
+  - **Asynchronous Worker Claiming**: Distributed, concurrency-safe worker claiming via PostgreSQL row locking (`FOR UPDATE SKIP LOCKED`), bounded exponential backoff with jitter, and dead-letter isolation (`DeadLetter`).
+  - **Strict Financial Ledger Rule**: Webhooks are strictly external signals, NEVER the financial ledger. Canonical flow: `Webhook → validated event → internal operation → verified provider state → central ledger → wallet`. PostgreSQL + central ledger remain authoritative.
+  - **Authoritative Cross-Rail Reconciliation**: `IReconciliationEngine` coordinates status requeries across Payment Attempts, Bank Transfers, Card Funding, Card Refunds, and Compliance Operations.
+  - **UNKNOWN State Safety**: Ambient or requery UNKNOWN statuses trigger exponential polling backoff and NEVER trigger premature failover or ledger reversal.
+  - **Zero Negative Wallet Balance Guarantee**: Refund reversals exceeding available balance transition to `CardRefundStatus.RecoveryOutstanding` and persist a durable `RecoveryOutstandingRecord`.
+  - **Administrative Super Admin Governance**: Endpoints for status requery (`/api/v1/admin/reconciliation/requery`), event retries (`/api/v1/admin/reconciliation/events/{id}/retry`), and manual review dispositions (`ConfirmSuccess`, `ConfirmFailure`, `ConfirmReversal`, `Dismiss`).
+* **REASON**: Guarantees zero double credits, zero duplicate ledger postings, resilient recovery from provider outages, and complete regulatory auditability.
+
 
 

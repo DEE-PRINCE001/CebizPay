@@ -51,6 +51,10 @@ public static class AuditResourceTypes
     public const string VirtualAccount = "VIRTUAL_ACCOUNT";
     /// <summary>Funding transaction resource type.</summary>
     public const string FundingTransaction = "FUNDING_TRANSACTION";
+    /// <summary>Reconciliation record resource type.</summary>
+    public const string ReconciliationRecord = "RECONCILIATION_RECORD";
+    /// <summary>Recovery outstanding resource type.</summary>
+    public const string RecoveryOutstanding = "RECOVERY_OUTSTANDING";
     /// <summary>Payroll batch resource type.</summary>
     public const string PayrollBatch = "PAYROLL_BATCH";
     /// <summary>Payroll item resource type.</summary>
@@ -135,4 +139,14 @@ public static class AuditResourceTypes
     public const string CardRefund = "CARD_REFUND";
     /// <summary>Card verification resource type.</summary>
     public const string CardVerification = "CARD_VERIFICATION";
+    /// <summary>Risk assessment resource type.</summary>
+    public const string RiskAssessment = "RISK_ASSESSMENT";
+    /// <summary>CDD profile resource type.</summary>
+    public const string CddProfile = "CDD_PROFILE";
+    /// <summary>EDD case resource type.</summary>
+    public const string EddCase = "EDD_CASE";
+    /// <summary>Compliance decision resource type.</summary>
+    public const string ComplianceDecision = "COMPLIANCE_DECISION";
+    /// <summary>Compliance restriction resource type.</summary>
+    public const string ComplianceRestriction = "COMPLIANCE_RESTRICTION";
 }

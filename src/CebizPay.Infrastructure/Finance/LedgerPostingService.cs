@@ -1144,7 +1144,20 @@ public sealed class LedgerPostingService : ILedgerPostingService
         if (wallet.AvailableBalance < amount)
         {
             // Insufficient balance for immediate full wallet debit - do NOT create negative balance
-            refund.MarkRecoveryOutstanding($"Customer wallet balance ({wallet.AvailableBalance:F2} {currency}) insufficient for full refund reversal of {amount:F2} {currency}.");
+            var recoveryReason = $"Customer wallet balance ({wallet.AvailableBalance:F2} {currency}) insufficient for full refund reversal of {amount:F2} {currency}.";
+            refund.MarkRecoveryOutstanding(recoveryReason);
+
+            var recoveryRecord = RecoveryOutstandingRecord.Create(
+                walletId: refund.WalletId,
+                sourceTransactionType: "CardRefund",
+                sourceReference: refund.RefundReference,
+                provider: refund.Provider,
+                amountOwed: amount,
+                currency: currency,
+                reason: recoveryReason);
+
+            _dbContext.RecoveryOutstandingRecords.Add(recoveryRecord);
+
             await _dbContext.SaveChangesAsync(cancellationToken);
             return (null!, refund);
         }

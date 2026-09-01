@@ -169,6 +169,12 @@ public class ApplicationDbContext
     /// <summary>Gets the card refunds entity set.</summary>
     public DbSet<CebizPay.Domain.Payments.Entities.CardRefund> CardRefunds => Set<CebizPay.Domain.Payments.Entities.CardRefund>();
 
+    /// <summary>Gets the reconciliation records entity set.</summary>
+    public DbSet<CebizPay.Domain.Payments.Entities.ReconciliationRecord> ReconciliationRecords => Set<CebizPay.Domain.Payments.Entities.ReconciliationRecord>();
+
+    /// <summary>Gets the recovery outstanding records entity set.</summary>
+    public DbSet<CebizPay.Domain.Payments.Entities.RecoveryOutstandingRecord> RecoveryOutstandingRecords => Set<CebizPay.Domain.Payments.Entities.RecoveryOutstandingRecord>();
+
     /// <summary>Gets the card verifications entity set.</summary>
     public DbSet<CebizPay.Domain.Payments.Entities.CardVerification> CardVerifications => Set<CebizPay.Domain.Payments.Entities.CardVerification>();
 
@@ -238,6 +244,33 @@ public class ApplicationDbContext
     /// <summary>Gets the VAS transactions entity set.</summary>
     public DbSet<CebizPay.Domain.Vas.Entities.VasTransaction> VasTransactions => Set<CebizPay.Domain.Vas.Entities.VasTransaction>();
 
+    /// <summary>Gets the compliance verification operations entity set.</summary>
+    public DbSet<CebizPay.Domain.Compliance.Entities.VerificationOperation> VerificationOperations => Set<CebizPay.Domain.Compliance.Entities.VerificationOperation>();
+
+    /// <summary>Gets the compliance verification evidences entity set.</summary>
+    public DbSet<CebizPay.Domain.Compliance.Entities.VerificationEvidence> VerificationEvidences => Set<CebizPay.Domain.Compliance.Entities.VerificationEvidence>();
+
+    /// <summary>Gets the compliance webhook events entity set.</summary>
+    public DbSet<CebizPay.Domain.Compliance.Entities.ComplianceWebhookEvent> ComplianceWebhookEvents => Set<CebizPay.Domain.Compliance.Entities.ComplianceWebhookEvent>();
+
+    /// <summary>Gets the compliance risk assessments entity set.</summary>
+    public DbSet<CebizPay.Domain.Compliance.Entities.RiskAssessment> RiskAssessments => Set<CebizPay.Domain.Compliance.Entities.RiskAssessment>();
+
+    /// <summary>Gets the compliance risk factor results entity set.</summary>
+    public DbSet<CebizPay.Domain.Compliance.Entities.RiskFactorResult> RiskFactorResults => Set<CebizPay.Domain.Compliance.Entities.RiskFactorResult>();
+
+    /// <summary>Gets the customer due diligence profiles entity set.</summary>
+    public DbSet<CebizPay.Domain.Compliance.Entities.CddProfile> CddProfiles => Set<CebizPay.Domain.Compliance.Entities.CddProfile>();
+
+    /// <summary>Gets the enhanced due diligence cases entity set.</summary>
+    public DbSet<CebizPay.Domain.Compliance.Entities.EddCase> EddCases => Set<CebizPay.Domain.Compliance.Entities.EddCase>();
+
+    /// <summary>Gets the compliance decisions entity set.</summary>
+    public DbSet<CebizPay.Domain.Compliance.Entities.ComplianceDecision> ComplianceDecisions => Set<CebizPay.Domain.Compliance.Entities.ComplianceDecision>();
+
+    /// <summary>Gets the compliance restrictions entity set.</summary>
+    public DbSet<CebizPay.Domain.Compliance.Entities.ComplianceRestriction> ComplianceRestrictions => Set<CebizPay.Domain.Compliance.Entities.ComplianceRestriction>();
+
     // Explicit IApplicationDbContext implementations returning IEntitySet<T>
     IEntitySet<IndividualProfile> IApplicationDbContext.IndividualProfiles => new EntitySet<IndividualProfile>(IndividualProfiles);
     IEntitySet<AdminProfile> IApplicationDbContext.AdminProfiles => new EntitySet<AdminProfile>(AdminProfiles);
@@ -286,6 +319,8 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Payments.Entities.FundingTransaction> IApplicationDbContext.FundingTransactions => new EntitySet<CebizPay.Domain.Payments.Entities.FundingTransaction>(FundingTransactions);
     IEntitySet<CebizPay.Domain.Payments.Entities.SavedCard> IApplicationDbContext.SavedCards => new EntitySet<CebizPay.Domain.Payments.Entities.SavedCard>(SavedCards);
     IEntitySet<CebizPay.Domain.Payments.Entities.CardRefund> IApplicationDbContext.CardRefunds => new EntitySet<CebizPay.Domain.Payments.Entities.CardRefund>(CardRefunds);
+    IEntitySet<CebizPay.Domain.Payments.Entities.ReconciliationRecord> IApplicationDbContext.ReconciliationRecords => new EntitySet<CebizPay.Domain.Payments.Entities.ReconciliationRecord>(ReconciliationRecords);
+    IEntitySet<CebizPay.Domain.Payments.Entities.RecoveryOutstandingRecord> IApplicationDbContext.RecoveryOutstandingRecords => new EntitySet<CebizPay.Domain.Payments.Entities.RecoveryOutstandingRecord>(RecoveryOutstandingRecords);
     IEntitySet<CebizPay.Domain.Payments.Entities.CardVerification> IApplicationDbContext.CardVerifications => new EntitySet<CebizPay.Domain.Payments.Entities.CardVerification>(CardVerifications);
     IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollBatch> IApplicationDbContext.PayrollBatches => new EntitySet<CebizPay.Domain.Payroll.Entities.PayrollBatch>(PayrollBatches);
     IEntitySet<CebizPay.Domain.Payroll.Entities.PayrollItem> IApplicationDbContext.PayrollItems => new EntitySet<CebizPay.Domain.Payroll.Entities.PayrollItem>(PayrollItems);
@@ -309,6 +344,15 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftPayout> IApplicationDbContext.ThriftPayouts => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftPayout>(ThriftPayouts);
     IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftReimbursement> IApplicationDbContext.ThriftReimbursements => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftReimbursement>(ThriftReimbursements);
     IEntitySet<CebizPay.Domain.Vas.Entities.VasTransaction> IApplicationDbContext.VasTransactions => new EntitySet<CebizPay.Domain.Vas.Entities.VasTransaction>(VasTransactions);
+    IEntitySet<CebizPay.Domain.Compliance.Entities.VerificationOperation> IApplicationDbContext.VerificationOperations => new EntitySet<CebizPay.Domain.Compliance.Entities.VerificationOperation>(VerificationOperations);
+    IEntitySet<CebizPay.Domain.Compliance.Entities.VerificationEvidence> IApplicationDbContext.VerificationEvidences => new EntitySet<CebizPay.Domain.Compliance.Entities.VerificationEvidence>(VerificationEvidences);
+    IEntitySet<CebizPay.Domain.Compliance.Entities.ComplianceWebhookEvent> IApplicationDbContext.ComplianceWebhookEvents => new EntitySet<CebizPay.Domain.Compliance.Entities.ComplianceWebhookEvent>(ComplianceWebhookEvents);
+    IEntitySet<CebizPay.Domain.Compliance.Entities.RiskAssessment> IApplicationDbContext.RiskAssessments => new EntitySet<CebizPay.Domain.Compliance.Entities.RiskAssessment>(RiskAssessments);
+    IEntitySet<CebizPay.Domain.Compliance.Entities.RiskFactorResult> IApplicationDbContext.RiskFactorResults => new EntitySet<CebizPay.Domain.Compliance.Entities.RiskFactorResult>(RiskFactorResults);
+    IEntitySet<CebizPay.Domain.Compliance.Entities.CddProfile> IApplicationDbContext.CddProfiles => new EntitySet<CebizPay.Domain.Compliance.Entities.CddProfile>(CddProfiles);
+    IEntitySet<CebizPay.Domain.Compliance.Entities.EddCase> IApplicationDbContext.EddCases => new EntitySet<CebizPay.Domain.Compliance.Entities.EddCase>(EddCases);
+    IEntitySet<CebizPay.Domain.Compliance.Entities.ComplianceDecision> IApplicationDbContext.ComplianceDecisions => new EntitySet<CebizPay.Domain.Compliance.Entities.ComplianceDecision>(ComplianceDecisions);
+    IEntitySet<CebizPay.Domain.Compliance.Entities.ComplianceRestriction> IApplicationDbContext.ComplianceRestrictions => new EntitySet<CebizPay.Domain.Compliance.Entities.ComplianceRestriction>(ComplianceRestrictions);
 
     /// <inheritdoc/>
     async Task<IDbTransaction> IApplicationDbContext.BeginTransactionAsync(CancellationToken cancellationToken)

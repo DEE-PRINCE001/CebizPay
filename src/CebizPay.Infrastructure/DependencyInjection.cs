@@ -71,6 +71,7 @@ public static class DependencyInjection
 
         services.AddDbContext<ApplicationDbContext>(options =>
         {
+            options.ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
             options.UseNpgsql(connectionString, npgsql =>
             {
                 npgsql.CommandTimeout(dbOptions.CommandTimeoutInSeconds);
@@ -169,12 +170,87 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IBankTransferExecutor, CebizPay.Infrastructure.Payments.Common.PaymentProviderBankTransferExecutor>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IWebhookSignatureVerifier, CebizPay.Infrastructure.Payments.Common.WebhookSignatureVerifier>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IWebhookProcessor, CebizPay.Infrastructure.Payments.Common.WebhookProcessor>();
-        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentReconciliationService, CebizPay.Infrastructure.Payments.Common.PaymentReconciliationService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IWebhookEventNormalizer, CebizPay.Infrastructure.Payments.Common.WebhookEventNormalizer>();
+        services.AddSingleton<CebizPay.Infrastructure.Payments.Common.ReconciliationMetrics>();
+        services.AddScoped<CebizPay.Infrastructure.Payments.Common.ReconciliationEngine>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IReconciliationEngine>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Payments.Common.ReconciliationEngine>());
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentReconciliationService>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Payments.Common.ReconciliationEngine>());
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IWebhookProcessingService, CebizPay.Infrastructure.Payments.Common.WebhookProcessingService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IVirtualAccountService, CebizPay.Infrastructure.Payments.VirtualAccounts.VirtualAccountService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardFundingService, CebizPay.Infrastructure.Payments.Funding.CardFundingService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ISavedCardService, CebizPay.Infrastructure.Payments.Funding.SavedCardService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardRefundService, CebizPay.Infrastructure.Payments.Funding.CardRefundService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardVerificationService, CebizPay.Infrastructure.Payments.Funding.CardVerificationService>();
+
+        // Configure Compliance KYC/KYB Options with validation
+        services.AddOptions<CebizPay.Infrastructure.Compliance.Dojah.DojahOptions>()
+            .Bind(configuration.GetSection(CebizPay.Infrastructure.Compliance.Dojah.DojahOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddOptions<CebizPay.Infrastructure.Compliance.SmileId.SmileIdOptions>()
+            .Bind(configuration.GetSection(CebizPay.Infrastructure.Compliance.SmileId.SmileIdOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddOptions<CebizPay.Infrastructure.Compliance.Ninja.NinjaOptions>()
+            .Bind(configuration.GetSection(CebizPay.Infrastructure.Compliance.Ninja.NinjaOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        // Compliance HTTP Clients
+        services.AddHttpClient<CebizPay.Infrastructure.Compliance.Dojah.IDojahClient, CebizPay.Infrastructure.Compliance.Dojah.DojahClient>();
+        services.AddHttpClient<CebizPay.Infrastructure.Compliance.SmileId.ISmileIdClient, CebizPay.Infrastructure.Compliance.SmileId.SmileIdClient>();
+        services.AddHttpClient<CebizPay.Infrastructure.Compliance.Ninja.INinjaClient, CebizPay.Infrastructure.Compliance.Ninja.NinjaClient>();
+
+        // Compliance Provider Adapters
+        services.AddScoped<CebizPay.Infrastructure.Compliance.Dojah.DojahVerificationProvider>();
+        services.AddScoped<CebizPay.Infrastructure.Compliance.SmileId.SmileIdVerificationProvider>();
+        services.AddScoped<CebizPay.Infrastructure.Compliance.Ninja.NinjaVerificationProvider>();
+
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IIdentityVerificationProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.Dojah.DojahVerificationProvider>());
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IIdentityVerificationProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.SmileId.SmileIdVerificationProvider>());
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IIdentityVerificationProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.Ninja.NinjaVerificationProvider>());
+
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IBiometricVerificationProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.SmileId.SmileIdVerificationProvider>());
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IBiometricVerificationProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.Dojah.DojahVerificationProvider>());
+
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IDocumentVerificationProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.SmileId.SmileIdVerificationProvider>());
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IDocumentVerificationProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.Dojah.DojahVerificationProvider>());
+
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IAmlScreeningProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.Dojah.DojahVerificationProvider>());
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IAmlScreeningProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.SmileId.SmileIdVerificationProvider>());
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IAmlScreeningProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.Ninja.NinjaVerificationProvider>());
+
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IBusinessVerificationProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.Dojah.DojahVerificationProvider>());
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IBusinessVerificationProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.Ninja.NinjaVerificationProvider>());
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IBusinessVerificationProvider>(sp => sp.GetRequiredService<CebizPay.Infrastructure.Compliance.SmileId.SmileIdVerificationProvider>());
+
+        // Compliance Routing, Factory, Orchestrator, Webhook Processor
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IVerificationRoutingService, CebizPay.Infrastructure.Compliance.Common.VerificationRoutingService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IVerificationProviderFactory, CebizPay.Infrastructure.Compliance.Common.VerificationProviderFactory>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IVerificationOrchestrator, CebizPay.Infrastructure.Compliance.Common.VerificationOrchestrator>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IComplianceWebhookSignatureVerifier, CebizPay.Infrastructure.Compliance.Common.ComplianceWebhookSignatureVerifier>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IComplianceWebhookProcessor, CebizPay.Infrastructure.Compliance.Common.ComplianceWebhookProcessor>();
+
+        // Batch 6: Risk Engine, Rules, CDD, EDD & Compliance Decisioning
+        services.AddSingleton<CebizPay.Infrastructure.Compliance.Services.RiskMetrics>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IRiskRule, CebizPay.Infrastructure.Compliance.Rules.SanctionsScreeningRule>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IRiskRule, CebizPay.Infrastructure.Compliance.Rules.PepScreeningRule>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IRiskRule, CebizPay.Infrastructure.Compliance.Rules.IdentityVerificationRule>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IRiskRule, CebizPay.Infrastructure.Compliance.Rules.BiometricLivenessRule>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IRiskRule, CebizPay.Infrastructure.Compliance.Rules.CacCorporateRegistryRule>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IRiskRule, CebizPay.Infrastructure.Compliance.Rules.BeneficialOwnershipRule>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IRiskRule, CebizPay.Infrastructure.Compliance.Rules.AdverseMediaScreeningRule>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IRiskRule, CebizPay.Infrastructure.Compliance.Rules.TransactionProfileVolumeRule>();
+
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IRiskEngine, CebizPay.Infrastructure.Compliance.Services.RiskEngine>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.ICddService, CebizPay.Infrastructure.Compliance.Services.CddService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IEddWorkflowService, CebizPay.Infrastructure.Compliance.Services.EddWorkflowService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IComplianceDecisionService, CebizPay.Infrastructure.Compliance.Services.ComplianceDecisionService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IComplianceEligibilityService, CebizPay.Infrastructure.Compliance.Services.ComplianceEligibilityService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Compliance.IComplianceRestrictionService, CebizPay.Infrastructure.Compliance.Services.ComplianceRestrictionService>();
+        services.AddSingleton<CebizPay.Application.Common.Interfaces.Compliance.ITransactionLimitPolicyService, CebizPay.Infrastructure.Compliance.Services.TransactionLimitPolicyService>();
 
         // Configure Payroll & Loan services
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payroll.IPayrollDeductionProvider, CebizPay.Infrastructure.Payroll.PayrollLoanDeductionProvider>();

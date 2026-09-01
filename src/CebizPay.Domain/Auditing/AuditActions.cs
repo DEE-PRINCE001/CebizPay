@@ -176,6 +176,20 @@ public static class AuditActions
     public const string PaymentAttemptReconciled = "PAYMENT_ATTEMPT_RECONCILED";
     /// <summary>Audit action when an inbound funding transaction completes and credits the wallet.</summary>
     public const string PaymentFundingCompleted = "PAYMENT_FUNDING_COMPLETED";
+    /// <summary>Audit action when reconciliation starts.</summary>
+    public const string ReconciliationStarted = "RECONCILIATION_STARTED";
+    /// <summary>Audit action when reconciliation succeeds.</summary>
+    public const string ReconciliationSucceeded = "RECONCILIATION_SUCCEEDED";
+    /// <summary>Audit action when reconciliation fails.</summary>
+    public const string ReconciliationFailed = "RECONCILIATION_FAILED";
+    /// <summary>Audit action when reconciliation requires manual review.</summary>
+    public const string ReconciliationManualReview = "RECONCILIATION_MANUAL_REVIEW";
+    /// <summary>Audit action when an administrator retries reconciliation.</summary>
+    public const string ReconciliationAdminRetry = "RECONCILIATION_ADMIN_RETRY";
+    /// <summary>Audit action when an outstanding recovery is recorded.</summary>
+    public const string RecoveryOutstandingCreated = "RECOVERY_OUTSTANDING_CREATED";
+    /// <summary>Audit action when an outstanding recovery is settled.</summary>
+    public const string RecoveryOutstandingSettled = "RECOVERY_OUTSTANDING_SETTLED";
 
     // Provider Failover
     /// <summary>Audit action when provider failover is initiated.</summary>
@@ -431,10 +445,40 @@ public static class AuditActions
     /// <summary>Audit action when an external funding account primary status changes.</summary>
     public const string ExternalFundingAccountPrimaryChanged = "EXTERNAL_FUNDING_ACCOUNT_PRIMARY_CHANGED";
 
-    /// <summary>Audit action when a new platform fee policy is created.</summary>
+    /// <summary>Audit action when a platform fee policy is created.</summary>
     public const string PlatformFeePolicyCreated = "PLATFORM_FEE_POLICY_CREATED";
     /// <summary>Audit action when a platform fee policy is activated.</summary>
     public const string PlatformFeePolicyActivated = "PLATFORM_FEE_POLICY_ACTIVATED";
     /// <summary>Audit action when a platform fee policy is deactivated.</summary>
     public const string PlatformFeePolicyDeactivated = "PLATFORM_FEE_POLICY_DEACTIVATED";
+
+    // Risk Engine, CDD, EDD & Compliance Decisions (Batch 6)
+    /// <summary>Audit action when a risk assessment is completed.</summary>
+    public const string RiskAssessmentCompleted = "RISK_ASSESSMENT_COMPLETED";
+    /// <summary>Audit action when a risk reassessment results in a changed risk level.</summary>
+    public const string RiskAssessmentChanged = "RISK_ASSESSMENT_CHANGED";
+    /// <summary>Audit action when CDD evaluation is started.</summary>
+    public const string CddStarted = "CDD_STARTED";
+    /// <summary>Audit action when CDD evaluation is completed.</summary>
+    public const string CddCompleted = "CDD_COMPLETED";
+    /// <summary>Audit action when an EDD case is opened.</summary>
+    public const string EddOpened = "EDD_OPENED";
+    /// <summary>Audit action when additional information is requested for an EDD case.</summary>
+    public const string EddInformationRequested = "EDD_INFORMATION_REQUESTED";
+    /// <summary>Audit action when additional information is submitted for an EDD case.</summary>
+    public const string EddInformationSubmitted = "EDD_INFORMATION_SUBMITTED";
+    /// <summary>Audit action when an EDD case is approved.</summary>
+    public const string EddApproved = "EDD_APPROVED";
+    /// <summary>Audit action when an EDD case is rejected.</summary>
+    public const string EddRejected = "EDD_REJECTED";
+    /// <summary>Audit action when a compliance decision is made.</summary>
+    public const string ComplianceDecisionMade = "COMPLIANCE_DECISION_MADE";
+    /// <summary>Audit action when a compliance decision is overridden by authorized personnel.</summary>
+    public const string ComplianceDecisionOverridden = "COMPLIANCE_DECISION_OVERRIDDEN";
+    /// <summary>Audit action when a compliance restriction is placed on an account.</summary>
+    public const string ComplianceRestrictionPlaced = "COMPLIANCE_RESTRICTION_PLACED";
+    /// <summary>Audit action when a compliance restriction is released from an account.</summary>
+    public const string ComplianceRestrictionReleased = "COMPLIANCE_RESTRICTION_RELEASED";
+    /// <summary>Audit action when a transaction is rejected due to compliance restrictions.</summary>
+    public const string TransactionEligibilityRejected = "TRANSACTION_ELIGIBILITY_REJECTED";
 }

@@ -5,7 +5,7 @@ namespace CebizPay.Domain.Permissions;
 /// </summary>
 public static class Permissions
 {
-    // KYC / KYB Admin Review
+    // KYC / KYB Admin Review & Compliance Decisioning
     /// <summary>View KYC documents and profiles.</summary>
     public const string KycView = "Kyc.View";
     /// <summary>Approve or reject KYC submissions.</summary>
@@ -14,6 +14,18 @@ public static class Permissions
     public const string KybView = "Kyb.View";
     /// <summary>Approve or reject KYB submissions.</summary>
     public const string KybReview = "Kyb.Review";
+    /// <summary>View compliance risk assessments and CDD profiles.</summary>
+    public const string ComplianceView = "Compliance.View";
+    /// <summary>Review compliance cases and request additional customer information.</summary>
+    public const string ComplianceReview = "Compliance.Review";
+    /// <summary>Approve or reject compliance risk decisions and overrides.</summary>
+    public const string ComplianceApprove = "Compliance.Approve";
+    /// <summary>Manage compliance risk policies, rules, and restrictions.</summary>
+    public const string ComplianceManageRisk = "Compliance.ManageRisk";
+    /// <summary>View Enhanced Due Diligence (EDD) cases.</summary>
+    public const string EddView = "Edd.View";
+    /// <summary>Manage and decide Enhanced Due Diligence (EDD) cases.</summary>
+    public const string EddManage = "Edd.Manage";
 
     // Organization Admin Management
     /// <summary>View organizations and detail profiles.</summary>
@@ -218,17 +230,25 @@ public static class Permissions
     /// <summary>Purchase airtime and mobile data bundles.</summary>
     public const string VasPurchase = "Vas.Purchase";
 
+    // Webhooks & Reconciliation (Admin / Operations)
+    /// <summary>View webhook events, reconciliation records, and outstanding recoveries.</summary>
+    public const string ReconciliationView = "Reconciliation.View";
+    /// <summary>Trigger reconciliation retries, provider requeries, and recovery settlements.</summary>
+    public const string ReconciliationManage = "Reconciliation.Manage";
+    /// <summary>Submit manual review disposition for ambiguous or mismatched reconciliation items.</summary>
+    public const string ReconciliationManualReview = "Reconciliation.ManualReview";
+
     /// <summary>
     /// Read-only permissions for platform auditor / view-only roles.
     /// </summary>
     public static readonly IReadOnlySet<string> ReadOnlyAdminPermissions = new HashSet<string>
     {
-        KycView, KybView, OrganizationsView, TransactionsView, PayrollLogsView, AuditView,
+        KycView, KybView, ComplianceView, EddView, OrganizationsView, TransactionsView, PayrollLogsView, AuditView,
         StaffView, PayrollView, WalletView, ErpView, LoanView, LoanRepaymentView,
         SavingsView, ThriftView, ThriftPayoutView, VasView, RecruitmentView,
         InventoryView, ServiceView, SupplierView, CustomerView,
         OrdersView, ExpensesView, InvoicesView, ReceiptsView,
-        CompanyVouchersView, ReportsView
+        CompanyVouchersView, ReportsView, ReconciliationView
     };
 
     /// <summary>

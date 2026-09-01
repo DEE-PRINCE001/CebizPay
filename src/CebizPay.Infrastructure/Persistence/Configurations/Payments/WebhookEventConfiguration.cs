@@ -1,3 +1,4 @@
+#pragma warning disable CS1591
 using CebizPay.Domain.Payments.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
@@ -35,11 +36,31 @@ public sealed class WebhookEventConfiguration : IEntityTypeConfiguration<Webhook
             .IsRequired()
             .HasConversion<int>();
 
+        builder.Property(w => w.CorrelationReference)
+            .HasMaxLength(128);
+
         builder.Property(w => w.ProcessingError)
             .HasMaxLength(1000);
 
         builder.Property(w => w.SafeMetadata)
             .HasMaxLength(2000);
+
+        builder.Property(w => w.AttemptCount)
+            .IsRequired()
+            .HasDefaultValue(0);
+
+        builder.Property(w => w.MaxAttempts)
+            .IsRequired()
+            .HasDefaultValue(5);
+
+        builder.Property(w => w.NextRetryAtUtc)
+            .HasColumnType("timestamp with time zone");
+
+        builder.Property(w => w.LockedUntilUtc)
+            .HasColumnType("timestamp with time zone");
+
+        builder.Property(w => w.LockedBy)
+            .HasMaxLength(128);
 
         builder.Property(w => w.ReceivedAtUtc)
             .IsRequired()
@@ -59,17 +80,12 @@ public sealed class WebhookEventConfiguration : IEntityTypeConfiguration<Webhook
         // Indexes & Unique Constraints
         // 1. Mandatory deduplication unique constraint: Provider + ProviderEventId
         builder.HasIndex(w => new { w.Provider, w.ProviderEventId })
-            .IsUnique()
-            .HasDatabaseName("IX_WebhookEvents_Provider_ProviderEventId");
+            .IsUnique();
 
-        // 2. Query performance indexes
-        builder.HasIndex(w => w.Status)
-            .HasDatabaseName("IX_WebhookEvents_Status");
+        // 2. Index for status polling and worker batch claiming
+        builder.HasIndex(w => new { w.Status, w.NextRetryAtUtc, w.CreatedAtUtc });
 
-        builder.HasIndex(w => w.PaymentAttemptId)
-            .HasDatabaseName("IX_WebhookEvents_PaymentAttemptId");
-
-        builder.HasIndex(w => w.ReceivedAtUtc)
-            .HasDatabaseName("IX_WebhookEvents_ReceivedAtUtc");
+        // 3. Correlation lookup index
+        builder.HasIndex(w => w.CorrelationReference);
     }
 }
