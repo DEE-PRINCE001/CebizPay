@@ -21,5 +21,8 @@ public enum ThriftStatus
     Completed = 5,
 
     /// <summary>Group cancelled before cycle start.</summary>
-    Cancelled = 6
+    Cancelled = 6,
+
+    /// <summary>Group paused by Super Admin for investigation or administrative intervention.</summary>
+    Paused = 7
 }

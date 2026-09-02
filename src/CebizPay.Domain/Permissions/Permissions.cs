@@ -38,6 +38,8 @@ public static class Permissions
     public const string OrganizationsGrantEditPermission = "Organizations.GrantEditPermission";
 
     // Platform Admin Management
+    /// <summary>View administrative users directory and details.</summary>
+    public const string AdminsView = "Admins.View";
     /// <summary>Invite new administrative users.</summary>
     public const string AdminsInvite = "Admins.Invite";
     /// <summary>Delete administrative user profiles.</summary>
@@ -243,7 +245,7 @@ public static class Permissions
     /// </summary>
     public static readonly IReadOnlySet<string> ReadOnlyAdminPermissions = new HashSet<string>
     {
-        KycView, KybView, ComplianceView, EddView, OrganizationsView, TransactionsView, PayrollLogsView, AuditView,
+        KycView, KybView, ComplianceView, EddView, OrganizationsView, AdminsView, TransactionsView, PayrollLogsView, AuditView,
         StaffView, PayrollView, WalletView, ErpView, LoanView, LoanRepaymentView,
         SavingsView, ThriftView, ThriftPayoutView, VasView, RecruitmentView,
         InventoryView, ServiceView, SupplierView, CustomerView,

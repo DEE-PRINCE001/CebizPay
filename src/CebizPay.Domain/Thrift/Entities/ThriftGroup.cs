@@ -221,4 +221,31 @@ public class ThriftGroup
         Status = ThriftStatus.Completed;
         UpdatedAtUtc = DateTime.UtcNow;
     }
+
+    /// <summary>
+    /// Pauses the thrift group for investigation or administrative intervention.
+    /// </summary>
+    public void Pause(string reason, DateTime now)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("Pause reason is required.", nameof(reason));
+
+        if (Status == ThriftStatus.Completed || Status == ThriftStatus.Cancelled)
+            throw new InvalidOperationException($"Cannot pause thrift group in status '{Status}'.");
+
+        Status = ThriftStatus.Paused;
+        UpdatedAtUtc = now;
+    }
+
+    /// <summary>
+    /// Resumes a paused thrift group back to its active rotation.
+    /// </summary>
+    public void Resume(DateTime now)
+    {
+        if (Status != ThriftStatus.Paused)
+            throw new InvalidOperationException($"Cannot resume thrift group with status '{Status}'.");
+
+        Status = CurrentCycleNumber > 0 ? ThriftStatus.Active : ThriftStatus.Locked;
+        UpdatedAtUtc = now;
+    }
 }

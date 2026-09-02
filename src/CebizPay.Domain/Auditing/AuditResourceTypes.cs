@@ -29,6 +29,8 @@ public static class AuditResourceTypes
     public const string KybApplication = "KYB_APPLICATION";
     /// <summary>Platform Admin profile resource type.</summary>
     public const string AdminProfile = "ADMIN_PROFILE";
+    /// <summary>Platform Admin invitation resource type.</summary>
+    public const string AdminInvitation = "ADMIN_INVITATION";
     /// <summary>Platform Fee policy resource type.</summary>
     public const string FeePolicy = "FEE_POLICY";
     /// <summary>Wallet resource type.</summary>
@@ -97,6 +99,8 @@ public static class AuditResourceTypes
     public const string ThriftPayout = "THRIFT_PAYOUT";
     /// <summary>Thrift reimbursement resource type.</summary>
     public const string ThriftReimbursement = "THRIFT_REIMBURSEMENT";
+    /// <summary>Thrift dispute resource type.</summary>
+    public const string ThriftDispute = "THRIFT_DISPUTE";
 
     // Value-Added Services (VAS)
     /// <summary>VAS transaction resource type.</summary>

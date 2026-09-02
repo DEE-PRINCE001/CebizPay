@@ -38,6 +38,18 @@ public sealed class AdminProfileConfiguration : IEntityTypeConfiguration<AdminPr
             .HasColumnName("Permissions")
             .IsRequired();
 
+        builder.Property(x => x.IsDeleted)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(x => x.DeletedAtUtc)
+            .HasColumnType("timestamp with time zone");
+
+        builder.Property(x => x.DeletedByUserId)
+            .HasMaxLength(450);
+
+        builder.HasIndex(x => new { x.IsDeleted, x.IsActive, x.Role });
+
         builder.Property(x => x.CreatedAtUtc)
             .HasColumnType("timestamp with time zone");
 

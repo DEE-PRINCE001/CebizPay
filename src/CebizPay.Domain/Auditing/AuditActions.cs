@@ -112,6 +112,10 @@ public static class AuditActions
     public const string AdminStatusChanged = "ADMIN_STATUS_CHANGED";
     /// <summary>Audit action when an admin is invited.</summary>
     public const string AdminInvited = "ADMIN_INVITED";
+    /// <summary>Audit action when an admin invitation is redeemed.</summary>
+    public const string AdminInviteRedeemed = "ADMIN_INVITE_REDEEMED";
+    /// <summary>Audit action when an admin invitation is cancelled.</summary>
+    public const string AdminInviteCancelled = "ADMIN_INVITE_CANCELLED";
     /// <summary>Audit action when an admin is deleted.</summary>
     public const string AdminDeleted = "ADMIN_DELETED";
 
@@ -334,6 +338,18 @@ public static class AuditActions
     public const string ThriftMemberReimbursed = "THRIFT_MEMBER_REIMBURSED";
     /// <summary>Audit action when a member is removed from a thrift group.</summary>
     public const string ThriftMemberRemoved = "THRIFT_MEMBER_REMOVED";
+    /// <summary>Audit action when a thrift group is paused by Super Admin.</summary>
+    public const string ThriftGroupPaused = "THRIFT_GROUP_PAUSED";
+    /// <summary>Audit action when a paused thrift group is resumed by Super Admin.</summary>
+    public const string ThriftGroupResumed = "THRIFT_GROUP_RESUMED";
+    /// <summary>Audit action when a thrift dispute is created.</summary>
+    public const string ThriftDisputeCreated = "THRIFT_DISPUTE_CREATED";
+    /// <summary>Audit action when a thrift dispute is marked under review.</summary>
+    public const string ThriftDisputeUnderReview = "THRIFT_DISPUTE_UNDER_REVIEW";
+    /// <summary>Audit action when a thrift dispute is resolved.</summary>
+    public const string ThriftDisputeResolved = "THRIFT_DISPUTE_RESOLVED";
+    /// <summary>Audit action when a thrift dispute is rejected/dismissed.</summary>
+    public const string ThriftDisputeRejected = "THRIFT_DISPUTE_REJECTED";
 
     // Value-Added Services (VAS) Audit Actions
     /// <summary>Audit action when a VAS purchase transaction is initialized.</summary>

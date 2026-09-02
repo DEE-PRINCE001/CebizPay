@@ -17,6 +17,9 @@ public interface IApplicationDbContext
     /// <summary>Gets the admin profiles entity set.</summary>
     IEntitySet<AdminProfile> AdminProfiles { get; }
 
+    /// <summary>Gets the admin invitations entity set.</summary>
+    IEntitySet<AdminInvitation> AdminInvitations { get; }
+
     /// <summary>Gets the organizations entity set.</summary>
     IEntitySet<Organization> Organizations { get; }
 
@@ -223,6 +226,9 @@ public interface IApplicationDbContext
 
     /// <summary>Gets the thrift reimbursements entity set.</summary>
     IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftReimbursement> ThriftReimbursements { get; }
+
+    /// <summary>Gets the thrift disputes entity set.</summary>
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftDispute> ThriftDisputes { get; }
 
     /// <summary>Gets the VAS transactions entity set.</summary>
     IEntitySet<CebizPay.Domain.Vas.Entities.VasTransaction> VasTransactions { get; }

@@ -127,4 +127,21 @@ public sealed class AuthController : ControllerBase
         }
         return Ok(response);
     }
+
+    /// <summary>
+    /// Redeems an administrative invitation token and initializes admin credentials.
+    /// Rate limited by AuthPolicy.
+    /// </summary>
+    [HttpPost("admin/redeem-invite")]
+    [AllowAnonymous]
+    [EnableRateLimiting("AuthPolicy")]
+    public async Task<IActionResult> RedeemAdminInvite([FromBody] CebizPay.Application.UseCases.Admin.Manage.RedeemAdminInviteCommand command, CancellationToken cancellationToken)
+    {
+        var response = await _sender.Send(command, cancellationToken);
+        if (!response.Succeeded)
+        {
+            return BadRequest(response);
+        }
+        return Ok(response);
+    }
 }

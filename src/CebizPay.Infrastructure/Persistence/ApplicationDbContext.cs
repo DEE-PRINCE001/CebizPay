@@ -34,6 +34,9 @@ public class ApplicationDbContext
     /// <summary>Gets the admin profiles entity set.</summary>
     public DbSet<AdminProfile> AdminProfiles => Set<AdminProfile>();
 
+    /// <summary>Gets the admin invitations entity set.</summary>
+    public DbSet<AdminInvitation> AdminInvitations => Set<AdminInvitation>();
+
     /// <summary>Gets the organizations entity set.</summary>
     public DbSet<Organization> Organizations => Set<Organization>();
 
@@ -241,6 +244,9 @@ public class ApplicationDbContext
     /// <summary>Gets the thrift reimbursements entity set.</summary>
     public DbSet<CebizPay.Domain.Thrift.Entities.ThriftReimbursement> ThriftReimbursements => Set<CebizPay.Domain.Thrift.Entities.ThriftReimbursement>();
 
+    /// <summary>Gets the thrift disputes entity set.</summary>
+    public DbSet<CebizPay.Domain.Thrift.Entities.ThriftDispute> ThriftDisputes => Set<CebizPay.Domain.Thrift.Entities.ThriftDispute>();
+
     /// <summary>Gets the VAS transactions entity set.</summary>
     public DbSet<CebizPay.Domain.Vas.Entities.VasTransaction> VasTransactions => Set<CebizPay.Domain.Vas.Entities.VasTransaction>();
 
@@ -274,6 +280,7 @@ public class ApplicationDbContext
     // Explicit IApplicationDbContext implementations returning IEntitySet<T>
     IEntitySet<IndividualProfile> IApplicationDbContext.IndividualProfiles => new EntitySet<IndividualProfile>(IndividualProfiles);
     IEntitySet<AdminProfile> IApplicationDbContext.AdminProfiles => new EntitySet<AdminProfile>(AdminProfiles);
+    IEntitySet<AdminInvitation> IApplicationDbContext.AdminInvitations => new EntitySet<AdminInvitation>(AdminInvitations);
     IEntitySet<Organization> IApplicationDbContext.Organizations => new EntitySet<Organization>(Organizations);
     IEntitySet<OrganizationMembership> IApplicationDbContext.OrganizationMemberships => new EntitySet<OrganizationMembership>(OrganizationMemberships);
     IEntitySet<Department> IApplicationDbContext.Departments => new EntitySet<Department>(Departments);
@@ -343,6 +350,7 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftContribution> IApplicationDbContext.ThriftContributions => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftContribution>(ThriftContributions);
     IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftPayout> IApplicationDbContext.ThriftPayouts => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftPayout>(ThriftPayouts);
     IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftReimbursement> IApplicationDbContext.ThriftReimbursements => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftReimbursement>(ThriftReimbursements);
+    IEntitySet<CebizPay.Domain.Thrift.Entities.ThriftDispute> IApplicationDbContext.ThriftDisputes => new EntitySet<CebizPay.Domain.Thrift.Entities.ThriftDispute>(ThriftDisputes);
     IEntitySet<CebizPay.Domain.Vas.Entities.VasTransaction> IApplicationDbContext.VasTransactions => new EntitySet<CebizPay.Domain.Vas.Entities.VasTransaction>(VasTransactions);
     IEntitySet<CebizPay.Domain.Compliance.Entities.VerificationOperation> IApplicationDbContext.VerificationOperations => new EntitySet<CebizPay.Domain.Compliance.Entities.VerificationOperation>(VerificationOperations);
     IEntitySet<CebizPay.Domain.Compliance.Entities.VerificationEvidence> IApplicationDbContext.VerificationEvidences => new EntitySet<CebizPay.Domain.Compliance.Entities.VerificationEvidence>(VerificationEvidences);

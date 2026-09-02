@@ -5,24 +5,40 @@ namespace CebizPay.Domain.Entities;
 
 /// <summary>
 /// Domain representation for administrative users.
-/// Supports SuperAdmin, Admin, and Read-Only Admin / Auditor roles, with granular delegated permissions and MFA state.
+/// Supports SuperAdmin, Admin, and Read-Only Admin / Auditor roles, with granular delegated permissions, MFA state, and soft deletion.
 /// </summary>
 public class AdminProfile
 {
     /// <summary>Unique identifier.</summary>
     public Guid Id { get; private set; }
+
     /// <summary>User ID matching Identity ApplicationUser Id.</summary>
     public string UserId { get; private set; } = string.Empty;
+
     /// <summary>Administrative role type.</summary>
     public AdminRoleType Role { get; private set; }
+
     /// <summary>Active state flag.</summary>
     public bool IsActive { get; private set; } = true;
+
     /// <summary>MFA enabled flag for this web admin profile.</summary>
     public bool IsMfaEnabled { get; private set; }
+
     /// <summary>Granular delegated permissions granted to this admin.</summary>
     public List<string> PermissionsList { get; private set; } = new();
+
+    /// <summary>Soft delete status flag.</summary>
+    public bool IsDeleted { get; private set; }
+
+    /// <summary>Timestamp when the profile was soft-deleted.</summary>
+    public DateTime? DeletedAtUtc { get; private set; }
+
+    /// <summary>User ID of the Super Admin who performed the soft deletion.</summary>
+    public string? DeletedByUserId { get; private set; }
+
     /// <summary>Created timestamp.</summary>
     public DateTime CreatedAtUtc { get; private set; }
+
     /// <summary>Updated timestamp.</summary>
     public DateTime? UpdatedAtUtc { get; private set; }
 
@@ -41,6 +57,7 @@ public class AdminProfile
         Role = role;
         IsActive = true;
         IsMfaEnabled = isMfaEnabled;
+        IsDeleted = false;
         CreatedAtUtc = DateTime.UtcNow;
 
         // Automatically assign default read-only permissions if Auditor role
@@ -99,6 +116,7 @@ public class AdminProfile
     /// </summary>
     public bool HasPermission(string permission)
     {
+        if (IsDeleted) return false;
         if (Role == AdminRoleType.SuperAdmin) return true;
         if (string.IsNullOrWhiteSpace(permission)) return false;
         return PermissionsList.Contains(permission.Trim());
@@ -127,7 +145,25 @@ public class AdminProfile
     /// </summary>
     public void Activate()
     {
+        if (IsDeleted)
+            throw new InvalidOperationException("Cannot activate a soft-deleted admin profile.");
+
         IsActive = true;
         UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Soft deletes the admin profile.
+    /// </summary>
+    public void SoftDelete(string deletedByUserId, DateTime now)
+    {
+        if (IsDeleted)
+            return;
+
+        IsDeleted = true;
+        IsActive = false;
+        DeletedByUserId = deletedByUserId.Trim();
+        DeletedAtUtc = now;
+        UpdatedAtUtc = now;
     }
 }
