@@ -34,3 +34,11 @@ Thumbs.db
 # Local databases / generated files
 *.db
 *.sqlite
+
+# Node & Frontend
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.vite/
+**/vite.config.js.timestamp-*

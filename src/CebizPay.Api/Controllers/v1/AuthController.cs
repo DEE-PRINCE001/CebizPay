@@ -144,4 +144,38 @@ public sealed class AuthController : ControllerBase
         }
         return Ok(response);
     }
+
+    /// <summary>
+    /// Exchanges an active refresh token for a new JWT access token and rotated refresh token.
+    /// Rate limited by AuthPolicy.
+    /// </summary>
+    [HttpPost("refresh-token")]
+    [AllowAnonymous]
+    [EnableRateLimiting("AuthPolicy")]
+    public async Task<IActionResult> RefreshToken([FromBody] CebizPay.Application.UseCases.Auth.RefreshToken.RefreshTokenCommand command, CancellationToken cancellationToken)
+    {
+        var response = await _sender.Send(command, cancellationToken);
+        if (!response.Succeeded)
+        {
+            return BadRequest(response);
+        }
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Explicitly revokes a refresh token (e.g. upon user logout).
+    /// Rate limited by AuthPolicy.
+    /// </summary>
+    [HttpPost("revoke-token")]
+    [AllowAnonymous]
+    [EnableRateLimiting("AuthPolicy")]
+    public async Task<IActionResult> RevokeToken([FromBody] CebizPay.Application.UseCases.Auth.RevokeToken.RevokeTokenCommand command, CancellationToken cancellationToken)
+    {
+        var response = await _sender.Send(command, cancellationToken);
+        if (!response.Succeeded)
+        {
+            return BadRequest(response);
+        }
+        return Ok(response);
+    }
 }

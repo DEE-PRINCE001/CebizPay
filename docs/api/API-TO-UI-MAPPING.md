@@ -195,8 +195,8 @@ The backend communicates failures using standard **RFC 7807 ProblemDetails** wit
 ## 5. Identified Gaps, Ambiguities & Inconsistencies
 
 ### 5.1 Backend Gaps (Resolved for Phase 2)
-1. **Refresh Token Rotation**: The current `AuthController` issues short-lived JWT access tokens without an explicit `/auth/refresh` endpoint. The frontend must handle token expiry by redirecting to login or prompting for session re-authentication.
-2. **VAS Operator Detection**: `GET /api/v1/vas/operators/detect` requires phone prefix lookup. The frontend will combine backend detection with a fallback manual telco selector (MTN, Airtel, Glo, 9mobile).
+1. **Refresh Token Rotation (Implemented)**: The backend exposes `POST /api/v1/auth/refresh-token` (exchanges active refresh token for a new JWT access token and rotated refresh token) and `POST /api/v1/auth/revoke-token` (explicit revocation on logout). The frontend Axios client implements automated silent token refreshing with concurrent request queueing upon encountering 401 responses.
+2. **VAS Operator Detection**: `GET /api/v1/vas/operators/detect` requires phone prefix lookup. The frontend combines backend detection with a fallback manual telco selector (MTN, Airtel, Glo, 9mobile).
 
 ### 5.2 Design Gaps (Inheriting Shared Design Language)
 1. **Public Marketing Landing Page**: The design library focuses on authenticated dashboards. Public pages (Home, Features, Pricing, Public Job Board) will inherit the exact topbar, pill buttons, typography, and color palette of the application.

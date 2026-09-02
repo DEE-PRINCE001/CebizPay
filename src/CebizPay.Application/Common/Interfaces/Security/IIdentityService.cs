@@ -31,6 +31,22 @@ public interface IIdentityService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Validates and redeems a refresh token, rotating it with a 30-day sliding window.
+    /// Implements reuse detection: if a revoked token is used, all active tokens for the user are revoked.
+    /// </summary>
+    Task<(bool Succeeded, string UserId, string AccessToken, string RefreshToken, string? ErrorMessage)> RefreshTokenAsync(
+        string refreshToken,
+        string? ipAddress = null,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Explicitly revokes a refresh token (e.g. on logout).
+    /// </summary>
+    Task<bool> RevokeRefreshTokenAsync(
+        string refreshToken,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Changes user password respecting password policy and past 3 password history rules.
     /// </summary>
     Task<(bool Succeeded, IEnumerable<string> Errors)> ChangePasswordAsync(

@@ -1,18 +1,25 @@
+#pragma warning disable CA1848, CA1873
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Interfaces.Security;
+using CebizPay.Domain.Entities;
 using CebizPay.Infrastructure.Identity;
 using CebizPay.Infrastructure.Options;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 
 namespace CebizPay.Infrastructure.Services;
 
 /// <summary>
-/// Infrastructure service implementing ASP.NET Core Identity operations, password history policies, MFA verification, and JWT token issuing.
+/// Infrastructure service implementing ASP.NET Core Identity operations, password history policies, MFA verification, and JWT/Refresh token lifecycle.
 /// </summary>
 public sealed class IdentityService : IIdentityService
 {
@@ -20,6 +27,8 @@ public sealed class IdentityService : IIdentityService
     private readonly SignInManager<ApplicationUser> _signInManager;
     private readonly IMfaService _mfaService;
     private readonly JwtOptions _jwtOptions;
+    private readonly IApplicationDbContext? _dbContext;
+    private readonly ILogger<IdentityService> _logger;
 
     /// <summary>
     /// Initializes a new instance of <see cref="IdentityService"/>.
@@ -28,12 +37,28 @@ public sealed class IdentityService : IIdentityService
         UserManager<ApplicationUser> userManager,
         SignInManager<ApplicationUser> signInManager,
         IMfaService mfaService,
-        IOptions<JwtOptions> jwtOptions)
+        IOptions<JwtOptions> jwtOptions,
+        IApplicationDbContext dbContext,
+        ILogger<IdentityService> logger)
     {
-        _userManager = userManager;
-        _signInManager = signInManager;
-        _mfaService = mfaService;
-        _jwtOptions = jwtOptions.Value;
+        _userManager = userManager ?? throw new ArgumentNullException(nameof(userManager));
+        _signInManager = signInManager ?? throw new ArgumentNullException(nameof(signInManager));
+        _mfaService = mfaService ?? throw new ArgumentNullException(nameof(mfaService));
+        _jwtOptions = jwtOptions?.Value ?? throw new ArgumentNullException(nameof(jwtOptions));
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Backward-compatible constructor for lightweight testing without db context.
+    /// </summary>
+    public IdentityService(
+        UserManager<ApplicationUser> userManager,
+        SignInManager<ApplicationUser> signInManager,
+        IMfaService mfaService,
+        IOptions<JwtOptions> jwtOptions)
+        : this(userManager, signInManager, mfaService, jwtOptions, null!, NullLogger<IdentityService>.Instance)
+    {
     }
 
     /// <inheritdoc/>
@@ -107,7 +132,7 @@ public sealed class IdentityService : IIdentityService
             return (true, user.Id, string.Empty, string.Empty, true, challengeId, Array.Empty<string>());
         }
 
-        var (accessToken, refreshToken) = GenerateTokens(user);
+        var (accessToken, refreshToken) = await GenerateAndSaveTokensAsync(user, null, cancellationToken);
 
         return (true, user.Id, accessToken, refreshToken, false, null, Array.Empty<string>());
     }
@@ -120,7 +145,118 @@ public sealed class IdentityService : IIdentityService
         var user = await _userManager.FindByIdAsync(userId)
             ?? throw new KeyNotFoundException($"User with ID {userId} not found.");
 
-        return GenerateTokens(user);
+        return await GenerateAndSaveTokensAsync(user, null, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<(bool Succeeded, string UserId, string AccessToken, string RefreshToken, string? ErrorMessage)> RefreshTokenAsync(
+        string refreshToken,
+        string? ipAddress = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(refreshToken))
+        {
+            return (false, string.Empty, string.Empty, string.Empty, "Refresh token is required.");
+        }
+
+        if (_dbContext == null)
+        {
+            return (false, string.Empty, string.Empty, string.Empty, "Database context not available.");
+        }
+
+        var tokenHash = HashToken(refreshToken);
+
+        var token = await _dbContext.RefreshTokens
+            .FirstOrDefaultAsync(t => t.TokenHash == tokenHash, cancellationToken);
+
+        if (token == null)
+        {
+            return (false, string.Empty, string.Empty, string.Empty, "Invalid refresh token.");
+        }
+
+        // Reuse / Theft Detection: If token is already revoked, terminate all active tokens for this user
+        if (token.IsRevoked)
+        {
+            _logger.LogWarning("Compromise detected: Attempt to reuse revoked refresh token for user {UserId}.", token.UserId);
+
+            var activeTokens = await _dbContext.RefreshTokens
+                .Where(t => t.UserId == token.UserId && t.RevokedAtUtc == null && t.ExpiresAtUtc > DateTime.UtcNow)
+                .ToListAsync(cancellationToken);
+
+            foreach (var activeToken in activeTokens)
+            {
+                activeToken.Revoke(null, "Compromised reuse detected");
+            }
+
+            await _dbContext.SaveChangesAsync(cancellationToken);
+
+            return (false, string.Empty, string.Empty, string.Empty, "Compromised or already used refresh token. All active sessions have been terminated.");
+        }
+
+        if (token.IsExpired)
+        {
+            return (false, string.Empty, string.Empty, string.Empty, "Refresh token has expired. Please log in again.");
+        }
+
+        var user = await _userManager.FindByIdAsync(token.UserId);
+        if (user == null)
+        {
+            return (false, string.Empty, string.Empty, string.Empty, "User account not found.");
+        }
+
+        if (await _userManager.IsLockedOutAsync(user))
+        {
+            return (false, string.Empty, string.Empty, string.Empty, "User account is locked.");
+        }
+
+        // Rotate token: Generate new pair, revoke current token with pointer to new hash
+        var (newAccessToken, newRawRefreshToken) = GenerateRawTokens(user);
+        var newHashedToken = HashToken(newRawRefreshToken);
+
+        token.Revoke(newHashedToken, "Rotated");
+
+        var newRefreshTokenEntity = new RefreshToken(
+            userId: user.Id,
+            tokenHash: newHashedToken,
+            expiresAtUtc: DateTime.UtcNow.AddDays(30),
+            createdByIp: ipAddress);
+
+        _dbContext.RefreshTokens.Add(newRefreshTokenEntity);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+
+        _logger.LogInformation("Successfully rotated refresh token for user {UserId}.", user.Id);
+
+        return (true, user.Id, newAccessToken, newRawRefreshToken, null);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> RevokeRefreshTokenAsync(
+        string refreshToken,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(refreshToken) || _dbContext == null)
+        {
+            return false;
+        }
+
+        var tokenHash = HashToken(refreshToken);
+
+        var token = await _dbContext.RefreshTokens
+            .FirstOrDefaultAsync(t => t.TokenHash == tokenHash, cancellationToken);
+
+        if (token == null)
+        {
+            return true; // Idempotent
+        }
+
+        if (!token.IsRevoked)
+        {
+            token.Revoke(null, "Logout");
+            await _dbContext.SaveChangesAsync(cancellationToken);
+            _logger.LogInformation("Revoked refresh token for user {UserId}.", token.UserId);
+        }
+
+        return true;
     }
 
     /// <inheritdoc/>
@@ -175,7 +311,30 @@ public sealed class IdentityService : IIdentityService
         return (true, Array.Empty<string>());
     }
 
-    private (string AccessToken, string RefreshToken) GenerateTokens(ApplicationUser user)
+    private async Task<(string AccessToken, string RefreshToken)> GenerateAndSaveTokensAsync(
+        ApplicationUser user,
+        string? ipAddress,
+        CancellationToken cancellationToken)
+    {
+        var (accessToken, rawRefreshToken) = GenerateRawTokens(user);
+
+        if (_dbContext != null)
+        {
+            var tokenHash = HashToken(rawRefreshToken);
+            var refreshTokenEntity = new RefreshToken(
+                userId: user.Id,
+                tokenHash: tokenHash,
+                expiresAtUtc: DateTime.UtcNow.AddDays(30),
+                createdByIp: ipAddress);
+
+            _dbContext.RefreshTokens.Add(refreshTokenEntity);
+            await _dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return (accessToken, rawRefreshToken);
+    }
+
+    private (string AccessToken, string RefreshToken) GenerateRawTokens(ApplicationUser user)
     {
         var tokenHandler = new JwtSecurityTokenHandler();
         var key = Encoding.UTF8.GetBytes(_jwtOptions.Secret);
@@ -187,7 +346,7 @@ public sealed class IdentityService : IIdentityService
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
-        // Access token: 15 minutes as per PRD/Engineering specs
+        // Access token: 15-30 minutes as per specs
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
@@ -200,10 +359,18 @@ public sealed class IdentityService : IIdentityService
         var token = tokenHandler.CreateToken(tokenDescriptor);
         var accessToken = tokenHandler.WriteToken(token);
 
-        // Refresh token: 30-day sliding window
-        var refreshToken = Guid.NewGuid().ToString("N");
+        // Cryptographically secure refresh token
+        var randomBytes = new byte[32];
+        RandomNumberGenerator.Fill(randomBytes);
+        var rawRefreshToken = Convert.ToHexString(randomBytes).ToLowerInvariant();
 
-        return (accessToken, refreshToken);
+        return (accessToken, rawRefreshToken);
+    }
+
+    private static string HashToken(string rawToken)
+    {
+        var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(rawToken.Trim()));
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 
     /// <inheritdoc/>
@@ -231,9 +398,9 @@ public sealed class IdentityService : IIdentityService
             return new Dictionary<string, (string Email, string? PhoneNumber)>();
         }
 
-        var users = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(
-            _userManager.Users.Where(u => idsList.Contains(u.Id)),
-            cancellationToken);
+        var users = await _userManager.Users
+            .Where(u => idsList.Contains(u.Id))
+            .ToListAsync(cancellationToken);
 
         return users.ToDictionary(
             u => u.Id,

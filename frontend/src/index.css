@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+
+  /* Primary Brand Blue Palette */
+  --color-brand-50: #EFF6FF;
+  --color-brand-100: #DBEAFE;
+  --color-brand-200: #BFDBFE;
+  --color-brand-500: #1D4ED8;
+  --color-brand-600: #0B41CD; /* Authoritative Brand Blue */
+  --color-brand-700: #0832A3; /* Hover */
+  --color-brand-800: #06257A; /* Active */
+
+  /* Neutral Canvas & Surfaces */
+  --color-canvas-bg: #F8FAFC;
+  --color-surface: #FFFFFF;
+
+  /* Text Hierarchy */
+  --color-text-primary: #0F172A;
+  --color-text-secondary: #334155;
+  --color-text-muted: #64748B;
+  --color-text-subtle: #94A3B8;
+
+  /* Borders */
+  --color-border-primary: #E2E8F0;
+  --color-border-subtle: #F1F5F9;
+
+  /* Status Colors */
+  --color-status-success: #10B981;
+  --color-status-success-bg: #ECFDF5;
+  --color-status-danger: #EF4444;
+  --color-status-danger-bg: #FEF2F2;
+  --color-status-warning: #F59E0B;
+  --color-status-warning-bg: #FFFBEB;
+  --color-status-info: #3B82F6;
+  --color-status-info-bg: #EFF6FF;
+}
+
+/* Custom UI Utilities */
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}

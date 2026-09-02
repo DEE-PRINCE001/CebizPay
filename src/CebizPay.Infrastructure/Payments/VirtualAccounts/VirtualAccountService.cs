@@ -101,20 +101,13 @@ public sealed partial class VirtualAccountService : IVirtualAccountService
             var providerName = provider.ToString();
             var errorMsg = result.ErrorMessage ?? "Unknown error";
             LogIndividualProvisioningFailed(_logger, individualId, providerName, errorMsg);
+            throw new InvalidOperationException($"Virtual account provisioning failed via {provider}: {errorMsg}");
+        }
 
-            // In development / sandbox fallback when gateway credentials are not configured
-            accountNumber = $"99{Random.Shared.Next(10000000, 99999999)}";
-            bankCode = "035";
-            bankName = "Wema Bank (CebizPay Sandbox)";
-            providerReference = $"DEV-VA-{Guid.NewGuid():N}";
-        }
-        else
-        {
-            accountNumber = result.AccountNumber;
-            bankCode = result.BankCode ?? "035";
-            bankName = result.BankName ?? "Partner Bank";
-            providerReference = result.ProviderReference;
-        }
+        accountNumber = result.AccountNumber;
+        bankCode = result.BankCode ?? "035";
+        bankName = result.BankName ?? "Partner Bank";
+        providerReference = result.ProviderReference;
 
         var virtualAccount = VirtualAccount.CreateIndividual(
             individualId: individualId,
@@ -201,19 +194,13 @@ public sealed partial class VirtualAccountService : IVirtualAccountService
             var providerName = provider.ToString();
             var errorMsg = result.ErrorMessage ?? "Unknown error";
             LogOrganizationProvisioningFailed(_logger, organizationId, providerName, errorMsg);
+            throw new InvalidOperationException($"Virtual account provisioning failed via {provider}: {errorMsg}");
+        }
 
-            accountNumber = $"99{Random.Shared.Next(10000000, 99999999)}";
-            bankCode = "035";
-            bankName = "Wema Bank (CebizPay Sandbox)";
-            providerReference = $"DEV-VA-{Guid.NewGuid():N}";
-        }
-        else
-        {
-            accountNumber = result.AccountNumber;
-            bankCode = result.BankCode ?? "035";
-            bankName = result.BankName ?? "Partner Bank";
-            providerReference = result.ProviderReference;
-        }
+        accountNumber = result.AccountNumber;
+        bankCode = result.BankCode ?? "035";
+        bankName = result.BankName ?? "Partner Bank";
+        providerReference = result.ProviderReference;
 
         var virtualAccount = VirtualAccount.CreateOrganization(
             organizationId: organizationId,

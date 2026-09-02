@@ -232,6 +232,8 @@ The backend enforces targeted ASP.NET Core rate limiting policies configured in 
 | **POST** | `/api/v1/auth/register/otp/verify` | Public | `OtpVerificationPolicy` | Verifies mobile OTP and completes registration. Rate limited by OtpVerificationPolicy. | `[FromBody] VerifyOtpCommand command, CancellationToken cancellationToken` |
 | **POST** | `/api/v1/auth/change-password` | Auth Required | `AuthPolicy` | Changes password for the authenticated user. Rate limited by AuthPolicy. | `[FromBody] ChangePasswordCommand command, CancellationToken cancellationToken` |
 | **POST** | `/api/v1/auth/admin/redeem-invite` | Public | `AuthPolicy` | Redeems an administrative invitation token and initializes admin credentials. Rate limited by AuthPolicy. | `[FromBody] CebizPay.Application.UseCases.Admin.Manage.RedeemAdminInviteCommand command, CancellationToken cancellationToken` |
+| **POST** | `/api/v1/auth/refresh-token` | Public | `AuthPolicy` | Exchanges an active refresh token for a new JWT access token and rotated refresh token. | `[FromBody] CebizPay.Application.UseCases.Auth.RefreshToken.RefreshTokenCommand command, CancellationToken cancellationToken` |
+| **POST** | `/api/v1/auth/revoke-token` | Public | `AuthPolicy` | Explicitly revokes a refresh token (e.g. upon user logout). | `[FromBody] CebizPay.Application.UseCases.Auth.RevokeToken.RevokeTokenCommand command, CancellationToken cancellationToken` |
 
 ### 4.11 CardFundingController (`CardFundingController.cs`)
 

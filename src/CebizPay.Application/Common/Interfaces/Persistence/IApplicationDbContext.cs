@@ -20,6 +20,9 @@ public interface IApplicationDbContext
     /// <summary>Gets the admin invitations entity set.</summary>
     IEntitySet<AdminInvitation> AdminInvitations { get; }
 
+    /// <summary>Gets the refresh tokens entity set.</summary>
+    IEntitySet<RefreshToken> RefreshTokens { get; }
+
     /// <summary>Gets the organizations entity set.</summary>
     IEntitySet<Organization> Organizations { get; }
 

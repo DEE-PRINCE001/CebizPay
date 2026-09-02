@@ -37,6 +37,9 @@ public class ApplicationDbContext
     /// <summary>Gets the admin invitations entity set.</summary>
     public DbSet<AdminInvitation> AdminInvitations => Set<AdminInvitation>();
 
+    /// <summary>Gets the refresh tokens entity set.</summary>
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
+
     /// <summary>Gets the organizations entity set.</summary>
     public DbSet<Organization> Organizations => Set<Organization>();
 
@@ -281,6 +284,7 @@ public class ApplicationDbContext
     IEntitySet<IndividualProfile> IApplicationDbContext.IndividualProfiles => new EntitySet<IndividualProfile>(IndividualProfiles);
     IEntitySet<AdminProfile> IApplicationDbContext.AdminProfiles => new EntitySet<AdminProfile>(AdminProfiles);
     IEntitySet<AdminInvitation> IApplicationDbContext.AdminInvitations => new EntitySet<AdminInvitation>(AdminInvitations);
+    IEntitySet<RefreshToken> IApplicationDbContext.RefreshTokens => new EntitySet<RefreshToken>(RefreshTokens);
     IEntitySet<Organization> IApplicationDbContext.Organizations => new EntitySet<Organization>(Organizations);
     IEntitySet<OrganizationMembership> IApplicationDbContext.OrganizationMemberships => new EntitySet<OrganizationMembership>(OrganizationMemberships);
     IEntitySet<Department> IApplicationDbContext.Departments => new EntitySet<Department>(Departments);

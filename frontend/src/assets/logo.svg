@@ -1,0 +1,5 @@
+<svg width="120" height="36" viewBox="0 0 120 36" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="36" height="36" rx="10" fill="#0B41CD"/>
+  <path d="M12 18C12 14.6863 14.6863 12 18 12H24V15H18C16.3431 15 15 16.3431 15 18C15 19.6569 16.3431 21 18 21H24V24H18C14.6863 24 12 21.3137 12 18Z" fill="white"/>
+  <text x="44" y="24" font-family="Inter, sans-serif" font-size="18" font-weight="700" fill="#0F172A">Cebiz<tspan fill="#0B41CD">Pay</tspan></text>
+</svg>
