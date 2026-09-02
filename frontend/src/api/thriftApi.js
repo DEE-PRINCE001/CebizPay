@@ -1,43 +1,55 @@
 import apiClient from './client';
 
 export const thriftApi = {
-  createGroup: async (groupData) => {
+  // Create Thrift / Ajo / Esusu group
+  createThriftGroup: async (groupData) => {
     return apiClient.post('/work/thrift', groupData);
   },
 
-  getMyGroups: async () => {
+  // Get user's active thrift groups
+  getMyThriftGroups: async () => {
     return apiClient.get('/work/thrift');
   },
 
-  getGroupById: async (id) => {
+  // Get specific thrift group details
+  getThriftGroupById: async (id) => {
     return apiClient.get(`/work/thrift/${id}`);
   },
 
-  inviteMember: async (groupId, email, proposedPosition = null) => {
-    return apiClient.post(`/work/thrift/${groupId}/invite`, { email, proposedPosition });
+  // Issue invitation code
+  inviteThriftMember: async (id, inviteData) => {
+    return apiClient.post(`/work/thrift/${id}/invite`, inviteData);
   },
 
-  joinGroup: async (invitationCode) => {
-    return apiClient.post('/work/thrift/join', { invitationCode });
+  // Join thrift group with invitation code
+  joinThriftGroup: async (joinData) => {
+    return apiClient.post('/work/thrift/join', joinData);
   },
 
-  selectPosition: async (groupId, position) => {
-    return apiClient.post(`/work/thrift/${groupId}/position`, { position });
+  // Select rotation payout position
+  selectThriftPosition: async (id, positionData) => {
+    return apiClient.post(`/work/thrift/${id}/position`, positionData);
   },
 
-  getGroupMembers: async (groupId) => {
-    return apiClient.get(`/work/thrift/${groupId}/members`);
+  // Get thrift group members roster
+  getThriftMembers: async (id) => {
+    return apiClient.get(`/work/thrift/${id}/members`);
   },
 
-  getGroupCycles: async (groupId) => {
-    return apiClient.get(`/work/thrift/${groupId}/cycles`);
+  // Get thrift group cycles schedule
+  getThriftCycles: async (id) => {
+    return apiClient.get(`/work/thrift/${id}/cycles`);
   },
 
-  lockPositions: async (groupId) => {
-    return apiClient.post(`/work/thrift/${groupId}/lock`);
+  // Authoritatively lock rotation positions
+  lockThriftPositions: async (id) => {
+    return apiClient.post(`/work/thrift/${id}/lock`);
   },
 
-  leaveAndReimburse: async (groupId, memberId, reason = '') => {
-    return apiClient.post(`/work/thrift/${groupId}/members/${memberId}/leave`, { reason });
-  }
+  // Leave thrift group and claim reimbursement
+  leaveThriftGroup: async (id, memberId, requestData = {}) => {
+    return apiClient.post(`/work/thrift/${id}/members/${memberId}/leave`, requestData);
+  },
 };
+
+export default thriftApi;

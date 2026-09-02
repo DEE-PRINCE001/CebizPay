@@ -35,63 +35,13 @@ export default function OrgRecruitment() {
   const [maxSalary, setMaxSalary] = useState('1800000');
   const [jobDesc, setJobDesc] = useState('');
 
+  const [isLoading, setIsLoading] = useState(false);
+
   // Jobs list
-  const [jobs, setJobs] = useState([
-    {
-      id: 'job-101',
-      title: 'Senior Fintech Backend Engineer (C# / .NET 10)',
-      department: 'Engineering',
-      location: 'Lagos, Nigeria (Hybrid)',
-      employmentType: 'FULL_TIME',
-      minSalary: 1400000.0,
-      maxSalary: 2200000.0,
-      currency: 'NGN',
-      status: 'PUBLISHED',
-      applicationsCount: 8,
-      postedAt: '2026-08-20T09:00:00Z'
-    },
-    {
-      id: 'job-102',
-      title: 'Product Operations & Reconciliation Specialist',
-      department: 'Finance & Accounting',
-      location: 'Victoria Island, Lagos',
-      employmentType: 'FULL_TIME',
-      minSalary: 800000.0,
-      maxSalary: 1200000.0,
-      currency: 'NGN',
-      status: 'PUBLISHED',
-      applicationsCount: 5,
-      postedAt: '2026-08-22T11:00:00Z'
-    }
-  ]);
+  const [jobs, setJobs] = useState([]);
 
   // Applications list
-  const [applications, setApplications] = useState([
-    {
-      id: 'cand-001',
-      jobId: 'job-101',
-      jobTitle: 'Senior Fintech Backend Engineer (C# / .NET 10)',
-      candidateName: 'Adewale Johnson',
-      candidateEmail: 'adewale.j@gmail.com',
-      candidatePhone: '08022114433',
-      resumeUrl: 'https://storage.cebizpay.com/resumes/adewale-cv.pdf',
-      coverLetter: 'I have 6 years building double-entry ledgers and high throughput payment systems in .NET Core...',
-      status: 'SHORTLISTED',
-      appliedAt: '2026-08-25T14:30:00Z'
-    },
-    {
-      id: 'cand-002',
-      jobId: 'job-101',
-      jobTitle: 'Senior Fintech Backend Engineer (C# / .NET 10)',
-      candidateName: 'Zainab Ahmed',
-      candidateEmail: 'zainab.a@outlook.com',
-      candidatePhone: '08099881122',
-      resumeUrl: 'https://storage.cebizpay.com/resumes/zainab-cv.pdf',
-      coverLetter: 'Extensive background in microservices, RabbitMQ event dispatch, and PostgreSQL isolation levels...',
-      status: 'UNDER_REVIEW',
-      appliedAt: '2026-08-27T10:15:00Z'
-    }
-  ]);
+  const [applications, setApplications] = useState([]);
 
   const handleCreateJob = (e) => {
     e.preventDefault();

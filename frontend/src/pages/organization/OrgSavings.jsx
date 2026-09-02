@@ -9,6 +9,7 @@ import { PiggyBank, Plus, Users, Calendar, Sparkles } from 'lucide-react';
 
 export default function OrgSavings() {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const { showSuccess } = useToast();
 
   const [title, setTitle] = useState('');
@@ -16,30 +17,7 @@ export default function OrgSavings() {
   const [frequency, setFrequency] = useState('MONTHLY');
   const [corporateMatchPct, setCorporateMatchPct] = useState('0.05'); // 5% matching
 
-  const [plans, setPlans] = useState([
-    {
-      id: 'sav-org-01',
-      title: 'Tech Equipment & Upskilling Fund',
-      targetAmount: 500000.0,
-      frequency: 'MONTHLY',
-      corporateMatchPct: 0.05,
-      participantsCount: 14,
-      totalSaved: 4200000.0,
-      status: 'ACTIVE',
-      createdAt: '2026-05-01T00:00:00Z'
-    },
-    {
-      id: 'sav-org-02',
-      title: 'Annual Corporate Holiday Savings (December)',
-      targetAmount: 1200000.0,
-      frequency: 'MONTHLY',
-      corporateMatchPct: 0.10,
-      participantsCount: 22,
-      totalSaved: 18400000.0,
-      status: 'ACTIVE',
-      createdAt: '2026-01-01T00:00:00Z'
-    }
-  ]);
+  const [plans, setPlans] = useState([]);
 
   const handleCreate = (e) => {
     e.preventDefault();

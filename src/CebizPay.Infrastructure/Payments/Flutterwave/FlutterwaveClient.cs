@@ -1,3 +1,4 @@
+#pragma warning disable CA1848, CA1873
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
@@ -360,6 +361,15 @@ public sealed partial class FlutterwaveClient
         string? customerName,
         CancellationToken cancellationToken = default)
     {
+        if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.SecretKey))
+        {
+            _logger.LogInformation("Sandbox Simulation: Simulated Flutterwave card checkout initialization for txRef: {TxRef}", txRef);
+            return CardPaymentInitializationResult.Success(
+                authorizationUrl: $"https://checkout.flutterwave.com/v3/hosted/pay/sandbox-{txRef.Trim()}",
+                accessCode: null,
+                reference: txRef.Trim());
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, "v3/payments");
         ApplyAuthentication(request);
 

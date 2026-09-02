@@ -23,33 +23,7 @@ export default function OrgERPVouchers() {
   const [currency, setCurrency] = useState('NGN');
   const [purpose, setPurpose] = useState('');
   const [paymentMethod, setPaymentMethod] = useState('CORPORATE_BANK_TRANSFER');
-
-  const [vouchers, setVouchers] = useState([
-    {
-      id: 'CPV-2026-001',
-      payeeName: 'Amazon Web Services Inc.',
-      purpose: 'Monthly Cloud Infrastructure & Dedicated VPC Compute',
-      amount: 1850000.0,
-      currency: 'NGN',
-      paymentMethod: 'CORPORATE_BANK_TRANSFER',
-      status: 'APPROVED',
-      preparedBy: 'DevOps Lead',
-      approvedBy: 'CEO (Tunde Adeleke)',
-      createdAt: '2026-08-28T09:00:00Z'
-    },
-    {
-      id: 'CPV-2026-002',
-      payeeName: 'Knight Frank Commercial Real Estate',
-      purpose: 'Q4 2026 Headquarters Office Lease Retainer',
-      amount: 4500000.0,
-      currency: 'NGN',
-      paymentMethod: 'CHEQUE_PAYMENT',
-      status: 'DRAFT',
-      preparedBy: 'Operations Manager',
-      approvedBy: 'Pending CEO Approval',
-      createdAt: '2026-08-30T14:00:00Z'
-    }
-  ]);
+  const [vouchers, setVouchers] = useState([]);
 
   const handleCreate = (e) => {
     e.preventDefault();

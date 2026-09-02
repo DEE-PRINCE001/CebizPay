@@ -5,6 +5,7 @@ import Badge from '../../components/common/Badge';
 import Tabs from '../../components/common/Tabs';
 import Modal from '../../components/common/Modal';
 import { useToast } from '../../context/ToastContext';
+import PhoneInput from '../../components/common/PhoneInput';
 import { Contact, Truck, Plus, Mail, Phone, MapPin } from 'lucide-react';
 
 export default function OrgERPCrm() {
@@ -18,51 +19,8 @@ export default function OrgERPCrm() {
   const [address, setAddress] = useState('');
   const [channelOrPolicy, setChannelOrPolicy] = useState('');
 
-  const [customers, setCustomers] = useState([
-    {
-      id: 'cust-01',
-      name: 'FirstBank Digital Innovations Unit',
-      email: 'procurement@firstbanknigeria.com',
-      phone: '01-280-9900',
-      address: 'Marina, Lagos Island, Lagos',
-      acquisitionChannel: 'Direct Enterprise Partnership',
-      ordersCount: 4,
-      status: 'ACTIVE'
-    },
-    {
-      id: 'cust-02',
-      name: 'Moniepoint MFB Corporate Accounts',
-      email: 'partnerships@moniepoint.com',
-      phone: '01-888-0192',
-      address: 'Admiralty Way, Lekki Phase 1, Lagos',
-      acquisitionChannel: 'Fintech Summit 2026',
-      ordersCount: 7,
-      status: 'ACTIVE'
-    }
-  ]);
-
-  const [suppliers, setSuppliers] = useState([
-    {
-      id: 'sup-01',
-      name: 'Dell Technologies West Africa',
-      email: 'enterprise.orders@dell.ng',
-      phone: '01-462-8811',
-      address: 'Victoria Island, Lagos',
-      returnPolicy: '30-Day RMA Manufacturer Replacement Guarantee',
-      activeOrders: 2,
-      status: 'ACTIVE'
-    },
-    {
-      id: 'sup-02',
-      name: 'MainOne Cable Telecommunications',
-      email: 'corporate.sales@mainone.net',
-      phone: '01-342-9900',
-      address: 'VI, Lagos',
-      returnPolicy: '99.9% SLA Service Credits',
-      activeOrders: 1,
-      status: 'ACTIVE'
-    }
-  ]);
+  const [customers, setCustomers] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
 
   const handleCreate = (e) => {
     e.preventDefault();
@@ -218,15 +176,17 @@ export default function OrgERPCrm() {
             <label className="block font-semibold text-slate-700 mb-1">Company / Entity Name</label>
             <input type="text" required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Zenith Bank Corporate" className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl font-bold" />
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Email Address</label>
-              <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="contact@company.com" className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl" />
-            </div>
-            <div>
-              <label className="block font-semibold text-slate-700 mb-1">Phone Number</label>
-              <input type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="08022334455" className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl font-mono" />
-            </div>
+          <div>
+            <label className="block font-semibold text-slate-700 mb-1">Email Address</label>
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="contact@company.com" className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl" />
+          </div>
+          <div>
+            <PhoneInput
+              label="Contact Phone Number"
+              required
+              value={phone}
+              onChange={setPhone}
+            />
           </div>
           <div>
             <label className="block font-semibold text-slate-700 mb-1">Physical Address</label>

@@ -103,7 +103,7 @@ public static class DependencyInjection
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentOrganizationContext, CurrentOrganizationContext>();
-        services.AddScoped<IMfaCodeDeliveryService, NoOpMfaCodeDeliveryService>();
+        services.AddScoped<IMfaCodeDeliveryService, EmailAndSmsMfaCodeDeliveryService>();
         services.AddScoped<IMfaService, MfaService>();
         services.AddTransient<IIdentityService, IdentityService>();
         services.AddScoped<ITransactionPinService, TransactionPinService>();
@@ -113,6 +113,19 @@ public static class DependencyInjection
         services.AddSingleton<CebizPay.Application.Common.Interfaces.Security.IAuditSanitizer, CebizPay.Application.Common.Security.AuditSanitizer>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Security.IAuditContextAccessor, AuditContextAccessor>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Security.IAuditLogService, AuditLogService>();
+
+        // Configure Communication (Email & SMS) Options & Clients
+        services.AddOptions<SendGridOptions>()
+            .Bind(configuration.GetSection(SendGridOptions.SectionName));
+
+        services.AddOptions<TwilioOptions>()
+            .Bind(configuration.GetSection(TwilioOptions.SectionName));
+
+        services.AddHttpClient<SendGridEmailService>();
+        services.AddScoped<IEmailService, SendGridEmailService>();
+
+        services.AddHttpClient<TwilioSmsService>();
+        services.AddScoped<ISmsService, TwilioSmsService>();
 
         // Configure Finance services
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IWalletService, CebizPay.Infrastructure.Finance.WalletService>();

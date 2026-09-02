@@ -27,50 +27,10 @@ export default function OrgERPInvoices() {
   const [includeVat, setIncludeVat] = useState(true);
 
   // Invoices list
-  const [invoices, setInvoices] = useState([
-    {
-      id: 'INV-2026-001',
-      customerName: 'FirstBank Digital Innovations Unit',
-      description: 'Core Banking API Integration (Milestone 1)',
-      subtotal: 5000000.0,
-      vatRate: 0.075, // 7.5% statutory VAT
-      vatAmount: 375000.0,
-      totalAmount: 5375000.0,
-      currency: 'NGN',
-      status: 'ISSUED',
-      createdAt: '2026-08-20T10:00:00Z',
-      dueDate: '2026-09-20T23:59:59Z'
-    },
-    {
-      id: 'INV-2026-002',
-      customerName: 'Moniepoint MFB Corporate Accounts',
-      description: 'Dedicated Settlement Rail Implementation',
-      subtotal: 3500000.0,
-      vatRate: 0.075,
-      vatAmount: 262500.0,
-      totalAmount: 3762500.0,
-      currency: 'NGN',
-      status: 'PAID',
-      createdAt: '2026-08-15T14:30:00Z',
-      dueDate: '2026-09-15T23:59:59Z',
-      settledAt: '2026-08-25T11:00:00Z'
-    }
-  ]);
+  const [invoices, setInvoices] = useState([]);
 
   // Receipts list
-  const [receipts, setReceipts] = useState([
-    {
-      id: 'REC-2026-001',
-      receiptNumber: 'RCPT-MNPT-88492',
-      invoiceId: 'INV-2026-002',
-      customerName: 'Moniepoint MFB Corporate Accounts',
-      amountPaid: 3762500.0,
-      paymentMethod: 'DEDICATED_VIRTUAL_ACCOUNT',
-      currency: 'NGN',
-      status: 'VERIFIED',
-      issuedAt: '2026-08-25T11:00:00Z'
-    }
-  ]);
+  const [receipts, setReceipts] = useState([]);
 
   const handleCreateInvoice = (e) => {
     e.preventDefault();

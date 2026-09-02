@@ -16,28 +16,7 @@ export default function OrgERPExpenses() {
   const [description, setDescription] = useState('');
   const [paymentMode, setPaymentMode] = useState('CORPORATE_WALLET');
 
-  const [expenses, setExpenses] = useState([
-    {
-      id: 'exp-01',
-      category: 'Office Utilities & Power',
-      description: 'Diesel generator monthly supply & EKEDC power bills',
-      amount: 450000.0,
-      currency: 'NGN',
-      paymentMode: 'CORPORATE_WALLET',
-      date: '2026-08-30T10:00:00Z',
-      recordedBy: 'Finance Ops'
-    },
-    {
-      id: 'exp-02',
-      category: 'Software Licenses',
-      description: 'GitHub Enterprise & Slack Business annual seats',
-      amount: 1250000.0,
-      currency: 'NGN',
-      paymentMode: 'CORPORATE_CARD',
-      date: '2026-08-25T14:30:00Z',
-      recordedBy: 'DevOps Lead'
-    }
-  ]);
+  const [expenses, setExpenses] = useState([]);
 
   const handleCreate = (e) => {
     e.preventDefault();

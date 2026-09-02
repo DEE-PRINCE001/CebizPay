@@ -1,23 +1,42 @@
+#pragma warning disable CA1848, CA1873
 using System.Globalization;
 using CebizPay.Application.Common.Interfaces.Caching;
+using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Security;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace CebizPay.Infrastructure.Services;
 
 /// <summary>
-/// Infrastructure implementation of OTP generation, verification, and rate limiting backed by Redis.
+/// Infrastructure implementation of OTP generation, verification, SMS delivery, and rate limiting backed by Redis and Twilio SMS.
 /// Rate-limiting constraint: Max 3 request attempts per device per 15 minutes.
 /// </summary>
 public sealed class RedisOtpService : IOtpService
 {
     private readonly ICacheService _cacheService;
+    private readonly ISmsService? _smsService;
+    private readonly ILogger<RedisOtpService> _logger;
 
     /// <summary>
-    /// Initializes a new instance of <see cref="RedisOtpService"/>.
+    /// Initializes a new instance of <see cref="RedisOtpService"/> with SMS delivery.
+    /// </summary>
+    public RedisOtpService(
+        ICacheService cacheService,
+        ISmsService smsService,
+        ILogger<RedisOtpService> logger)
+    {
+        _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
+        _smsService = smsService;
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
+    /// <summary>
+    /// Backward-compatible constructor for unit testing without SMS service.
     /// </summary>
     public RedisOtpService(ICacheService cacheService)
+        : this(cacheService, null!, NullLogger<RedisOtpService>.Instance)
     {
-        _cacheService = cacheService;
     }
 
     /// <inheritdoc/>
@@ -40,6 +59,15 @@ public sealed class RedisOtpService : IOtpService
 
         var otpKey = $"otp_code:{phoneNumber}";
         await _cacheService.SetAsync(otpKey, code, TimeSpan.FromMinutes(5), cancellationToken);
+
+        _logger.LogInformation("Generated OTP verification code for phone {PhoneNumber}.", phoneNumber);
+
+        // Dispatch via SMS service if wired
+        if (_smsService != null)
+        {
+            var smsMessage = $"Your CebizPay verification code is: {code}. Valid for 5 minutes. Do not share this code.";
+            await _smsService.SendSmsAsync(phoneNumber, smsMessage, cancellationToken).ConfigureAwait(false);
+        }
 
         return (true, code, null);
     }

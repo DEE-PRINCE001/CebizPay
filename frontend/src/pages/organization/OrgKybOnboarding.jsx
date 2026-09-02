@@ -4,6 +4,7 @@ import Badge from '../../components/common/Badge';
 import { useAuth } from '../../context/AuthContext';
 import { useToast } from '../../context/ToastContext';
 import { orgApi } from '../../api/orgApi';
+import PhoneInput from '../../components/common/PhoneInput';
 import { Building, ShieldCheck, FileText, CheckCircle2, Upload, ExternalLink, ArrowRight } from 'lucide-react';
 
 export default function OrgKybOnboarding() {
@@ -170,6 +171,15 @@ export default function OrgKybOnboarding() {
                 value={address}
                 onChange={(e) => setAddress(e.target.value)}
                 className="w-full px-3.5 py-2.5 bg-white border border-slate-200 rounded-xl"
+              />
+            </div>
+
+            <div>
+              <PhoneInput
+                label="Official Corporate Phone Number"
+                required
+                value={phone}
+                onChange={setPhone}
               />
             </div>
 

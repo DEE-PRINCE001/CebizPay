@@ -71,22 +71,28 @@ builder.Services.AddApiVersioning(options =>
 var corsOptions = builder.Configuration.GetSection(CorsOptions.SectionName).Get<CorsOptions>()
     ?? new CorsOptions();
 
+var defaultDevOrigins = new[]
+{
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5015",
+    "http://127.0.0.1:5015",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+};
+
+var effectiveOrigins = corsOptions.AllowedOrigins.Length > 0
+    ? corsOptions.AllowedOrigins
+    : defaultDevOrigins;
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("DefaultCorsPolicy", policy =>
     {
-        if (builder.Environment.IsDevelopment() && corsOptions.AllowedOrigins.Length == 0)
-        {
-            policy.WithOrigins("http://localhost:5173", "http://127.0.0.1:5015")
-                .AllowAnyHeader()
-                .AllowAnyMethod();
-        }
-        else if (corsOptions.AllowedOrigins.Length > 0)
-        {
-            policy.WithOrigins(corsOptions.AllowedOrigins)
-                .AllowAnyHeader()
-                .AllowAnyMethod();
-        }
+        policy.WithOrigins(effectiveOrigins)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
     });
 });
 

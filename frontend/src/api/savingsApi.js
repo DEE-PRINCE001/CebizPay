@@ -1,31 +1,22 @@
 import apiClient from './client';
 
 export const savingsApi = {
-  // Org-Sponsored Savings Plans
-  createOrgSavingsPlan: async (planData) => {
-    return apiClient.post('/org/savings/plans', planData);
+  // Org Sponsored Schemes (B2B Org)
+  getOrgSponsoredSchemes: async (params = {}) => {
+    return apiClient.get('/org/savings/schemes', { params });
   },
 
-  getOrgSavingsPlans: async () => {
-    return apiClient.get('/org/savings/plans');
+  createOrgSponsoredScheme: async (schemeData) => {
+    return apiClient.post('/org/savings/schemes', schemeData);
   },
 
-  getOrgSavingsPlanById: async (id) => {
-    return apiClient.get(`/org/savings/plans/${id}`);
-  },
-
-  getOrgSavingsParticipants: async (id) => {
-    return apiClient.get(`/org/savings/plans/${id}/participants`);
-  },
-
-  // Staff / User Savings Accounts
+  // Staff Personal Savings Operations (B2C Staff)
   previewSavings: async (previewData) => {
     return apiClient.post('/work/savings/preview', previewData);
   },
 
-  openSavingsAccount: async (data, idempotencyKey = null) => {
-    const headers = idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : {};
-    return apiClient.post('/work/savings', data, { headers });
+  openSavingsAccount: async (accountData) => {
+    return apiClient.post('/work/savings', accountData);
   },
 
   getMySavingsAccounts: async () => {
@@ -36,17 +27,17 @@ export const savingsApi = {
     return apiClient.get(`/work/savings/${id}`);
   },
 
-  contributeToSavings: async (id, amount, idempotencyKey = null) => {
-    const headers = idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : {};
-    return apiClient.post(`/work/savings/${id}/contribute`, { amount }, { headers });
+  contributeSavings: async (id, amount, idempotencyKey = null) => {
+    return apiClient.post(`/work/savings/${id}/contribute`, { amount, idempotencyKey });
   },
 
-  previewWithdrawal: async (id) => {
+  previewSavingsWithdrawal: async (id) => {
     return apiClient.post(`/work/savings/${id}/withdraw/preview`);
   },
 
-  withdrawFromSavings: async (id, idempotencyKey = null) => {
-    const headers = idempotencyKey ? { 'X-Idempotency-Key': idempotencyKey } : {};
-    return apiClient.post(`/work/savings/${id}/withdraw`, {}, { headers });
-  }
+  withdrawSavings: async (id, idempotencyKey = null) => {
+    return apiClient.post(`/work/savings/${id}/withdraw`, { idempotencyKey });
+  },
 };
+
+export default savingsApi;

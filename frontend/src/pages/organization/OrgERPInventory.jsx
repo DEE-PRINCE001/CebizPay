@@ -22,44 +22,7 @@ export default function OrgERPInventory() {
   const [initialQty, setInitialQty] = useState('100');
   const [reorderLevel, setReorderLevel] = useState('20');
 
-  const [inventory, setInventory] = useState([
-    {
-      id: 'inv-01',
-      name: 'Dell UltraSharp 27" 4K Monitor',
-      sku: 'HW-MON-4K-27',
-      category: 'Hardware Assets',
-      unitCost: 280000.0,
-      sellingPrice: 380000.0,
-      quantityOnHand: 42,
-      reorderLevel: 10,
-      status: 'IN_STOCK',
-      valuation: 11760000.0
-    },
-    {
-      id: 'inv-02',
-      name: 'MacBook Pro M3 Max 16"',
-      sku: 'HW-MBP-M3-16',
-      category: 'Hardware Assets',
-      unitCost: 2850000.0,
-      sellingPrice: 3450000.0,
-      quantityOnHand: 4,
-      reorderLevel: 5,
-      status: 'LOW_STOCK',
-      valuation: 11400000.0
-    },
-    {
-      id: 'inv-03',
-      name: 'Logitech MX Master 3S Mouse',
-      sku: 'ACC-LOG-MX3S',
-      category: 'Peripherals',
-      unitCost: 85000.0,
-      sellingPrice: 130000.0,
-      quantityOnHand: 0,
-      reorderLevel: 15,
-      status: 'OUT_OF_STOCK',
-      valuation: 0
-    }
-  ]);
+  const [inventory, setInventory] = useState([]);
 
   const handleCreateItem = (e) => {
     e.preventDefault();

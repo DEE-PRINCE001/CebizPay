@@ -1,68 +1,64 @@
 import apiClient from './client';
 
 export const walletApi = {
-  // Peer wallet transfer
-  peerTransfer: async (data, idempotencyKey = null) => {
-    const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {};
-    return apiClient.post('/wallet/transfer/peer', data, { headers });
+  // Execute peer wallet transfer
+  transferPeer: async ({ recipientIdentifier, amount, currency = 'NGN', transactionPin, idempotencyKey, organizationContext = null }) => {
+    return apiClient.post('/wallet/transfer/peer', {
+      recipientIdentifier,
+      amount: parseFloat(amount),
+      currency,
+      transactionPin,
+      idempotencyKey,
+      organizationContext,
+    });
   },
 
-  // Outbound bank transfer
-  bankTransfer: async (data, idempotencyKey = null) => {
-    const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {};
-    return apiClient.post('/wallet/transfer/bank', data, { headers });
+  // Execute outbound bank payout via NIP
+  transferBank: async ({ destinationBankCode, destinationAccountNumber, amount, currency = 'NGN', transactionPin, idempotencyKey, organizationContext = null }) => {
+    return apiClient.post('/wallet/transfer/bank', {
+      destinationBankCode,
+      destinationAccountNumber,
+      amount: parseFloat(amount),
+      currency,
+      transactionPin,
+      idempotencyKey,
+      organizationContext,
+    });
   },
 
-  // Resolve beneficiary bank account name
+  // Resolve NUBAN Bank Account name
   resolveBankAccount: async (bankCode, accountNumber) => {
     return apiClient.get('/wallet/transfer/resolve-account', {
-      params: { bankCode, accountNumber }
+      params: { bankCode, accountNumber },
     });
   },
 
-  // Get external funding accounts attached to wallet
-  getExternalAccounts: async (organizationId = null, currency = null) => {
-    return apiClient.get('/wallet/external-accounts', {
-      params: { organizationId, currency }
-    });
+  // Get external funding accounts
+  getExternalFundingAccounts: async (params = {}) => {
+    return apiClient.get('/wallet/external-accounts', { params });
   },
 
-  // Provision Monnify reserved account
-  provisionMonnifyAccount: async (organizationId = null, currency = 'NGN') => {
-    return apiClient.post('/wallet/external-accounts/monnify', null, {
-      params: { organizationId, currency }
-    });
+  // Provision Monnify virtual account
+  provisionMonnifyAccount: async (params = {}) => {
+    return apiClient.post('/wallet/external-accounts/monnify', null, { params });
   },
 
-  // Set primary external funding account
-  setPrimaryAccount: async (accountId, organizationId = null) => {
-    return apiClient.post(`/wallet/external-accounts/${accountId}/primary`, null, {
-      params: { organizationId }
-    });
+  // Provision dedicated virtual account
+  provisionVirtualAccount: async (data = {}) => {
+    return apiClient.post('/virtual-accounts/provision', data);
   },
 
-  // Deactivate account
-  deactivateAccount: async (accountId, organizationId = null) => {
-    return apiClient.delete(`/wallet/external-accounts/${accountId}`, {
-      params: { organizationId }
-    });
-  },
-
-  // Virtual Accounts controller
-  provisionVirtualAccount: async (currency = 'NGN', provider = null) => {
-    return apiClient.post('/virtual-accounts/provision', { currency, provider });
-  },
-
+  // Get primary dedicated virtual account (DVA)
   getPrimaryVirtualAccount: async (currency = 'NGN') => {
-    return apiClient.get('/virtual-accounts/primary', {
-      params: { currency }
-    });
+    return apiClient.get('/virtual-accounts/primary', { params: { currency } });
   },
 
-  // Get funding transaction status
-  getFundingTransaction: async (id, organizationId = null) => {
-    return apiClient.get(`/wallet/funding/${id}`, {
-      params: { organizationId }
+  // Get funding transaction by ID
+  getFundingTransaction: async (fundingId, organizationId = null) => {
+    return apiClient.get(`/wallet/funding/${fundingId}`, {
+      params: { organizationId },
     });
-  }
+  },
 };
+
+export default walletApi;

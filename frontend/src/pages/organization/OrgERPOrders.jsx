@@ -18,44 +18,8 @@ export default function OrgERPOrders() {
   const [qty, setQty] = useState('10');
   const [unitPrice, setUnitPrice] = useState('280000');
 
-  const [purchaseOrders, setPurchaseOrders] = useState([
-    {
-      id: 'PO-2026-001',
-      supplierName: 'Dell Technologies West Africa',
-      item: 'Dell UltraSharp 27" Monitors (Qty: 20)',
-      totalAmount: 5600000.0,
-      currency: 'NGN',
-      status: 'CONFIRMED',
-      receivedQuantity: 20,
-      orderedQuantity: 20,
-      createdAt: '2026-08-15T10:00:00Z'
-    },
-    {
-      id: 'PO-2026-002',
-      supplierName: 'Cisco Networking Systems Ltd',
-      item: 'Cisco Catalyst 24-Port Gigabit Switches (Qty: 5)',
-      totalAmount: 3200000.0,
-      currency: 'NGN',
-      status: 'DRAFT',
-      receivedQuantity: 0,
-      orderedQuantity: 5,
-      createdAt: '2026-08-28T14:00:00Z'
-    }
-  ]);
-
-  const [salesOrders, setSalesOrders] = useState([
-    {
-      id: 'SO-2026-001',
-      customerName: 'FirstBank Digital Innovations Unit',
-      item: 'Custom Core Banking Integration SOW Phase 1',
-      totalAmount: 8500000.0,
-      currency: 'NGN',
-      status: 'CONFIRMED',
-      fulfilledQuantity: 1,
-      orderedQuantity: 1,
-      createdAt: '2026-08-18T11:30:00Z'
-    }
-  ]);
+  const [purchaseOrders, setPurchaseOrders] = useState([]);
+  const [salesOrders, setSalesOrders] = useState([]);
 
   const handleCreateOrder = (e) => {
     e.preventDefault();

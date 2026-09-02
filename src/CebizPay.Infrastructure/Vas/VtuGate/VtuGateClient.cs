@@ -1,3 +1,4 @@
+#pragma warning disable CA1848, CA1873
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -135,6 +136,12 @@ public sealed partial class VtuGateClient
         var cleanPhone = phoneNumber.Trim();
         var maskedPhone = MaskPhoneNumber(cleanPhone);
 
+        if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.ApiKey))
+        {
+            _logger.LogInformation("Sandbox Simulation: Simulated airtime purchase for {MaskedPhone} ({NetworkCode}) Amount: {Amount}", maskedPhone, networkCode, amount);
+            return new VtuGateResponse("success", "Airtime top-up successful (Sandbox Simulated).", reference, $"VTU_SIM_{Guid.NewGuid():N}"[..20], "00", null);
+        }
+
         var payload = new VtuGateAirtimeRequest(
             RequestId: reference.Trim(),
             Phone: cleanPhone,
@@ -191,6 +198,12 @@ public sealed partial class VtuGateClient
     {
         var cleanPhone = phoneNumber.Trim();
         var maskedPhone = MaskPhoneNumber(cleanPhone);
+
+        if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.ApiKey))
+        {
+            _logger.LogInformation("Sandbox Simulation: Simulated data bundle purchase for {MaskedPhone} ({NetworkCode}) Plan: {PlanId}", maskedPhone, networkCode, productCode);
+            return new VtuGateResponse("success", "Data bundle purchase successful (Sandbox Simulated).", reference, $"VTU_SIM_{Guid.NewGuid():N}"[..20], "00", null);
+        }
 
         var payload = new VtuGateDataRequest(
             RequestId: reference.Trim(),

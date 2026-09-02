@@ -41,7 +41,32 @@ public sealed partial class VtuGateVasProvider : IVasProvider
             }
         }
 
+        // Prefix-based fallback resolution for Nigerian mobile networks
+        var prefixNetwork = ResolveNetworkFromPrefix(phoneNumber);
+        if (prefixNetwork.HasValue)
+        {
+            return VasOperatorResolutionResult.Success(prefixNetwork.Value);
+        }
+
         return VasOperatorResolutionResult.Failure(response.Message ?? "Operator resolution failed.");
+    }
+
+    private static VasNetwork? ResolveNetworkFromPrefix(string phoneNumber)
+    {
+        if (string.IsNullOrWhiteSpace(phoneNumber)) return null;
+        var clean = phoneNumber.Trim().Replace("+234", "0", StringComparison.Ordinal);
+        if (clean.StartsWith("234", StringComparison.Ordinal)) clean = "0" + clean[3..];
+        if (clean.Length < 4) return null;
+
+        var prefix = clean[..4];
+        return prefix switch
+        {
+            "0803" or "0806" or "0703" or "0706" or "0813" or "0816" or "0810" or "0814" or "0903" or "0906" or "0913" or "0916" => VasNetwork.Mtn,
+            "0802" or "0808" or "0708" or "0812" or "0701" or "0902" or "0901" or "0907" or "0904" or "0912" => VasNetwork.Airtel,
+            "0805" or "0807" or "0705" or "0815" or "0811" or "0905" or "0915" => VasNetwork.Glo,
+            "0809" or "0817" or "0818" or "0909" or "0908" => VasNetwork.NineMobile,
+            _ => null
+        };
     }
 
     /// <inheritdoc/>

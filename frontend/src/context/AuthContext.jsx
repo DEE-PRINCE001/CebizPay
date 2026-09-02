@@ -73,20 +73,27 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     try {
       const response = await authApi.login(email, password);
-      if (response && response.succeeded) {
-        setToken(response.accessToken);
+      if (response && (response.accessToken || response.succeeded)) {
+        const accessToken = response.accessToken;
+        setToken(accessToken);
+        localStorage.setItem('cebizpay_token', accessToken);
+
+        if (response.refreshToken) {
+          localStorage.setItem('cebizpay_refresh_token', response.refreshToken);
+        }
+
         const userData = {
-          id: response.userId,
+          id: response.userId || 'usr_current',
           email: email,
-          name: email.split('@')[0],
-          isSuperAdmin: email.toLowerCase().includes('honour') || email.toLowerCase().includes('admin'),
+          name: response.firstName ? `${response.firstName} ${response.lastName}` : email.split('@')[0],
+          roles: response.roles || (email.toLowerCase().includes('honour') ? ['SuperAdmin'] : ['Consumer']),
+          isSuperAdmin: email.toLowerCase().includes('honour') || response.roles?.includes('SuperAdmin'),
         };
         setUser(userData);
 
-        // Set default initial role based on user
         if (userData.isSuperAdmin) {
           setActiveRole(ROLES.SUPER_ADMIN);
-        } else if (email.includes('org')) {
+        } else if (email.includes('org') || email.includes('apex')) {
           setActiveRole(ROLES.ORGANIZATION);
         } else {
           setActiveRole(ROLES.CONSUMER);
@@ -94,25 +101,24 @@ export function AuthProvider({ children }) {
 
         return { success: true, data: response };
       }
-      return { success: false, error: response.errors?.join(', ') || 'Login failed' };
+      return { success: false, error: response?.errors?.join(', ') || 'Login failed' };
     } catch (err) {
-      // If live backend error, allow demo mode switch gracefully with detailed error report
-      console.warn('API login failed, checking demo login fallback:', err.message);
       throw err;
     }
   };
 
-  // Quick Demo Login (for rapid testing / presentation)
-  const loginAsDemo = (roleType) => {
+  // 1-Click Role Presets
+  const loginWithPreset = (roleType) => {
     let demoUser = null;
-    let demoToken = 'demo_jwt_token_' + Date.now();
+    let demoToken = 'preset_token_' + Date.now();
 
     if (roleType === ROLES.SUPER_ADMIN) {
       demoUser = {
-        id: 'admin-001',
+        id: '53cc6088-fafd-4722-b08b-2cdb7d1371dd',
         email: 'honour@gmail.com',
         name: 'Honour Ajani',
         role: 'Super Admin',
+        roles: ['SuperAdmin'],
         isSuperAdmin: true,
         kycStatus: 'VERIFIED'
       };
@@ -120,9 +126,10 @@ export function AuthProvider({ children }) {
     } else if (roleType === ROLES.ORGANIZATION) {
       demoUser = {
         id: 'org-ceo-001',
-        email: 'ceo@apextech.com',
-        name: 'Tunde Adeleke (Apex CEO)',
+        email: 'org@apextech.com',
+        name: 'Tunde Adeleke',
         role: 'Org Admin',
+        roles: ['OrgAdmin'],
         isSuperAdmin: false,
         organizationId: activeOrg?.id,
         kycStatus: 'VERIFIED'
@@ -135,6 +142,7 @@ export function AuthProvider({ children }) {
         name: 'Amina Adeleke',
         phone: '08012345678',
         role: 'Senior Software Engineer',
+        roles: ['Consumer'],
         isSuperAdmin: false,
         organizationId: activeOrg?.id,
         kycStatus: 'VERIFIED',
@@ -151,6 +159,7 @@ export function AuthProvider({ children }) {
     setToken(null);
     setUser(null);
     localStorage.removeItem('cebizpay_token');
+    localStorage.removeItem('cebizpay_refresh_token');
     localStorage.removeItem('cebizpay_user');
   };
 
@@ -166,16 +175,21 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider
       value={{
         token,
+        setToken,
         user,
+        setUser,
         activeRole,
+        setActiveRole,
         activeOrg,
+        setActiveOrg,
         balanceVisible,
+        setBalanceVisible,
         isAuthenticated: !!token || !!user,
         login,
-        loginAsDemo,
+        loginWithPreset,
+        loginAsDemo: loginWithPreset,
         logout,
         switchRole,
-        setActiveOrg,
         toggleBalancePrivacy,
       }}
     >

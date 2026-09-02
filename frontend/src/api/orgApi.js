@@ -10,6 +10,10 @@ export const orgApi = {
     return apiClient.post('/org/kyb/register-step2', data);
   },
 
+  updateOrgStatus: async (orgId, status, reason = null) => {
+    return apiClient.patch(`/organizations/${orgId}/status`, { status, reason });
+  },
+
   // Departments
   getDepartments: async (params = {}) => {
     return apiClient.get('/org/departments', { params });
@@ -94,6 +98,10 @@ export const orgApi = {
     return apiClient.post('/org/staff/invite-bulk', { emails });
   },
 
+  acceptStaffInvitation: async (command) => {
+    return apiClient.post('/org/staff/accept', command);
+  },
+
   assignStaffWorkforce: async (id, data) => {
     return apiClient.put(`/org/staff/${id}/assign`, data);
   },
@@ -110,3 +118,5 @@ export const orgApi = {
     return apiClient.post(`/org/staff/${id}/terminate`, { reason });
   },
 };
+
+export default orgApi;

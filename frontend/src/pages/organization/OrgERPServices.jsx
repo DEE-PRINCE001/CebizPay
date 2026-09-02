@@ -18,47 +18,8 @@ export default function OrgERPServices() {
   const [rate, setRate] = useState('45000');
   const [category, setCategory] = useState('Cloud Architecture');
 
-  const [servicesRendered, setServicesRendered] = useState([
-    {
-      id: 'srv-ren-01',
-      name: 'Custom Core Banking Integration',
-      category: 'Enterprise Fintech',
-      billingType: 'FIXED_PROJECT',
-      rate: 8500000.0,
-      currency: 'NGN',
-      isActive: true
-    },
-    {
-      id: 'srv-ren-02',
-      name: 'DevOps & Kubernetes Cloud Architecture',
-      category: 'Cloud Engineering',
-      billingType: 'HOURLY',
-      rate: 45000.0,
-      currency: 'NGN',
-      isActive: true
-    }
-  ]);
-
-  const [servicesBought, setServicesBought] = useState([
-    {
-      id: 'srv-bgt-01',
-      name: 'AWS Cloud Hosting & Dedicated VPC',
-      supplierName: 'Amazon Web Services',
-      billingType: 'MONTHLY',
-      rate: 1850000.0,
-      currency: 'NGN',
-      isActive: true
-    },
-    {
-      id: 'srv-bgt-02',
-      name: 'Smile ID Biometrics Verification Tier',
-      supplierName: 'Smile Identity Inc.',
-      billingType: 'PER_TRANSACTION',
-      rate: 250.0,
-      currency: 'NGN',
-      isActive: true
-    }
-  ]);
+  const [servicesRendered, setServicesRendered] = useState([]);
+  const [servicesBought, setServicesBought] = useState([]);
 
   const handleCreate = (e) => {
     e.preventDefault();

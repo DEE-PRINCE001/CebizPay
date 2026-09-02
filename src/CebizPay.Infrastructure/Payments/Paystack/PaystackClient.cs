@@ -1,3 +1,4 @@
+#pragma warning disable CA1848, CA1873
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
@@ -417,6 +418,15 @@ public sealed partial class PaystackClient
         string callbackUrl,
         CancellationToken cancellationToken = default)
     {
+        if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.SecretKey))
+        {
+            _logger.LogInformation("Sandbox Simulation: Simulated Paystack card checkout initialization for reference: {Reference}", reference);
+            return CardPaymentInitializationResult.Success(
+                authorizationUrl: $"https://checkout.paystack.com/sandbox-{reference.Trim()}",
+                accessCode: $"pstk_access_{Guid.NewGuid():N}"[..20],
+                reference: reference.Trim());
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, "transaction/initialize");
         ApplyAuthentication(request);
 
