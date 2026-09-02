@@ -25,6 +25,7 @@ coverage/
 !.env.example
 implementation/
 prompts/
+frontend/design-library/
 
 # OS
 .DS_Store

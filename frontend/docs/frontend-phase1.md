@@ -11,7 +11,7 @@ Your responsibility in this phase is to perform a comprehensive analysis of:
 1. The existing backend codebase
 2. The complete available API surface
 3. Authentication and authorization
-4. The supplied design library
+4. The supplied design library(frontend/design-library)
 5. The application's likely web-facing features and pages
 6. The relationship between backend capabilities and frontend requirements
 
