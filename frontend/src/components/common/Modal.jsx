@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { X } from 'lucide-react';
 
 /**
- * Centered Modal Dialog with backdrop blur as observed in Create Depts.png (D074).
+ * Centered modal dialog with backdrop blur.
  */
 export default function Modal({
   isOpen,

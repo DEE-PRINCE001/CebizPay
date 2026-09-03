@@ -2,8 +2,7 @@ import React from 'react';
 import { Search, X } from 'lucide-react';
 
 /**
- * Pill-shaped Search Input as observed in Organisations Wallet.png (D274) and Staff.png (D331).
- * Uses design system color tokens from index.css.
+ * Search input field with leading icon and clear button.
  */
 export default function SearchInput({
   value,

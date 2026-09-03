@@ -15,13 +15,35 @@ const STORAGE_KEYS = {
   ORGANIZATION_ID: 'cebizpay_org_id'
 };
 
+/**
+ * Safely decodes a JWT token payload without third-party dependencies.
+ */
+function decodeJwtPayload(token) {
+  try {
+    if (!token || typeof token !== 'string') return {};
+    const parts = token.split('.');
+    if (parts.length !== 3) return {};
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(
+      atob(base64)
+        .split('')
+        .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
+        .join('')
+    );
+    return JSON.parse(jsonPayload);
+  } catch {
+    return {};
+  }
+}
+
 export const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [accessToken, setAccessToken] = useState(null);
   const [refreshTokenState, setRefreshTokenState] = useState(null);
-  const [mfaChallenge, setMfaChallenge] = useState(null); // { challengeToken, email, userId }
+  const [mfaChallenge, setMfaChallenge] = useState(null);
   const [loading, setLoading] = useState(true);
 
   // Initialize session from storage on app load
@@ -83,15 +105,54 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const handleAuthSuccess = useCallback((data) => {
+  const handleAuthSuccess = useCallback((data, inputEmail = '') => {
+    const token = data.accessToken;
+    const claims = decodeJwtPayload(token);
+
+    const email =
+      data.email ||
+      claims.email ||
+      claims['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress'] ||
+      inputEmail ||
+      '';
+
+    const userId =
+      data.userId ||
+      claims.nameid ||
+      claims.sub ||
+      claims['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ||
+      '';
+
+    const role =
+      data.role ||
+      claims.role ||
+      claims['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ||
+      'Member';
+
+    const organizationId =
+      data.organizationId ||
+      claims.organization_id ||
+      claims.org_id ||
+      claims.organizationId ||
+      null;
+
+    const firstName = data.firstName || claims.given_name || '';
+    const lastName = data.lastName || claims.family_name || '';
+    const fullName =
+      data.fullName ||
+      `${firstName} ${lastName}`.trim() ||
+      claims.name ||
+      email.split('@')[0] ||
+      'User';
+
     const userData = {
-      userId: data.userId,
-      email: data.email,
-      firstName: data.firstName,
-      lastName: data.lastName,
-      fullName: `${data.firstName || ''} ${data.lastName || ''}`.trim() || data.email,
-      role: data.role,
-      organizationId: data.organizationId || null
+      userId,
+      email,
+      firstName,
+      lastName,
+      fullName,
+      role,
+      organizationId
     };
 
     setUser(userData);
@@ -108,9 +169,9 @@ export function AuthProvider({ children }) {
     }
     localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(userData));
 
-    if (data.organizationId) {
-      setOrganizationId(data.organizationId);
-      localStorage.setItem(STORAGE_KEYS.ORGANIZATION_ID, data.organizationId);
+    if (organizationId) {
+      setOrganizationId(organizationId);
+      localStorage.setItem(STORAGE_KEYS.ORGANIZATION_ID, organizationId);
     }
 
     return userData;
@@ -118,7 +179,6 @@ export function AuthProvider({ children }) {
 
   /**
    * Authenticates user via email and password.
-   * If MFA is enabled, sets mfaChallenge and returns { requiresMfa: true }.
    */
   const login = useCallback(async (email, password) => {
     const response = await apiClient.post('/auth/login', { email, password });
@@ -132,7 +192,7 @@ export function AuthProvider({ children }) {
       return { requiresMfa: true, mfaChallengeToken: response.mfaChallengeToken };
     }
 
-    const userData = handleAuthSuccess(response);
+    const userData = handleAuthSuccess(response, email);
     return { requiresMfa: false, user: userData };
   }, [handleAuthSuccess]);
 
@@ -149,20 +209,14 @@ export function AuthProvider({ children }) {
       code
     });
 
-    const userData = handleAuthSuccess(response);
+    const userData = handleAuthSuccess(response, mfaChallenge.email);
     return userData;
   }, [mfaChallenge, handleAuthSuccess]);
 
-  /**
-   * Clears MFA challenge if user cancels or backs out.
-   */
   const cancelMfa = useCallback(() => {
     setMfaChallenge(null);
   }, []);
 
-  /**
-   * Logs out the user and revokes active refresh token.
-   */
   const logout = useCallback(async () => {
     try {
       const activeRefresh = refreshTokenState || localStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
@@ -181,9 +235,6 @@ export function AuthProvider({ children }) {
     }
   }, [refreshTokenState]);
 
-  /**
-   * Updates user profile state in context and storage.
-   */
   const updateUserData = useCallback((updatedFields) => {
     setUser((prev) => {
       if (!prev) return prev;

@@ -3,8 +3,7 @@ import Topbar from '../components/navigation/Topbar';
 import CustomerNav from '../components/navigation/CustomerNav';
 
 /**
- * Primary Authenticated Customer / Organization Shell Layout.
- * Matches Dashboard.png (D085) and Organisations Wallet.png (D274).
+ * Primary authenticated customer shell layout.
  */
 export default function CustomerLayout({
   children,
@@ -25,7 +24,7 @@ export default function CustomerLayout({
           <CustomerNav />
         </div>
 
-        {/* View Header (if title provided) */}
+        {/* View Header */}
         {(title || headerAction) && (
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2">
             <div>

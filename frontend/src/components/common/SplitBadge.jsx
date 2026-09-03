@@ -1,8 +1,7 @@
 import React from 'react';
 
 /**
- * Split Metric Badge as observed in Invoice generator.png (D251).
- * Uses design system color tokens from index.css.
+ * Split metric badge with label and count segments.
  */
 export default function SplitBadge({
   label,

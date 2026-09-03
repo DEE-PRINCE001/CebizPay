@@ -1,8 +1,7 @@
 import React from 'react';
 
 /**
- * Topbar & Section Pill Tabs as observed in Dashboard.png (D085) and Staff.png (D331).
- * Uses design system color tokens from index.css.
+ * Topbar and section pill tabs.
  */
 export default function PillTabs({
   tabs = [],

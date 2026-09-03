@@ -4,7 +4,7 @@ import Modal from '../common/Modal';
 import Button from '../common/Button';
 
 /**
- * Post-Action Celebration Modal matching done.png (D408) and Successful-17.png (D334).
+ * Action completion modal.
  */
 export default function SuccessModal({
   isOpen,
@@ -25,7 +25,7 @@ export default function SuccessModal({
   return (
     <Modal isOpen={isOpen} onClose={onClose} maxWidth="max-w-sm" showClose={true}>
       <div className="flex flex-col items-center text-center p-2">
-        <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mb-4 ring-8 ring-emerald-50/50">
+        <div className="w-16 h-16 rounded-full bg-status-success-bg text-status-success flex items-center justify-center mb-4 ring-8 ring-status-success-bg/50">
           <CheckCircle2 size={32} />
         </div>
         <h3 className="text-lg font-bold text-slate-900 mb-1">{title}</h3>

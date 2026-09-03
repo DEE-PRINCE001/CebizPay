@@ -3,8 +3,7 @@ import { Link } from 'react-router-dom';
 import { ROUTES } from '../constants/routes';
 
 /**
- * Authentication Layout matching CebizPay auth viewports.
- * Features centered surface card with brand typography and subtle canvas elevation.
+ * Authentication layout shell.
  */
 export default function AuthLayout({
   children,

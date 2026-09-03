@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './AuthContext';
-import apiClient, { setOrganizationId as setClientOrgId, getOrganizationId } from '../services/api/client';
+import { setOrganizationId as setClientOrgId, getOrganizationId } from '../services/api/client';
 
 const STORAGE_ORG_KEY = 'cebizpay_active_org_id';
 
@@ -13,7 +13,6 @@ export function OrgProvider({ children }) {
   const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(false);
 
-  // Initialize or restore active organization
   useEffect(() => {
     if (!isAuthenticated || !user) {
       setCurrentOrgId(null);
@@ -29,25 +28,29 @@ export function OrgProvider({ children }) {
     if (storedOrgId) {
       setCurrentOrgId(storedOrgId);
       setClientOrgId(storedOrgId);
-      // Initialize basic org record from user session
       setCurrentOrg({
         id: storedOrgId,
         name: user.organizationName || 'My Organization',
         role: user.role || 'Member'
       });
+    } else {
+      // Default workspace for single users
+      setCurrentOrg({
+        id: null,
+        name: user.organizationName || 'Personal Workspace',
+        role: user.role || 'Member'
+      });
     }
   }, [isAuthenticated, user]);
 
-  /**
-   * Switches the active organization context.
-   * Updates state, localStorage, and API client headers.
-   * @param {string} orgId
-   * @param {Object} [orgData]
-   */
   const switchOrganization = useCallback((orgId, orgData = null) => {
     setCurrentOrgId(orgId);
     setClientOrgId(orgId);
-    localStorage.setItem(STORAGE_ORG_KEY, orgId);
+    if (orgId) {
+      localStorage.setItem(STORAGE_ORG_KEY, orgId);
+    } else {
+      localStorage.removeItem(STORAGE_ORG_KEY);
+    }
 
     if (orgData) {
       setCurrentOrg(orgData);
@@ -61,10 +64,6 @@ export function OrgProvider({ children }) {
     }
   }, [organizations]);
 
-  /**
-   * Updates the list of available organizations for the current user.
-   * @param {Array} orgList
-   */
   const setAvailableOrganizations = useCallback((orgList) => {
     setOrganizations(orgList);
   }, []);

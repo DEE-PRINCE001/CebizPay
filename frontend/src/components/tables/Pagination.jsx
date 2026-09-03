@@ -3,8 +3,7 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Button from '../common/Button';
 
 /**
- * Data Table Pagination matching the design in Organisations Wallet.png (D274) and Staff.png (D331).
- * Features "Next" pill button on left and "< [CurrentPage] > of [TotalPages]" controls on right.
+ * Data table pagination controls.
  */
 export default function Pagination({
   currentPage = 1,
@@ -19,7 +18,7 @@ export default function Pagination({
 
   return (
     <div className={`flex items-center justify-between pt-4 select-none ${className}`}>
-      {/* Left: Next pill button */}
+      {/* Left: Next button */}
       <div>
         <Button
           variant="outline"

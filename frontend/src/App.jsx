@@ -20,6 +20,21 @@ import ChangePasswordPage from './pages/auth/ChangePasswordPage';
 import RedeemAdminInvitePage from './pages/auth/RedeemAdminInvitePage';
 import ForgotPasswordPage from './pages/auth/ForgotPasswordPage';
 
+// Customer Pages
+import DashboardPage from './pages/customer/DashboardPage';
+import WalletPage from './pages/customer/WalletPage';
+import TransfersPage from './pages/customer/TransfersPage';
+import CardsPage from './pages/customer/CardsPage';
+import VasPage from './pages/customer/VasPage';
+import PayrollPage from './pages/customer/PayrollPage';
+import StaffPage from './pages/customer/StaffPage';
+import SavingsPage from './pages/customer/SavingsPage';
+import SettingsPage from './pages/customer/SettingsPage';
+
+// ERP Pages
+import InventoryPage from './pages/erp/InventoryPage';
+import ServicesPage from './pages/erp/ServicesPage';
+
 // Common Atoms for sample shells
 import Button from './components/common/Button';
 import Card from './components/common/Card';
@@ -58,46 +73,14 @@ function PublicLanding() {
   );
 }
 
-// Shell View Placeholders for verifying Phase 2.5 layouts
-function DashboardShellPreview() {
-  return (
-    <CustomerLayout
-      title="Executive Overview"
-      subtitle="Real-time financial status, wallet balances, and workforce headcount"
-      headerAction={
-        <Button variant="primary" size="sm" icon={Plus}>
-          New Transaction
-        </Button>
-      }
-    >
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={Wallet} label="Wallet Balance" value="₦238,000,909.00" trend="+4.2%" />
-          <StatCard icon={Receipt} label="Monthly Payroll" value="₦45,000,000.00" />
-          <StatCard icon={Users} label="Active Staff" value="128" />
-          <StatCard icon={Building2} label="Departments" value="12" />
-        </div>
-        <Card className="text-center py-12 text-slate-400 text-xs">
-          Executive charts & recent activity will populate here in Phase 2.6
-        </Card>
-      </div>
-    </CustomerLayout>
-  );
-}
-
-function ErpShellPreview() {
+function ErpShellPreview({ title, description }) {
   return (
     <ErpLayout
-      title="ERP: Inventory & Catalog"
-      subtitle="Stock movements, valuation policies, and item catalog"
-      headerAction={
-        <Button variant="primary" size="sm" icon={Plus}>
-          Add Item
-        </Button>
-      }
+      title={title || 'ERP Management'}
+      subtitle={description || 'Enterprise resource planning module'}
     >
       <Card className="text-center py-12 text-slate-400 text-xs">
-        ERP catalog inventory table will populate here in Phase 2.10
+        Module details view
       </Card>
     </ErpLayout>
   );
@@ -122,7 +105,7 @@ function AdminShellPreview() {
           <StatCard icon={Wallet} label="Active Wallets" value="900" />
         </div>
         <Card className="text-center py-12 text-slate-400 text-xs">
-          SuperAdmin control console will populate here in Phase 2.12
+          SuperAdmin control console
         </Card>
       </div>
     </AdminLayout>
@@ -153,7 +136,7 @@ export default function App() {
                 path={ROUTES.DASHBOARD}
                 element={
                   <ProtectedRoute>
-                    <DashboardShellPreview />
+                    <DashboardPage />
                   </ProtectedRoute>
                 }
               />
@@ -161,7 +144,23 @@ export default function App() {
                 path={ROUTES.WALLET}
                 element={
                   <ProtectedRoute>
-                    <DashboardShellPreview />
+                    <WalletPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path={ROUTES.TRANSFERS}
+                element={
+                  <ProtectedRoute>
+                    <TransfersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path={ROUTES.CARDS}
+                element={
+                  <ProtectedRoute>
+                    <CardsPage />
                   </ProtectedRoute>
                 }
               />
@@ -169,7 +168,7 @@ export default function App() {
                 path={ROUTES.VAS}
                 element={
                   <ProtectedRoute>
-                    <DashboardShellPreview />
+                    <VasPage />
                   </ProtectedRoute>
                 }
               />
@@ -177,7 +176,7 @@ export default function App() {
                 path={ROUTES.PAYROLL}
                 element={
                   <ProtectedRoute>
-                    <DashboardShellPreview />
+                    <PayrollPage />
                   </ProtectedRoute>
                 }
               />
@@ -185,7 +184,7 @@ export default function App() {
                 path={ROUTES.STAFF}
                 element={
                   <ProtectedRoute>
-                    <DashboardShellPreview />
+                    <StaffPage />
                   </ProtectedRoute>
                 }
               />
@@ -193,7 +192,7 @@ export default function App() {
                 path={ROUTES.SAVINGS}
                 element={
                   <ProtectedRoute>
-                    <DashboardShellPreview />
+                    <SavingsPage />
                   </ProtectedRoute>
                 }
               />
@@ -201,7 +200,7 @@ export default function App() {
                 path={ROUTES.SETTINGS}
                 element={
                   <ProtectedRoute>
-                    <DashboardShellPreview />
+                    <SettingsPage />
                   </ProtectedRoute>
                 }
               />
@@ -211,7 +210,7 @@ export default function App() {
                 path={ROUTES.INVENTORY}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview />
+                    <InventoryPage />
                   </ProtectedRoute>
                 }
               />
@@ -219,7 +218,7 @@ export default function App() {
                 path={ROUTES.SERVICES}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview />
+                    <ServicesPage />
                   </ProtectedRoute>
                 }
               />
@@ -227,7 +226,7 @@ export default function App() {
                 path={ROUTES.INVOICES}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview />
+                    <ErpShellPreview title="ERP: Invoices & Billing" description="Customer invoices and payment status" />
                   </ProtectedRoute>
                 }
               />
@@ -235,7 +234,7 @@ export default function App() {
                 path={ROUTES.SALES}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview />
+                    <ErpShellPreview title="ERP: Sales Orders" description="Sales orders, dispatch status, and fulfillment" />
                   </ProtectedRoute>
                 }
               />
@@ -243,7 +242,7 @@ export default function App() {
                 path={ROUTES.PURCHASES}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview />
+                    <ErpShellPreview title="ERP: Purchase Orders" description="Procurement orders, vendor bills, and supplier receiving" />
                   </ProtectedRoute>
                 }
               />
@@ -251,7 +250,7 @@ export default function App() {
                 path={ROUTES.EXPENSES}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview />
+                    <ErpShellPreview title="ERP: Expense Management" description="Operating expenses, cost centers, and receipts" />
                   </ProtectedRoute>
                 }
               />
@@ -259,7 +258,7 @@ export default function App() {
                 path={ROUTES.CUSTOMERS}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview />
+                    <ErpShellPreview title="ERP: Customers Directory" description="Customer accounts and transaction histories" />
                   </ProtectedRoute>
                 }
               />
@@ -267,7 +266,7 @@ export default function App() {
                 path={ROUTES.SUPPLIERS}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview />
+                    <ErpShellPreview title="ERP: Suppliers & Vendors" description="Vendor contacts and procurement terms" />
                   </ProtectedRoute>
                 }
               />

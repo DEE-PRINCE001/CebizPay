@@ -11,8 +11,7 @@ import { Lock, Mail, ArrowRight } from 'lucide-react';
 import { parseProblemDetails } from '../../utils/problemDetails';
 
 /**
- * Standard Corporate & Individual Login Viewport.
- * Matches Log In.png (D264).
+ * Login viewport.
  */
 export default function LoginPage() {
   const { login, verifyMfa, mfaChallenge, cancelMfa } = useAuth();

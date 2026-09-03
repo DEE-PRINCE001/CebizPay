@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Bell, CheckCircle2, AlertCircle, Info, X } from 'lucide-react';
 
 /**
- * Notification Bell Menu Popover matching Dashboard.png (D085).
+ * Notification menu dropdown.
  */
 export default function NotificationMenu({ className = '' }) {
   const [isOpen, setIsOpen] = useState(false);

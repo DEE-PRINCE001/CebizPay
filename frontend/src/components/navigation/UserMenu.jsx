@@ -6,7 +6,7 @@ import { ChevronDown, LogOut, KeyRound, Settings, UserCheck } from 'lucide-react
 import Badge from '../common/Badge';
 
 /**
- * User Profile Avatar and Menu Popover matching Dashboard.png (D085).
+ * User profile avatar and menu dropdown.
  */
 export default function UserMenu({ className = '' }) {
   const { user, logout } = useAuth();

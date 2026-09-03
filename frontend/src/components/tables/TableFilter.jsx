@@ -3,8 +3,7 @@ import { Filter, ChevronDown, Check } from 'lucide-react';
 import Button from '../common/Button';
 
 /**
- * Filter Popover Menu matching the primary blue "Filter v" button in Organisations Wallet.png (D274).
- * Uses design system color tokens from index.css.
+ * Filter popover menu for data tables.
  */
 export default function TableFilter({
   options = [],

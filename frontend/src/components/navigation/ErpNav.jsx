@@ -13,8 +13,7 @@ import {
 } from 'lucide-react';
 
 /**
- * ERP Sub-Module Pill Navigation Tabs.
- * Matches Invoice generator.png (D251) and ERP module screens.
+ * ERP module navigation tabs.
  */
 export default function ErpNav({ className = '' }) {
   const erpItems = [

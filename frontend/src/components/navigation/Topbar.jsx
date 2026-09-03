@@ -8,7 +8,7 @@ import SearchInput from '../forms/SearchInput';
 import Badge from '../common/Badge';
 
 /**
- * Global Topbar Header matching Dashboard.png (D085).
+ * Global topbar header navigation.
  */
 export default function Topbar({ isAdmin = false, className = '' }) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -17,7 +17,7 @@ export default function Topbar({ isAdmin = false, className = '' }) {
   const handleSearch = (e) => {
     e.preventDefault();
     if (searchQuery.trim()) {
-      // Global navigation search
+      // Search handler
     }
   };
 

@@ -2,8 +2,7 @@ import React from 'react';
 import Card from './Card';
 
 /**
- * Metric Stat Widget as observed in Dashboard.png (D085).
- * Features circular icon container, muted uppercase label, bold count, and optional trend tag.
+ * Metric stat widget with icon, label, count, and trend indicator.
  */
 export default function StatCard({
   icon: Icon,
@@ -26,8 +25,8 @@ export default function StatCard({
           <span
             className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
               trendType === 'positive'
-                ? 'bg-emerald-50 text-emerald-700'
-                : 'bg-red-50 text-red-700'
+                ? 'bg-status-success-bg text-emerald-700'
+                : 'bg-status-danger-bg text-red-700'
             }`}
           >
             {trend}

@@ -13,8 +13,7 @@ import {
 } from 'lucide-react';
 
 /**
- * Topbar Customer Pill Navigation Tabs.
- * Matches Dashboard.png (D085) and Organisations Wallet.png (D274).
+ * Topbar customer navigation pill tabs.
  */
 export default function CustomerNav({ className = '' }) {
   const navItems = [

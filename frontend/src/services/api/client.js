@@ -2,20 +2,6 @@ import axios from 'axios';
 import { parseProblemDetails } from '../../utils/problemDetails';
 import { generateIdempotencyKey, withFinancialMutationGuard } from '../../utils/idempotency';
 
-/**
- * Centralized CebizPay Axios API Client
- * 
- * Features:
- * - JWT Bearer header injection
- * - Multi-tenant X-Organization-Id header injection
- * - Automated silent refresh token rotation (POST /api/v1/auth/refresh-token)
- * - RFC 7807 ProblemDetails error normalization
- * - Idempotency-Key headers for financial mutations
- * - Concurrency safeguards for financial operations
- * - Centralized 401 session expiration handling
- */
-
-// In-memory token & tenant state (can be synchronized with AuthContext / OrgContext / localStorage)
 let currentAccessToken = null;
 let currentRefreshToken = null;
 let currentOrgId = null;
@@ -83,7 +69,7 @@ export function getOrganizationId() {
 }
 
 /**
- * Registers a listener for 401 Unauthorized session expirations.
+ * Registers a listener for session expirations.
  * @param {Function} handler
  * @returns {Function} Unsubscribe function
  */
@@ -94,7 +80,7 @@ export function onAuthUnauthorized(handler) {
 
 /**
  * Registers a listener for token refresh updates.
- * @param {Function} handler ({ accessToken, refreshToken }) => void
+ * @param {Function} handler
  * @returns {Function} Unsubscribe function
  */
 export function onTokenUpdate(handler) {
@@ -154,7 +140,6 @@ axiosInstance.interceptors.request.use(
 // Response Interceptor
 axiosInstance.interceptors.response.use(
   (response) => {
-    // Direct unwrap of response data for clean caller code
     return response.data;
   },
   async (error) => {
@@ -162,11 +147,12 @@ axiosInstance.interceptors.response.use(
     const normalized = parseProblemDetails(error);
     error.problemDetails = normalized;
 
-    // Check if error is 401 Unauthorized and not already retried
-    const isAuthEndpoint = originalRequest.url?.includes('/auth/login') ||
-                           originalRequest.url?.includes('/auth/refresh-token') ||
-                           originalRequest.url?.includes('/auth/mfa/verify');
+    const isAuthEndpoint =
+      originalRequest.url?.includes('/auth/login') ||
+      originalRequest.url?.includes('/auth/refresh-token') ||
+      originalRequest.url?.includes('/auth/mfa/verify');
 
+    // Attempt token refresh on 401 Unauthorized
     if (normalized.isAuthError && !originalRequest._retry && !isAuthEndpoint && currentRefreshToken) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
@@ -185,7 +171,6 @@ axiosInstance.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        // Exchange refresh token for new access token & rotated refresh token
         const refreshResponse = await axios.post(
           `${axiosInstance.defaults.baseURL}/auth/refresh-token`,
           { refreshToken: currentRefreshToken }
@@ -198,7 +183,6 @@ axiosInstance.interceptors.response.use(
             currentRefreshToken = data.refreshToken;
           }
 
-          // Notify token update listeners (e.g. AuthContext)
           tokenUpdateHandlers.forEach((handler) => {
             try {
               handler({
@@ -234,17 +218,6 @@ axiosInstance.interceptors.response.use(
       }
     }
 
-    // Direct 401 without refresh token
-    if (normalized.isAuthError && !isAuthEndpoint) {
-      unauthorizedHandlers.forEach((handler) => {
-        try {
-          handler(normalized);
-        } catch (hErr) {
-          console.error('Error in unauthorized handler:', hErr);
-        }
-      });
-    }
-
     return Promise.reject(error);
   }
 );
@@ -259,14 +232,6 @@ export const apiClient = {
   patch: (url, data, config = {}) => axiosInstance.patch(url, data, config),
   delete: (url, config = {}) => axiosInstance.delete(url, config),
 
-  /**
-   * Executes a financial mutation with guaranteed client-side UUID idempotency
-   * and in-flight concurrency protection.
-   * @param {string} url - Target financial endpoint
-   * @param {any} data - Request payload
-   * @param {Object} [config={}] - Additional Axios configuration
-   * @returns {Promise<any>}
-   */
   postFinancial: async (url, data, config = {}) => {
     const idempotencyKey = config.idempotencyKey || generateIdempotencyKey();
 
@@ -279,21 +244,11 @@ export const apiClient = {
     });
   },
 
-  /**
-   * Explicitly calls token refresh endpoint.
-   * @param {string} refreshToken
-   * @returns {Promise<{ succeeded: boolean, accessToken: string, refreshToken: string, userId: string }>}
-   */
   refreshToken: async (refreshToken) => {
     const tokenToUse = refreshToken || currentRefreshToken;
     return axiosInstance.post('/auth/refresh-token', { refreshToken: tokenToUse });
   },
 
-  /**
-   * Explicitly revokes a refresh token on logout.
-   * @param {string} refreshToken
-   * @returns {Promise<{ succeeded: boolean, message: string }>}
-   */
   revokeToken: async (refreshToken) => {
     const tokenToUse = refreshToken || currentRefreshToken;
     return axiosInstance.post('/auth/revoke-token', { refreshToken: tokenToUse });

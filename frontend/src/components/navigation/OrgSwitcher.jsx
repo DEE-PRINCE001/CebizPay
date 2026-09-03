@@ -5,7 +5,7 @@ import { Link } from 'react-router-dom';
 import { ROUTES } from '../../constants/routes';
 
 /**
- * Organization Tenant Switcher Dropdown as observed in Dashboard.png (D085).
+ * Organization tenant switcher dropdown.
  */
 export default function OrgSwitcher({ className = '' }) {
   const { currentOrg, currentOrgId, organizations, switchOrganization } = useOrg();

@@ -3,7 +3,7 @@ import { Download, FileSpreadsheet, FileText, ChevronDown } from 'lucide-react';
 import Button from '../common/Button';
 
 /**
- * Table Export Menu matching the outlined "Export" button in Organisations Wallet.png (D274).
+ * Data export dropdown menu.
  */
 export default function TableExport({
   onExportCsv,
@@ -49,7 +49,7 @@ export default function TableExport({
               }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 hover:text-slate-900 rounded-xl transition-colors text-left"
             >
-              <FileSpreadsheet size={15} className="text-emerald-600" />
+              <FileSpreadsheet size={15} className="text-status-success" />
               <span>Export as CSV</span>
             </button>
           )}
@@ -75,7 +75,7 @@ export default function TableExport({
               }}
               className="w-full flex items-center gap-2.5 px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 hover:text-slate-900 rounded-xl transition-colors text-left"
             >
-              <FileText size={15} className="text-red-600" />
+              <FileText size={15} className="text-status-danger" />
               <span>Export as PDF</span>
             </button>
           )}
