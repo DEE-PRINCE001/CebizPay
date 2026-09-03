@@ -96,15 +96,23 @@ export function parseProblemDetails(error) {
 
   // Extract field-level validation errors
   let fieldErrors = {};
-  if (data.errors && typeof data.errors === 'object') {
+  let derivedMessage = '';
+
+  if (Array.isArray(data.errors)) {
+    derivedMessage = data.errors.filter(Boolean).join(' ');
+  } else if (data.errors && typeof data.errors === 'object') {
     fieldErrors = data.errors;
+  } else if (data.extensions && Array.isArray(data.extensions.errors)) {
+    derivedMessage = data.extensions.errors.filter(Boolean).join(' ');
   } else if (data.extensions && data.extensions.errors && typeof data.extensions.errors === 'object') {
     fieldErrors = data.extensions.errors;
   }
 
   // Derive user-friendly display message
   let message = '';
-  if (code && DOMAIN_ERROR_MESSAGES[code]) {
+  if (derivedMessage) {
+    message = derivedMessage;
+  } else if (code && DOMAIN_ERROR_MESSAGES[code]) {
     message = DOMAIN_ERROR_MESSAGES[code];
   } else if (data.detail && typeof data.detail === 'string' && !data.detail.includes('System.') && !data.detail.includes('Exception')) {
     message = data.detail;
@@ -112,7 +120,8 @@ export function parseProblemDetails(error) {
     message = data.message;
   } else if (Object.keys(fieldErrors).length > 0) {
     const firstField = Object.keys(fieldErrors)[0];
-    const firstMsg = fieldErrors[firstField]?.[0] || 'Invalid input parameter.';
+    const val = fieldErrors[firstField];
+    const firstMsg = Array.isArray(val) ? val[0] : typeof val === 'string' ? val : 'Invalid input parameter.';
     message = `${firstField}: ${firstMsg}`;
   } else {
     message = getDefaultMessageForStatus(status);

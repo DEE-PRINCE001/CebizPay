@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ROUTES } from '../../constants/routes';
+import { useAuth } from '../../context/AuthContext';
 import AuthLayout from '../../layouts/AuthLayout';
 import Input from '../../components/forms/Input';
 import Button from '../../components/common/Button';
@@ -16,6 +17,7 @@ import { useToast } from '../../hooks/useToast';
  */
 export default function ChangePasswordPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const { showSuccess } = useToast();
 
   const [formData, setFormData] = useState({
@@ -53,10 +55,14 @@ export default function ChangePasswordPage() {
     setLoading(true);
     setError(null);
 
+    const userId = user?.userId || user?.id || '';
+
     try {
       const response = await apiClient.post('/auth/change-password', {
+        userId,
         currentPassword: formData.currentPassword,
-        newPassword: formData.newPassword
+        newPassword: formData.newPassword,
+        isMobile: false
       });
 
       if (response.succeeded) {

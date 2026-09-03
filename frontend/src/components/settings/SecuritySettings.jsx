@@ -44,10 +44,14 @@ export default function SecuritySettings({ className = '' }) {
     setPwdError(null);
     setPwdSuccess(false);
 
+    const userId = user?.userId || user?.id || '';
+
     try {
       await apiClient.post('/auth/change-password', {
+        userId,
         currentPassword,
-        newPassword
+        newPassword,
+        isMobile: false
       });
 
       setPwdSuccess(true);
@@ -67,9 +71,12 @@ export default function SecuritySettings({ className = '' }) {
     setMfaLoading(true);
     setMfaError(null);
 
+    const userId = user?.userId || user?.id || '';
+
     try {
       const targetState = !mfaEnabled;
       await apiClient.post('/auth/mfa/toggle', {
+        userId,
         enable: targetState
       });
 

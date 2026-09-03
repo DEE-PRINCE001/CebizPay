@@ -44,6 +44,8 @@ export default function IndividualKycForm({
   // Document Form State
   const [docType, setDocType] = useState(1);
   const [docNumber, setDocNumber] = useState('');
+  const [docFirstName, setDocFirstName] = useState(user?.firstName || '');
+  const [docLastName, setDocLastName] = useState(user?.lastName || '');
   const [docBase64, setDocBase64] = useState('');
 
   const [loading, setLoading] = useState(false);
@@ -55,6 +57,8 @@ export default function IndividualKycForm({
     { id: 'nin', label: 'NIN Verification', icon: UserCheck },
     { id: 'document', label: 'Identity Document', icon: FileText }
   ];
+
+  const userId = user?.userId || user?.id || '';
 
   // Submit BVN
   const handleBvnSubmit = async (e) => {
@@ -72,7 +76,8 @@ export default function IndividualKycForm({
         bvn: bvn.trim(),
         firstName: bvnFirstName.trim(),
         lastName: bvnLastName.trim(),
-        dateOfBirth: new Date(bvnDob).toISOString()
+        dateOfBirth: new Date(bvnDob).toISOString(),
+        userId
       });
 
       setSuccessData({
@@ -108,7 +113,8 @@ export default function IndividualKycForm({
         nin: nin.trim(),
         firstName: ninFirstName.trim(),
         lastName: ninLastName.trim(),
-        dateOfBirth: new Date(ninDob).toISOString()
+        dateOfBirth: new Date(ninDob).toISOString(),
+        userId
       });
 
       setSuccessData({
@@ -143,7 +149,10 @@ export default function IndividualKycForm({
       const response = await apiClient.post('/compliance/kyc/document', {
         documentType: parseInt(docType, 10),
         documentNumber: docNumber.trim(),
-        documentImageBase64: docBase64 || 'data:image/jpeg;base64,dGVzdA=='
+        documentImageBase64: docBase64 || 'data:image/jpeg;base64,dGVzdA==',
+        firstName: docFirstName.trim(),
+        lastName: docLastName.trim(),
+        userId
       });
 
       setSuccessData({
@@ -323,6 +332,21 @@ export default function IndividualKycForm({
                 onChange={(e) => setDocType(e.target.value)}
                 required
               />
+
+              <div className="grid grid-cols-2 gap-3">
+                <Input
+                  label="First Name on Document"
+                  value={docFirstName}
+                  onChange={(e) => setDocFirstName(e.target.value)}
+                  required
+                />
+                <Input
+                  label="Last Name on Document"
+                  value={docLastName}
+                  onChange={(e) => setDocLastName(e.target.value)}
+                  required
+                />
+              </div>
 
               <Input
                 label="Document / ID Number"
