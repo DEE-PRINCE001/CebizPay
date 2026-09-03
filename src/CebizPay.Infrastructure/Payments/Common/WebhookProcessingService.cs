@@ -89,12 +89,29 @@ public sealed class WebhookProcessingService : IWebhookProcessingService
         {
             _metrics.RecordWebhookProcessing(providerName, evt.EventType, "Started");
 
-            // Mark processed in event
-            evt.MarkProcessed(evt.PaymentAttemptId, evt.SafeMetadata, evt.CorrelationReference);
-            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            WebhookProcessingResult? result = null;
+            if (_financialProcessor != null)
+            {
+                result = await _financialProcessor.ProcessFinancialWebhookEventAsync(evt.Id, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (result == null || result.Status == WebhookProcessingStatus.Processed)
+            {
+                // Ensure marked processed if financial processor succeeded or test mock returned default
+                evt.MarkProcessed(result?.PaymentAttemptId ?? evt.PaymentAttemptId, evt.SafeMetadata, evt.CorrelationReference);
+                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                result ??= WebhookProcessingResult.Processed(evt.ProviderEventId, evt.PaymentAttemptId);
+            }
+            else if (result.Status == WebhookProcessingStatus.Error)
+            {
+                var retryDelay = CalculateBackoff(evt.AttemptCount);
+                evt.ReleaseClaim(result.Message, retryDelay);
+                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return result;
+            }
 
             _metrics.RecordWebhookProcessing(providerName, evt.EventType, "Success");
-            return WebhookProcessingResult.Processed(evt.ProviderEventId, evt.PaymentAttemptId);
+            return result;
         }
         catch (Exception ex)
         {
@@ -150,13 +167,26 @@ public sealed class WebhookProcessingService : IWebhookProcessingService
     {
         var lockDuration = TimeSpan.FromMinutes(2);
 
-        var candidates = await _dbContext.WebhookEvents
-            .Where(w => (w.Status == WebhookEventStatus.Received && (w.NextRetryAtUtc == null || w.NextRetryAtUtc <= now)) ||
-                        (w.Status == WebhookEventStatus.Processing && w.LockedUntilUtc != null && w.LockedUntilUtc < now))
-            .OrderBy(w => w.CreatedAtUtc)
-            .Take(batchSize)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        List<WebhookEvent> candidates;
+        if (_dbContext.Database.IsNpgsql())
+        {
+            candidates = await _dbContext.WebhookEvents
+                .FromSqlRaw(
+                    "SELECT * FROM \"WebhookEvents\" WHERE (\"Status\" = 1 AND (\"NextRetryAtUtc\" IS NULL OR \"NextRetryAtUtc\" <= {0})) OR (\"Status\" = 6 AND \"LockedUntilUtc\" IS NOT NULL AND \"LockedUntilUtc\" < {0}) ORDER BY \"CreatedAtUtc\" LIMIT {1} FOR UPDATE SKIP LOCKED",
+                    now, batchSize)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            candidates = await _dbContext.WebhookEvents
+                .Where(w => (w.Status == WebhookEventStatus.Received && (w.NextRetryAtUtc == null || w.NextRetryAtUtc <= now)) ||
+                            (w.Status == WebhookEventStatus.Processing && w.LockedUntilUtc != null && w.LockedUntilUtc < now))
+                .OrderBy(w => w.CreatedAtUtc)
+                .Take(batchSize)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         foreach (var c in candidates)
         {
@@ -175,13 +205,26 @@ public sealed class WebhookProcessingService : IWebhookProcessingService
     {
         var lockDuration = TimeSpan.FromMinutes(2);
 
-        var candidates = await _dbContext.ComplianceWebhookEvents
-            .Where(w => (w.Status == ComplianceWebhookEventStatus.Received && (w.NextRetryAtUtc == null || w.NextRetryAtUtc <= now)) ||
-                        (w.Status == ComplianceWebhookEventStatus.Processing && w.LockedUntilUtc != null && w.LockedUntilUtc < now))
-            .OrderBy(w => w.CreatedAtUtc)
-            .Take(batchSize)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        List<ComplianceWebhookEvent> candidates;
+        if (_dbContext.Database.IsNpgsql())
+        {
+            candidates = await _dbContext.ComplianceWebhookEvents
+                .FromSqlRaw(
+                    "SELECT * FROM \"ComplianceWebhookEvents\" WHERE (\"Status\" = 1 AND (\"NextRetryAtUtc\" IS NULL OR \"NextRetryAtUtc\" <= {0})) OR (\"Status\" = 6 AND \"LockedUntilUtc\" IS NOT NULL AND \"LockedUntilUtc\" < {0}) ORDER BY \"CreatedAtUtc\" LIMIT {1} FOR UPDATE SKIP LOCKED",
+                    now, batchSize)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            candidates = await _dbContext.ComplianceWebhookEvents
+                .Where(w => (w.Status == ComplianceWebhookEventStatus.Received && (w.NextRetryAtUtc == null || w.NextRetryAtUtc <= now)) ||
+                            (w.Status == ComplianceWebhookEventStatus.Processing && w.LockedUntilUtc != null && w.LockedUntilUtc < now))
+                .OrderBy(w => w.CreatedAtUtc)
+                .Take(batchSize)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         foreach (var c in candidates)
         {

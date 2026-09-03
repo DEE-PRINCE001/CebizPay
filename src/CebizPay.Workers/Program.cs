@@ -32,6 +32,7 @@ builder.Services.AddHostedService<NotificationDispatcherWorker>();
 builder.Services.AddHostedService<NotificationRetentionWorker>();
 builder.Services.AddHostedService<ReferralQualificationWorker>();
 builder.Services.AddHostedService<SupportSlaMonitoringWorker>();
+builder.Services.AddHostedService<PaymentFailoverWorker>();
 
 var host = builder.Build();
 host.Run();

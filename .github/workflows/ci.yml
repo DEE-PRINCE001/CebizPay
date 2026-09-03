@@ -25,11 +25,14 @@ jobs:
       - name: Build solution
         run: dotnet build CebizPay.slnx --no-restore --configuration Release
 
-      - name: Run Unit Tests
-        run: dotnet test tests/CebizPay.UnitTests/CebizPay.UnitTests.csproj --no-build --configuration Release
-
       - name: Run Architecture Tests
         run: dotnet test tests/CebizPay.ArchitectureTests/CebizPay.ArchitectureTests.csproj --no-build --configuration Release
 
+      - name: Run Unit Tests
+        run: dotnet test tests/CebizPay.UnitTests/CebizPay.UnitTests.csproj --no-build --configuration Release
+
       - name: Run API Tests
         run: dotnet test tests/CebizPay.ApiTests/CebizPay.ApiTests.csproj --no-build --configuration Release
+
+      - name: Run Integration Tests
+        run: dotnet test tests/CebizPay.IntegrationTests/CebizPay.IntegrationTests.csproj --no-build --configuration Release

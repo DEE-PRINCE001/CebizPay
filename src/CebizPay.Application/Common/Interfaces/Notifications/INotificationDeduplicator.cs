@@ -3,7 +3,7 @@ using CebizPay.Domain.Communication.Enums;
 namespace CebizPay.Application.Common.Interfaces.Notifications;
 
 /// <summary>
-/// Service ensuring exactly-once delivery semantics for events and notifications.
+/// Service providing application-level deduplication and at-least-once delivery with channel deduplication.
 /// Backed by PostgreSQL unique constraints with optional Redis acceleration.
 /// </summary>
 public interface INotificationDeduplicator

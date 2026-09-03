@@ -57,17 +57,38 @@ public sealed class GetAuditLogsQueryHandler : IRequestHandler<GetAuditLogsQuery
         else
         {
             // Organization tenant user: enforce strict tenant boundary
-            if (!_currentOrgContext.CurrentOrganizationId.HasValue)
+            // Reject cross-tenant attempts if client explicitly requested a different organization than active context
+            if (request.OrganizationId.HasValue && _currentOrgContext.CurrentOrganizationId.HasValue &&
+                request.OrganizationId.Value != _currentOrgContext.CurrentOrganizationId.Value)
+            {
+                throw new UnauthorizedAccessException("Cross-tenant audit query is forbidden.");
+            }
+
+            var targetOrgId = request.OrganizationId ?? _currentOrgContext.CurrentOrganizationId;
+            if (!targetOrgId.HasValue || targetOrgId.Value == Guid.Empty)
             {
                 throw new UnauthorizedAccessException("User does not have permission to view audit logs.");
             }
 
-            var currentTenantOrgId = _currentOrgContext.CurrentOrganizationId.Value;
+            var currentTenantOrgId = targetOrgId.Value;
 
-            // Reject attempt to manipulate cross-tenant organization ID
-            if (request.OrganizationId.HasValue && request.OrganizationId.Value != currentTenantOrgId)
+            // Verify that authenticated user has access to the target organization
+            var hasAccess = await _currentOrgContext.HasAccessToOrganizationAsync(currentTenantOrgId, cancellationToken);
+            if (!hasAccess)
             {
-                throw new UnauthorizedAccessException("Cross-tenant audit query is forbidden.");
+                throw new UnauthorizedAccessException("User does not have permission to view audit logs.");
+            }
+
+            // Verify that the user is an Organization Administrator (Owner or Admin role)
+            // Ordinary members / employees must not gain audit log visibility
+            var membership = await _dbContext.OrganizationMemberships
+                .FirstOrDefaultAsync(m => m.UserId == currentUserId &&
+                                          m.OrganizationId == currentTenantOrgId &&
+                                          m.Status == MembershipStatus.Active, cancellationToken);
+
+            if (membership == null || (membership.Role != MembershipRoleType.Owner && membership.Role != MembershipRoleType.Admin))
+            {
+                throw new UnauthorizedAccessException("User does not have permission to view audit logs.");
             }
 
             effectiveOrgId = currentTenantOrgId;

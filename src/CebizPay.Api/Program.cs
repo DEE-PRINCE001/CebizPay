@@ -83,16 +83,24 @@ var defaultDevOrigins = new[]
 
 var effectiveOrigins = corsOptions.AllowedOrigins.Length > 0
     ? corsOptions.AllowedOrigins
-    : defaultDevOrigins;
+    : (builder.Environment.IsDevelopment() ? defaultDevOrigins : Array.Empty<string>());
 
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("DefaultCorsPolicy", policy =>
     {
-        policy.WithOrigins(effectiveOrigins)
-            .AllowAnyHeader()
-            .AllowAnyMethod()
-            .AllowCredentials();
+        if (effectiveOrigins.Length > 0)
+        {
+            policy.WithOrigins(effectiveOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials();
+        }
+        else
+        {
+            // Fail closed in production when no CORS origins are configured
+            policy.SetIsOriginAllowed(_ => false);
+        }
     });
 });
 

@@ -346,11 +346,12 @@ public sealed class IdentityService : IIdentityService
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
-        // Access token: 15-30 minutes as per specs
+        // Access token: authoritative 15 minutes as per PRD §4.1 and Engineering Spec §9
+        var expirationMinutes = _jwtOptions.ExpirationInMinutes > 0 ? _jwtOptions.ExpirationInMinutes : 15;
         var tokenDescriptor = new SecurityTokenDescriptor
         {
             Subject = new ClaimsIdentity(claims),
-            Expires = DateTime.UtcNow.AddMinutes(30),
+            Expires = DateTime.UtcNow.AddMinutes(expirationMinutes),
             Issuer = _jwtOptions.Issuer,
             Audience = _jwtOptions.Audience,
             SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)

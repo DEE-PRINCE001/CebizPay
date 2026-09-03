@@ -49,9 +49,21 @@ public sealed partial class RabbitMQEventPublisher : IEventPublisher
                 autoDelete: false,
                 cancellationToken: cancellationToken).ConfigureAwait(false);
 
-            var messageType = typeof(T).Name;
+            string messageType;
+            string jsonContent;
+
+            if (message is string rawString)
+            {
+                jsonContent = rawString;
+                messageType = InferEventType(rawString) ?? typeof(T).Name;
+            }
+            else
+            {
+                messageType = typeof(T).Name;
+                jsonContent = JsonSerializer.Serialize(message, SerializerOptions);
+            }
+
             var routingKey = messageType.ToLowerInvariant();
-            var jsonContent = JsonSerializer.Serialize(message, SerializerOptions);
             var body = Encoding.UTF8.GetBytes(jsonContent);
 
             var properties = new BasicProperties
@@ -76,6 +88,57 @@ public sealed partial class RabbitMQEventPublisher : IEventPublisher
         {
             LogPublishError(_logger, typeof(T).Name, ex);
             throw;
+        }
+    }
+
+    private static string? InferEventType(string rawJson)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(rawJson);
+            var root = doc.RootElement;
+
+            if (root.TryGetProperty("$type", out var typeProp) ||
+                root.TryGetProperty("Type", out typeProp) ||
+                root.TryGetProperty("type", out typeProp) ||
+                root.TryGetProperty("EventType", out typeProp) ||
+                root.TryGetProperty("eventType", out typeProp))
+            {
+                var typeStr = typeProp.GetString();
+                if (!string.IsNullOrWhiteSpace(typeStr))
+                {
+                    var commaIdx = typeStr.IndexOf(',', StringComparison.Ordinal);
+                    return commaIdx > 0 ? typeStr[..commaIdx].Trim() : typeStr.Trim();
+                }
+            }
+
+            // Heuristic detection based on unique domain event payload signatures
+            if (root.TryGetProperty("PaymentAttemptId", out _) && root.TryGetProperty("FailureReason", out _))
+                return "PaymentAttemptFailedEvent";
+            if (root.TryGetProperty("PaymentAttemptId", out _) && root.TryGetProperty("ProviderReference", out _))
+                return "PaymentAttemptSucceededEvent";
+            if (root.TryGetProperty("PaymentAttemptId", out _) && root.TryGetProperty("Reason", out _))
+                return "PaymentAttemptUnknownEvent";
+            if (root.TryGetProperty("TransferId", out _) && root.TryGetProperty("ProviderReference", out _))
+                return "BankTransferCompletedEvent";
+            if (root.TryGetProperty("TransferId", out _) && root.TryGetProperty("Reason", out _))
+                return "BankTransferFailedEvent";
+            if (root.TryGetProperty("OrganizationId", out _) && root.TryGetProperty("NewStatus", out _))
+                return "OrganizationStatusChangedDomainEvent";
+            if (root.TryGetProperty("Application", out _) && root.TryGetProperty("OccurredOnUtc", out _))
+                return "LoanApplicationApprovedDomainEvent";
+            if (root.TryGetProperty("PayrollBatchId", out _))
+                return "PayrollBatchCompletedDomainEvent";
+            if (root.TryGetProperty("CycleId", out _) && root.TryGetProperty("UserId", out _))
+                return "ThriftContributionMissedDomainEvent";
+            if (root.TryGetProperty("AnnouncementId", out _))
+                return "AnnouncementPublishedDomainEvent";
+
+            return null;
+        }
+        catch
+        {
+            return null;
         }
     }
 

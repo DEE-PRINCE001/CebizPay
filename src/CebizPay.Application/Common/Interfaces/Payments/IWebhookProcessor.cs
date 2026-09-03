@@ -20,4 +20,20 @@ public interface IWebhookProcessor
         string rawPayload,
         IReadOnlyDictionary<string, string> headers,
         CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Authenticates, deduplicates, and durably persists an incoming payment provider webhook
+    /// in Received status for asynchronous worker processing without holding financial locks.
+    /// </summary>
+    Task<WebhookProcessingResult> IngestWebhookAsync(
+        PaymentProvider provider,
+        string rawPayload,
+        IReadOnlyDictionary<string, string> headers,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes the financial reconciliation, ledger posting, and state transitions for a claimed durable webhook event.
+    /// </summary>
+    Task<WebhookProcessingResult> ProcessFinancialWebhookEventAsync(
+        Guid webhookEventId,
+        CancellationToken cancellationToken = default);
 }

@@ -32,8 +32,8 @@ public sealed class JwtOptions
     public string Audience { get; set; } = string.Empty;
 
     /// <summary>
-    /// Gets or sets the token expiration time in minutes.
+    /// Gets or sets the token expiration time in minutes (authoritative default: 15 minutes as per PRD §4.1).
     /// </summary>
     [Range(1, 1440)]
-    public int ExpirationInMinutes { get; set; } = 60;
+    public int ExpirationInMinutes { get; set; } = 15;
 }

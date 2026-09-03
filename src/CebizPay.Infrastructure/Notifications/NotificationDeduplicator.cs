@@ -9,7 +9,7 @@ namespace CebizPay.Infrastructure.Notifications;
 
 /// <summary>
 /// Authoritative PostgreSQL notification deduplication ledger.
-/// Guarantees exactly-once channel dispatch per event and recipient.
+/// Guarantees application-level channel dispatch deduplication per event and recipient.
 /// </summary>
 public sealed partial class NotificationDeduplicator : INotificationDeduplicator
 {

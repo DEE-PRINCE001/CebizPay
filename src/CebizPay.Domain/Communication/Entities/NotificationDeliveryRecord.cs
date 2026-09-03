@@ -4,7 +4,7 @@ namespace CebizPay.Domain.Communication.Entities;
 
 /// <summary>
 /// Authoritative PostgreSQL delivery log and deduplication ledger record.
-/// Enforces exactly-once channel dispatch semantics per event, recipient, notification type, and channel.
+/// Enforces application-level deduplication per event, recipient, notification type, and channel.
 /// </summary>
 public class NotificationDeliveryRecord
 {

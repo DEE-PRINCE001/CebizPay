@@ -145,7 +145,6 @@ public sealed partial class PaymentReconciliationService : IPaymentReconciliatio
                     break;
 
                 case PaymentProviderResultStatus.BusinessFailure:
-                case PaymentProviderResultStatus.TechnicalFailure:
                     var failReason = queryResult.FailureReason ?? "Reconciliation confirmed failure";
                     dbAttempt.MarkFailed(queryResult.FailureCode, failReason, safeMetadata: queryResult.SafeMetadata);
 
@@ -176,6 +175,14 @@ public sealed partial class PaymentReconciliationService : IPaymentReconciliatio
                     var prevStatusFailureStr = prevStatus.ToString();
                     RecordAudit(AuditActions.PaymentAttemptReconciled, AuditResourceTypes.PaymentAttempt, dbAttempt.Id.ToString(),
                         JsonSerializer.Serialize(new { AttemptId = dbAttempt.Id, PreviousStatus = prevStatusFailureStr, NewStatus = "Failed", failReason }));
+                    break;
+
+                case PaymentProviderResultStatus.TechnicalFailure:
+                    // A technical failure during status polling (e.g. gateway 5xx/timeout) does not mean
+                    // the transfer failed on the external banking network. UNKNOWN and TechnicalFailure
+                    // must preserve established financial state. Do NOT execute a blind ledger reversal.
+                    var techReason = queryResult.FailureReason ?? "Reconciliation status check encountered technical gateway error";
+                    dbAttempt.MarkUnknown(techReason, safeMetadata: queryResult.SafeMetadata);
                     break;
 
                 case PaymentProviderResultStatus.Unknown:
@@ -224,8 +231,7 @@ public sealed partial class PaymentReconciliationService : IPaymentReconciliatio
             {
                 var result = await ReconcilePaymentAttemptAsync(attemptId, cancellationToken).ConfigureAwait(false);
                 if (result.Status == PaymentProviderResultStatus.Success ||
-                    result.Status == PaymentProviderResultStatus.BusinessFailure ||
-                    result.Status == PaymentProviderResultStatus.TechnicalFailure)
+                    result.Status == PaymentProviderResultStatus.BusinessFailure)
                 {
                     resolvedCount++;
                 }

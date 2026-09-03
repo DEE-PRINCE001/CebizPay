@@ -128,7 +128,9 @@ public sealed class GetAuditLogsQueryTests
 
         var orgContext = Substitute.For<ICurrentOrganizationContext>();
         orgContext.CurrentOrganizationId.Returns(orgId);
+        orgContext.HasAccessToOrganizationAsync(orgId, Arg.Any<CancellationToken>()).Returns(true);
 
+        db.OrganizationMemberships.Add(new OrganizationMembership(orgUserId, orgId, MembershipRoleType.Owner));
         db.AuditLogs.AddRange(
             AuditLog.Create(orgUserId, AuditActions.PeerTransferCompleted, AuditResourceTypes.PeerTransfer, "t1", organizationId: orgId),
             AuditLog.Create("other-user", AuditActions.PeerTransferCompleted, AuditResourceTypes.PeerTransfer, "t2", organizationId: otherOrgId)
@@ -144,6 +146,60 @@ public sealed class GetAuditLogsQueryTests
         // Assert
         Assert.Equal(1, result.TotalCount);
         Assert.Equal(orgId, result.Items[0].OrganizationId);
+    }
+
+    [Fact]
+    public async Task Handle_OrganizationOrdinaryMember_ShouldThrowUnauthorizedAccessException()
+    {
+        // Arrange
+        await using var db = CreateDbContext();
+        var orgUserId = "org-member-1";
+        var orgId = Guid.NewGuid();
+
+        var currentUserService = Substitute.For<ICurrentUserService>();
+        currentUserService.UserId.Returns(orgUserId);
+
+        var orgContext = Substitute.For<ICurrentOrganizationContext>();
+        orgContext.CurrentOrganizationId.Returns(orgId);
+        orgContext.HasAccessToOrganizationAsync(orgId, Arg.Any<CancellationToken>()).Returns(true);
+
+        // Member role (NOT Owner or Admin)
+        db.OrganizationMemberships.Add(new OrganizationMembership(orgUserId, orgId, MembershipRoleType.Member));
+        db.AuditLogs.Add(AuditLog.Create(orgUserId, AuditActions.PeerTransferCompleted, AuditResourceTypes.PeerTransfer, "t1", organizationId: orgId));
+        await db.SaveChangesAsync();
+
+        var handler = new GetAuditLogsQueryHandler(db, currentUserService, orgContext);
+        var query = new GetAuditLogsQuery();
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<UnauthorizedAccessException>(() => handler.Handle(query, CancellationToken.None));
+        Assert.Contains("permission", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Handle_NonMemberUser_AttemptingToQueryOrg_ShouldThrowUnauthorizedAccessException()
+    {
+        // Arrange
+        await using var db = CreateDbContext();
+        var outsideUserId = "outside-user-1";
+        var victimOrgId = Guid.NewGuid();
+
+        var currentUserService = Substitute.For<ICurrentUserService>();
+        currentUserService.UserId.Returns(outsideUserId);
+
+        var orgContext = Substitute.For<ICurrentOrganizationContext>();
+        orgContext.CurrentOrganizationId.Returns(victimOrgId);
+        orgContext.HasAccessToOrganizationAsync(victimOrgId, Arg.Any<CancellationToken>()).Returns(false);
+
+        db.AuditLogs.Add(AuditLog.Create("admin", AuditActions.PeerTransferCompleted, AuditResourceTypes.PeerTransfer, "tx-1", organizationId: victimOrgId));
+        await db.SaveChangesAsync();
+
+        var handler = new GetAuditLogsQueryHandler(db, currentUserService, orgContext);
+        var query = new GetAuditLogsQuery();
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<UnauthorizedAccessException>(() => handler.Handle(query, CancellationToken.None));
+        Assert.Contains("permission", ex.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -67,13 +67,19 @@ public sealed class AuditQueryIntegrationTests : IClassFixture<InfrastructureFix
         await using var db = CreateContext();
         await db.Database.EnsureCreatedAsync();
 
+        var org = new Organization("Test Corp", "test@corp.com", "+2348012345678");
+        var myOrgId = org.Id;
+        var otherOrg = new Organization("Other Corp", "other@corp.com", "+2348012345679");
+        var otherOrgId = otherOrg.Id;
+
         var orgUserId = $"orguser_{Guid.NewGuid():N}";
-        var myOrgId = Guid.NewGuid();
-        var otherOrgId = Guid.NewGuid();
 
         var myLog = AuditLog.Create(orgUserId, AuditActions.PeerTransferCompleted, AuditResourceTypes.PeerTransfer, "tx-mine", organizationId: myOrgId);
         var otherLog = AuditLog.Create("other-user", AuditActions.PeerTransferCompleted, AuditResourceTypes.PeerTransfer, "tx-other", organizationId: otherOrgId);
 
+        var membership = new OrganizationMembership(orgUserId, myOrgId, MembershipRoleType.Owner);
+        db.Organizations.AddRange(org, otherOrg);
+        db.OrganizationMemberships.Add(membership);
         db.AuditLogs.AddRange(myLog, otherLog);
         await db.SaveChangesAsync();
 
@@ -82,6 +88,7 @@ public sealed class AuditQueryIntegrationTests : IClassFixture<InfrastructureFix
 
         var orgContext = Substitute.For<ICurrentOrganizationContext>();
         orgContext.CurrentOrganizationId.Returns(myOrgId);
+        orgContext.HasAccessToOrganizationAsync(myOrgId, Arg.Any<CancellationToken>()).Returns(true);
 
         var handler = new GetAuditLogsQueryHandler(db, currentUserService, orgContext);
         var query = new GetAuditLogsQuery(PageNumber: 1, PageSize: 50);

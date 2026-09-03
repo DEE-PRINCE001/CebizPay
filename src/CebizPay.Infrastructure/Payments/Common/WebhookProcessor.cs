@@ -71,7 +71,8 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
     }
 
     /// <inheritdoc/>
-    public async Task<WebhookProcessingResult> ProcessWebhookAsync(
+    /// <inheritdoc/>
+    public async Task<WebhookProcessingResult> IngestWebhookAsync(
         PaymentProvider provider,
         string rawPayload,
         IReadOnlyDictionary<string, string> headers,
@@ -133,18 +134,86 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             return WebhookProcessingResult.Duplicate(parsed.ProviderEventId);
         }
 
-        // Persist initial WebhookEvent
+        // Persist initial durable WebhookEvent in RECEIVED status with safe metadata
+        var safeMetadataJson = JsonSerializer.Serialize(parsed, JsonOptions);
+        var correlationRef = parsed.Reference ?? parsed.AccountNumber;
+
         var webhookEvent = WebhookEvent.Create(
             provider: provider,
             providerEventId: parsed.ProviderEventId,
             eventType: parsed.EventType,
             payloadHash: payloadHash,
-            safeMetadata: parsed.SafeMetadata);
+            safeMetadata: safeMetadataJson,
+            correlationReference: correlationRef);
 
         _dbContext.WebhookEvents.Add(webhookEvent);
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        // Step 4: Resolve target - Outbound PaymentAttempt, Inbound ExternalFundingAccount, Inbound VirtualAccount, or Card Funding
+        return WebhookProcessingResult.Processed(parsed.ProviderEventId);
+    }
+
+    /// <inheritdoc/>
+    public async Task<WebhookProcessingResult> ProcessFinancialWebhookEventAsync(
+        Guid webhookEventId,
+        CancellationToken cancellationToken = default)
+    {
+        WebhookEvent? webhookEvent;
+        if (_dbContext.Database.IsNpgsql())
+        {
+            webhookEvent = await _dbContext.WebhookEvents
+                .FromSqlRaw("SELECT * FROM \"WebhookEvents\" WHERE \"Id\" = {0} FOR UPDATE", webhookEventId)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            webhookEvent = await _dbContext.WebhookEvents
+                .FirstOrDefaultAsync(w => w.Id == webhookEventId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (webhookEvent == null)
+        {
+            return WebhookProcessingResult.Error(webhookEventId.ToString(), "WebhookEvent not found.");
+        }
+
+        if (webhookEvent.Status == WebhookEventStatus.Processed)
+        {
+            return WebhookProcessingResult.Processed(webhookEvent.ProviderEventId, webhookEvent.PaymentAttemptId, "Already processed.");
+        }
+
+        ParsedWebhookPayload? parsed = null;
+        if (!string.IsNullOrWhiteSpace(webhookEvent.SafeMetadata))
+        {
+            try
+            {
+                parsed = JsonSerializer.Deserialize<ParsedWebhookPayload>(webhookEvent.SafeMetadata, JsonOptions);
+            }
+            catch
+            {
+                // Fallback to minimal payload
+            }
+        }
+
+        parsed ??= new ParsedWebhookPayload(
+            ProviderEventId: webhookEvent.ProviderEventId,
+            EventType: webhookEvent.EventType,
+            Reference: webhookEvent.CorrelationReference,
+            ProviderReference: null,
+            AccountNumber: webhookEvent.CorrelationReference,
+            Amount: null,
+            Currency: null,
+            ProviderStatus: null,
+            IsSuccess: false,
+            IsFailure: false,
+            FailureCode: null,
+            FailureReason: null,
+            SafeMetadata: null);
+
+        var provider = webhookEvent.Provider;
+        var providerName = provider.ToString();
+
+        // Resolve target: Outbound PaymentAttempt, Inbound ExternalFundingAccount, Inbound VirtualAccount, or Card Funding
         PaymentAttempt? attempt = null;
         if (!string.IsNullOrWhiteSpace(parsed.ProviderReference))
         {
@@ -218,6 +287,31 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         return WebhookProcessingResult.Ignored(parsed.ProviderEventId, "No matching PaymentAttempt, ExternalFundingAccount, VirtualAccount, or FundingTransaction found for reference.");
+    }
+
+    /// <inheritdoc/>
+    public async Task<WebhookProcessingResult> ProcessWebhookAsync(
+        PaymentProvider provider,
+        string rawPayload,
+        IReadOnlyDictionary<string, string> headers,
+        CancellationToken cancellationToken = default)
+    {
+        var ingestResult = await IngestWebhookAsync(provider, rawPayload, headers, cancellationToken).ConfigureAwait(false);
+        if (ingestResult.Status != WebhookProcessingStatus.Processed)
+        {
+            return ingestResult;
+        }
+
+        var webhookEvent = await _dbContext.WebhookEvents
+            .FirstOrDefaultAsync(w => w.Provider == provider && w.ProviderEventId == ingestResult.ProviderEventId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (webhookEvent == null)
+        {
+            return ingestResult;
+        }
+
+        return await ProcessFinancialWebhookEventAsync(webhookEvent.Id, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<WebhookProcessingResult> ProcessOutboundAttemptWebhookAsync(

@@ -100,6 +100,16 @@ public sealed class CreateSupportTicketCommandHandler : IRequestHandler<CreateSu
         }
 
         var orgId = _orgContext.CurrentOrganizationId;
+        if (orgId.HasValue)
+        {
+            var hasAccess = await _orgContext.HasAccessToOrganizationAsync(orgId.Value, cancellationToken);
+            if (!hasAccess)
+            {
+                // Client-supplied organization context is unauthorized; resolve to null (personal ticket)
+                orgId = null;
+            }
+        }
+
         var now = DateTime.UtcNow;
         var ticketNumber = _ticketNumberGenerator.GenerateTicketNumber();
 

@@ -141,14 +141,37 @@ public sealed partial class PaymentFailoverService : IPaymentFailoverService
             return PaymentFailoverResult.Failure($"Fallback attempt already exists with ID '{fallbackAttempt.Id}'. Duplicate failover prohibited.");
         }
 
-        var bankTransfer = await _dbContext.BankTransfers
-            .FirstOrDefaultAsync(b => b.LedgerTransactionId == ledgerTransactionId, cancellationToken)
-            .ConfigureAwait(false);
+        // Rule: Authoritative concurrency protection — acquire row lock on BankTransfer in PostgreSQL
+        BankTransfer? bankTransfer;
+        if (_dbContext.Database.IsNpgsql())
+        {
+            bankTransfer = await _dbContext.BankTransfers
+                .FromSqlRaw("SELECT * FROM \"BankTransfers\" WHERE \"LedgerTransactionId\" = {0} FOR UPDATE", ledgerTransactionId)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            bankTransfer = await _dbContext.BankTransfers
+                .FirstOrDefaultAsync(b => b.LedgerTransactionId == ledgerTransactionId, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         if (bankTransfer == null)
         {
             LogBankTransferNotFound(_logger, ledgerTransactionId);
             return PaymentFailoverResult.Failure($"BankTransfer not found for LedgerTransactionId '{ledgerTransactionId}'.");
+        }
+
+        if (bankTransfer.Status == BankTransferStatus.Completed)
+        {
+            LogFailoverRejectedSuccess(_logger, ledgerTransactionId);
+            return PaymentFailoverResult.Failure("Transaction already completed. Failover is prohibited.");
+        }
+
+        if (bankTransfer.Status == BankTransferStatus.Failed)
+        {
+            return PaymentFailoverResult.Failure("Transaction already failed or reversed. Failover is prohibited.");
         }
 
         var nextAttemptNumber = existingAttempts.Count + 1;
@@ -277,9 +300,23 @@ public sealed partial class PaymentFailoverService : IPaymentFailoverService
                 var techFailReason = result.FailureReason ?? "Technical failure on fallback provider";
                 newAttempt.MarkFailed(result.FailureCode, techFailReason, safeMetadata: result.SafeMetadata);
 
-                // Check if further fallback is possible
-                var hasFurtherFallback = _routingService?.GetNextFallbackProvider(PaymentCapability.BankTransfer, fallbackProviderType).HasValue ?? false;
-                if (!hasFurtherFallback && bankTransfer.Status != BankTransferStatus.Failed)
+                // Check if further fallback is possible in the failover chain (Monnify -> Flutterwave -> Paystack)
+                var hasFurtherFallback = HasNextFallback(fallbackProviderType);
+                if (hasFurtherFallback)
+                {
+                    // Emit PaymentAttemptFailedEvent for the fallback attempt so the Failover Worker
+                    // can pick up the next fallback provider (e.g. Flutterwave -> Paystack) asynchronously
+                    _outboxService.Write(new PaymentAttemptFailedEvent(
+                        PaymentAttemptId: newAttempt.Id,
+                        LedgerTransactionId: ledgerTransactionId,
+                        Provider: fallbackProviderType,
+                        AttemptNumber: nextAttemptNumber,
+                        RequestReference: requestReference,
+                        FailureCode: result.FailureCode,
+                        FailureReason: techFailReason,
+                        OccurredOnUtc: DateTime.UtcNow));
+                }
+                else if (bankTransfer.Status != BankTransferStatus.Failed)
                 {
                     await _ledgerPostingService.PostBankTransferReversalCoreAsync(bankTransfer.Id, techFailReason, cancellationToken).ConfigureAwait(false);
 
@@ -327,6 +364,21 @@ public sealed partial class PaymentFailoverService : IPaymentFailoverService
         var resultStatusStr = result.Status.ToString();
         LogFailoverCompleted(_logger, ledgerTransactionId, fallbackProviderName, resultStatusStr);
         return PaymentFailoverResult.Success(newAttempt.Id, fallbackProviderType, result.Status);
+    }
+
+    private bool HasNextFallback(PaymentProvider provider)
+    {
+        if (_routingService != null)
+        {
+            return _routingService.GetNextFallbackProvider(PaymentCapability.BankTransfer, provider).HasValue;
+        }
+
+        return provider switch
+        {
+            PaymentProvider.Monnify => true,
+            PaymentProvider.Flutterwave => true,
+            _ => false
+        };
     }
 
     private static bool IsBusinessFailureCode(string code)

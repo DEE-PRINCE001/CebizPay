@@ -2,11 +2,15 @@ namespace CebizPay.Application.Common.Interfaces.Security;
 
 /// <summary>
 /// Provides tenant context and isolation checks for the current authenticated request.
+/// Client-supplied organization identifiers (e.g. via X-Organization-Id header) are selection
+/// hints only and are never treated as authorization authority. The server verifies authenticated
+/// user membership and authorization before establishing organization context.
 /// </summary>
 public interface ICurrentOrganizationContext
 {
     /// <summary>
-    /// Gets the currently active OrganizationId from HTTP headers / claims context, if set.
+    /// Gets the currently active OrganizationId from HTTP headers / claims context, validated against server-side authorization.
+    /// Returns null if no organization was requested or if the authenticated user is not authorized for the requested organization.
     /// </summary>
     Guid? CurrentOrganizationId { get; }
 
