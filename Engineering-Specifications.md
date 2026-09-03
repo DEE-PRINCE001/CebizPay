@@ -2477,9 +2477,34 @@ The following decisions have been updated and synchronized across all authoritat
     - Strict self-referral rejection (`ReferrerUserId != ReferredUserId`).
     - Identity collision checks (matching phone number or email) automatically place the referral into `HeldForRiskReview`.
     - 1-to-1 unique database constraint: a referred user cannot be associated with multiple referrers (`IX_ReferralRelationships_ReferredUserId`).
-    - Collision-resistant, public-safe alphanumeric referral codes (`CBZ` prefix, no internal IDs or PII).
-  - **Administrative Governance**:
-    - `GET /api/v1/admin/referrals/settings` accessible by `SuperAdmin` and `Auditor`.
-    - `PUT /api/v1/admin/referrals/settings` accessible strictly by `SuperAdmin`, with immutable audit logging (`AuditActions.ReferralSettingUpdated`).
-    - User dashboard at `GET /api/v1/profile/referrals` exposing non-financial pending/eligible entitlement amounts with identity masking.
 * **REASON**: Establishes a clean, production-grade referral tracking and qualification domain without premature money movement, while providing an exact architectural boundary for future financial settlement.
+
+### 12. Customer Support & Kola Chatbot Architecture (Batch 6E)
+* **OLD DECISION**: Draft notes discussed dedicated support agent roles, agent login flows, and potential file attachment stores.
+* **UPDATED DECISION**:
+  - **NO Support Agent Role / Entity**: Customer support functions without introducing a `SupportAgent` role, entity, agent wallet authority, or dedicated agent authentication flow. Administrative oversight is performed by existing platform roles (`SuperAdmin` for resolution/mutation/messaging, `Auditor` for read-only audit oversight).
+  - **Ticket Thread Origin Modeling**: Messages in `TicketMessage` represent origins via `TicketMessageSenderType`: `Customer = 1`, `Kola = 2`, `Admin = 3`.
+  - **Deterministic Kola Triage Chatbot**: Triage state machine with 6 root categories:
+    1. Payment / Transfer (Transfer failed, Transfer pending, Money deducted but recipient did not receive, Unrecognized transaction).
+    2. Wallet / Account (Can't access account, Wallet balance looks wrong, Deposit/funding problem, Account suspended/restricted).
+    3. KYC / Verification (KYC verification failed, KYC pending, Update information).
+    4. Savings / Thrift (Contribution problem, Payout problem, Cycle/group problem, Thrift account issue).
+    5. Business / Workplace (Payroll problem, Expense/reimbursement problem, Invoice/business transaction problem, Workplace account problem).
+    6. Something Else (General inquiry, human representative).
+  - **Keyword & Critical Incident Routing**:
+    - Escalation keywords ("human", "human agent", "representative", "someone", "agent", "live agent") immediately create and escalate a ticket to operator review.
+    - Critical financial discrepancies ("unrecognized transaction", "wallet balance looks wrong", "unauthorized", "without authorization", "fraud", "scam") immediately assign `SupportTicketPriority.Critical` and escalate to security/operations without attempting autonomous resolution or claiming funds were adjusted.
+  - **Authoritative 12-Hour Review SLA**:
+    - Enforces review deadline: $\text{SlaDueAtUtc} = \text{CreatedAtUtc} + 12 \text{ hours}$.
+    - Periodic background worker (`SupportSlaMonitoringWorker`) bounded batch queries active open tickets past SLA due date, marks `IsSlaBreached = true`, emits `SupportTicketSlaBreachedDomainEvent`, and logs audit idempotently without duplicate alert flooding.
+  - **Financial Safety Guarantee**:
+    - Strictly **NO wallet credits, NO ledger postings, NO refund execution, and NO fund movements** within the support subsystem.
+    - Critical tickets document requirements for authorized financial investigation through standard platform accounting rails.
+  - **Offline Ticket Synchronization & Idempotency**:
+    - Supports client retries and offline queue synchronization via client-supplied `IdempotencyKey`.
+    - Duplicate submissions with the same key return the existing ticket idempotently without creating duplicate threads.
+  - **Tenant & User Isolation (IDOR Protection)**:
+    - Customer endpoints strictly query tickets owned by the authenticated user in the active organization context.
+    - Querying non-owned tickets returns HTTP 404 (preventing unauthorized ticket existence disclosure).
+    - File attachments are deferred as non-authoritative in Phase 6.
+* **REASON**: Delivers robust, production-grade automated customer support triage and SLA governance while strictly safeguarding financial integrity and avoiding unneeded role proliferation.

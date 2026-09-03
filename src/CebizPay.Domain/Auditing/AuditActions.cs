@@ -515,4 +515,18 @@ public static class AuditActions
     public const string ReferralClaimed = "REFERRAL_CLAIMED";
     /// <summary>Audit action when a referral relationship reaches qualification.</summary>
     public const string ReferralQualified = "REFERRAL_QUALIFIED";
+
+    // Customer Support & Kola (Batch 6E)
+    /// <summary>Audit action when a support ticket is created.</summary>
+    public const string SupportTicketCreated = "SUPPORT_TICKET_CREATED";
+    /// <summary>Audit action when a support ticket is escalated.</summary>
+    public const string SupportTicketEscalated = "SUPPORT_TICKET_ESCALATED";
+    /// <summary>Audit action when a support ticket is marked in review.</summary>
+    public const string SupportTicketInReview = "SUPPORT_TICKET_IN_REVIEW";
+    /// <summary>Audit action when a support ticket is resolved.</summary>
+    public const string SupportTicketResolved = "SUPPORT_TICKET_RESOLVED";
+    /// <summary>Audit action when a support ticket is closed.</summary>
+    public const string SupportTicketClosed = "SUPPORT_TICKET_CLOSED";
+    /// <summary>Audit action when a support ticket breaches its 12-hour review SLA.</summary>
+    public const string SupportTicketSlaBreached = "SUPPORT_TICKET_SLA_BREACHED";
 }

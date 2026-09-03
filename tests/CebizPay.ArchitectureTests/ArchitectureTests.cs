@@ -264,6 +264,36 @@ public sealed class ArchitectureTests
 
         Assert.True(domainResult.IsSuccessful, "Referral domain must remain pure and free from infrastructure/EF Core/Npgsql dependencies.");
     }
+
+    [Fact]
+    public void SupportDomain_ShouldNotDependOnInfrastructureOrProviderSdk()
+    {
+        var domainResult = Types.InNamespace("CebizPay.Domain.Support")
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "Microsoft.EntityFrameworkCore",
+                "Npgsql",
+                "CebizPay.Infrastructure",
+                "FirebaseAdmin",
+                "SendGrid",
+                "Twilio")
+            .GetResult();
+
+        Assert.True(domainResult.IsSuccessful, "Support domain must remain pure and free from infrastructure or provider SDK dependencies.");
+    }
+
+    [Fact]
+    public void Solution_ShouldNotContainSupportAgentRoleOrEntity()
+    {
+        var allDomainTypes = Types.InAssembly(typeof(Domain.AssemblyReference).Assembly).GetTypes();
+        var allAppTypes = Types.InAssembly(typeof(Application.AssemblyReference).Assembly).GetTypes();
+
+        var supportAgentTypes = allDomainTypes.Concat(allAppTypes)
+            .Where(t => t.Name.Contains("SupportAgent", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+
+        Assert.Empty(supportAgentTypes);
+    }
 }
 
 

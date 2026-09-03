@@ -165,4 +165,10 @@ public static class AuditResourceTypes
     public const string ReferralRelationship = "REFERRAL_RELATIONSHIP";
     /// <summary>Referral reward resource type.</summary>
     public const string ReferralReward = "REFERRAL_REWARD";
+
+    // Customer Support (Batch 6E)
+    /// <summary>Support ticket resource type.</summary>
+    public const string SupportTicket = "SUPPORT_TICKET";
+    /// <summary>Ticket message resource type.</summary>
+    public const string TicketMessage = "TICKET_MESSAGE";
 }

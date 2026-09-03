@@ -149,6 +149,10 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Referrals.IReferralRewardActivationService, CebizPay.Infrastructure.Referrals.DisabledReferralRewardActivationService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Referrals.IReferralQualificationService, CebizPay.Infrastructure.Referrals.ReferralQualificationService>();
 
+        // Configure Customer Support & Kola Chatbot (Batch 6E)
+        services.AddSingleton<CebizPay.Application.Common.Interfaces.Support.ISupportTicketNumberGenerator, CebizPay.Application.Common.Support.SupportTicketNumberGenerator>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Support.IKolaChatbotService, CebizPay.Application.Common.Support.KolaChatbotService>();
+
         // Configure Finance services
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IWalletService, CebizPay.Infrastructure.Finance.WalletService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.ILedgerPostingService, CebizPay.Infrastructure.Finance.LedgerPostingService>();

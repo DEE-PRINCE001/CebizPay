@@ -31,6 +31,7 @@ builder.Services.AddHostedService<VasReconciliationWorker>();
 builder.Services.AddHostedService<NotificationDispatcherWorker>();
 builder.Services.AddHostedService<NotificationRetentionWorker>();
 builder.Services.AddHostedService<ReferralQualificationWorker>();
+builder.Services.AddHostedService<SupportSlaMonitoringWorker>();
 
 var host = builder.Build();
 host.Run();

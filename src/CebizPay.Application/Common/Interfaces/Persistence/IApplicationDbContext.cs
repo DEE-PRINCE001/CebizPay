@@ -290,6 +290,12 @@ public interface IApplicationDbContext
     /// <summary>Gets the referral rewards entity set.</summary>
     IEntitySet<CebizPay.Domain.Referrals.Entities.ReferralReward> ReferralRewards { get; }
 
+    /// <summary>Gets the customer support tickets entity set.</summary>
+    IEntitySet<CebizPay.Domain.Support.Entities.SupportTicket> SupportTickets { get; }
+
+    /// <summary>Gets the ticket thread messages entity set.</summary>
+    IEntitySet<CebizPay.Domain.Support.Entities.TicketMessage> TicketMessages { get; }
+
     /// <summary>
     /// Saves changes asynchronously to the underlying database.
     /// </summary>

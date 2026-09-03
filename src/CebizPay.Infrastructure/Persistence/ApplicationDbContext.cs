@@ -307,6 +307,12 @@ public class ApplicationDbContext
     /// <summary>Gets the referral rewards entity set.</summary>
     public DbSet<CebizPay.Domain.Referrals.Entities.ReferralReward> ReferralRewards => Set<CebizPay.Domain.Referrals.Entities.ReferralReward>();
 
+    /// <summary>Gets the customer support tickets entity set.</summary>
+    public DbSet<CebizPay.Domain.Support.Entities.SupportTicket> SupportTickets => Set<CebizPay.Domain.Support.Entities.SupportTicket>();
+
+    /// <summary>Gets the ticket thread messages entity set.</summary>
+    public DbSet<CebizPay.Domain.Support.Entities.TicketMessage> TicketMessages => Set<CebizPay.Domain.Support.Entities.TicketMessage>();
+
     // Explicit IApplicationDbContext implementations returning IEntitySet<T>
     IEntitySet<IndividualProfile> IApplicationDbContext.IndividualProfiles => new EntitySet<IndividualProfile>(IndividualProfiles);
     IEntitySet<AdminProfile> IApplicationDbContext.AdminProfiles => new EntitySet<AdminProfile>(AdminProfiles);
@@ -401,6 +407,8 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Referrals.Entities.ReferralCode> IApplicationDbContext.ReferralCodes => new EntitySet<CebizPay.Domain.Referrals.Entities.ReferralCode>(ReferralCodes);
     IEntitySet<CebizPay.Domain.Referrals.Entities.ReferralRelationship> IApplicationDbContext.ReferralRelationships => new EntitySet<CebizPay.Domain.Referrals.Entities.ReferralRelationship>(ReferralRelationships);
     IEntitySet<CebizPay.Domain.Referrals.Entities.ReferralReward> IApplicationDbContext.ReferralRewards => new EntitySet<CebizPay.Domain.Referrals.Entities.ReferralReward>(ReferralRewards);
+    IEntitySet<CebizPay.Domain.Support.Entities.SupportTicket> IApplicationDbContext.SupportTickets => new EntitySet<CebizPay.Domain.Support.Entities.SupportTicket>(SupportTickets);
+    IEntitySet<CebizPay.Domain.Support.Entities.TicketMessage> IApplicationDbContext.TicketMessages => new EntitySet<CebizPay.Domain.Support.Entities.TicketMessage>(TicketMessages);
 
     /// <inheritdoc/>
     async Task<IDbTransaction> IApplicationDbContext.BeginTransactionAsync(CancellationToken cancellationToken)
