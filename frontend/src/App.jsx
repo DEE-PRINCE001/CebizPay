@@ -34,12 +34,20 @@ import SettingsPage from './pages/customer/SettingsPage';
 // ERP Pages
 import InventoryPage from './pages/erp/InventoryPage';
 import ServicesPage from './pages/erp/ServicesPage';
+import InvoicesPage from './pages/erp/InvoicesPage';
+import SalesPage from './pages/erp/SalesPage';
+import PurchasesPage from './pages/erp/PurchasesPage';
+import ExpensesPage from './pages/erp/ExpensesPage';
+import CustomersPage from './pages/erp/CustomersPage';
+import SuppliersPage from './pages/erp/SuppliersPage';
 
-// Common Atoms for sample shells
-import Button from './components/common/Button';
-import Card from './components/common/Card';
-import StatCard from './components/common/StatCard';
-import { Wallet, Users, Receipt, Building2, Plus, ArrowUpRight } from 'lucide-react';
+// SuperAdmin Pages
+import AdminDashboardPage from './pages/admin/AdminDashboardPage';
+import AdminUsersPage from './pages/admin/AdminUsersPage';
+import AdminCompliancePage from './pages/admin/AdminCompliancePage';
+import AdminFeesPage from './pages/admin/AdminFeesPage';
+import AdminReconciliationPage from './pages/admin/AdminReconciliationPage';
+import AdminAuditLogsPage from './pages/admin/AdminAuditLogsPage';
 
 function PublicLanding() {
   return (
@@ -70,45 +78,6 @@ function PublicLanding() {
         </div>
       </div>
     </MarketingLayout>
-  );
-}
-
-function ErpShellPreview({ title, description }) {
-  return (
-    <ErpLayout
-      title={title || 'ERP Management'}
-      subtitle={description || 'Enterprise resource planning module'}
-    >
-      <Card className="text-center py-12 text-slate-400 text-xs">
-        Module details view
-      </Card>
-    </ErpLayout>
-  );
-}
-
-function AdminShellPreview() {
-  return (
-    <AdminLayout
-      title="SuperAdmin Platform Oversight"
-      subtitle="Global tenant directory, fee matrix configuration, and ledger compliance"
-      headerAction={
-        <Button variant="primary" size="sm" icon={ArrowUpRight}>
-          Export Audit Trail
-        </Button>
-      }
-    >
-      <div className="space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard icon={Building2} label="Organisations" value="2,345" trend="+12%" />
-          <StatCard icon={Users} label="Total Users" value="10,000" />
-          <StatCard icon={Receipt} label="Settlement Volume" value="₦1.4B" />
-          <StatCard icon={Wallet} label="Active Wallets" value="900" />
-        </div>
-        <Card className="text-center py-12 text-slate-400 text-xs">
-          SuperAdmin control console
-        </Card>
-      </div>
-    </AdminLayout>
   );
 }
 
@@ -226,7 +195,7 @@ export default function App() {
                 path={ROUTES.INVOICES}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview title="ERP: Invoices & Billing" description="Customer invoices and payment status" />
+                    <InvoicesPage />
                   </ProtectedRoute>
                 }
               />
@@ -234,7 +203,7 @@ export default function App() {
                 path={ROUTES.SALES}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview title="ERP: Sales Orders" description="Sales orders, dispatch status, and fulfillment" />
+                    <SalesPage />
                   </ProtectedRoute>
                 }
               />
@@ -242,7 +211,7 @@ export default function App() {
                 path={ROUTES.PURCHASES}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview title="ERP: Purchase Orders" description="Procurement orders, vendor bills, and supplier receiving" />
+                    <PurchasesPage />
                   </ProtectedRoute>
                 }
               />
@@ -250,7 +219,7 @@ export default function App() {
                 path={ROUTES.EXPENSES}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview title="ERP: Expense Management" description="Operating expenses, cost centers, and receipts" />
+                    <ExpensesPage />
                   </ProtectedRoute>
                 }
               />
@@ -258,7 +227,7 @@ export default function App() {
                 path={ROUTES.CUSTOMERS}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview title="ERP: Customers Directory" description="Customer accounts and transaction histories" />
+                    <CustomersPage />
                   </ProtectedRoute>
                 }
               />
@@ -266,7 +235,7 @@ export default function App() {
                 path={ROUTES.SUPPLIERS}
                 element={
                   <ProtectedRoute>
-                    <ErpShellPreview title="ERP: Suppliers & Vendors" description="Vendor contacts and procurement terms" />
+                    <SuppliersPage />
                   </ProtectedRoute>
                 }
               />
@@ -276,7 +245,7 @@ export default function App() {
                 path={ROUTES.ADMIN_DASHBOARD}
                 element={
                   <ProtectedRoute allowedRoles={['SuperAdmin', 'Admin']}>
-                    <AdminShellPreview />
+                    <AdminDashboardPage />
                   </ProtectedRoute>
                 }
               />
@@ -284,7 +253,7 @@ export default function App() {
                 path={ROUTES.ADMIN_USERS}
                 element={
                   <ProtectedRoute allowedRoles={['SuperAdmin', 'Admin']}>
-                    <AdminShellPreview />
+                    <AdminUsersPage />
                   </ProtectedRoute>
                 }
               />
@@ -292,7 +261,7 @@ export default function App() {
                 path={ROUTES.ADMIN_COMPLIANCE}
                 element={
                   <ProtectedRoute allowedRoles={['SuperAdmin', 'Admin']}>
-                    <AdminShellPreview />
+                    <AdminCompliancePage />
                   </ProtectedRoute>
                 }
               />
@@ -300,7 +269,7 @@ export default function App() {
                 path={ROUTES.ADMIN_FEES}
                 element={
                   <ProtectedRoute allowedRoles={['SuperAdmin', 'Admin']}>
-                    <AdminShellPreview />
+                    <AdminFeesPage />
                   </ProtectedRoute>
                 }
               />
@@ -308,15 +277,7 @@ export default function App() {
                 path={ROUTES.ADMIN_RECONCILIATION}
                 element={
                   <ProtectedRoute allowedRoles={['SuperAdmin', 'Admin']}>
-                    <AdminShellPreview />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path={ROUTES.ADMIN_THRIFT}
-                element={
-                  <ProtectedRoute allowedRoles={['SuperAdmin', 'Admin']}>
-                    <AdminShellPreview />
+                    <AdminReconciliationPage />
                   </ProtectedRoute>
                 }
               />
@@ -324,7 +285,7 @@ export default function App() {
                 path={ROUTES.ADMIN_AUDIT_LOGS}
                 element={
                   <ProtectedRoute allowedRoles={['SuperAdmin', 'Admin']}>
-                    <AdminShellPreview />
+                    <AdminAuditLogsPage />
                   </ProtectedRoute>
                 }
               />
