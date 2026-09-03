@@ -280,6 +280,33 @@ public class ApplicationDbContext
     /// <summary>Gets the compliance restrictions entity set.</summary>
     public DbSet<CebizPay.Domain.Compliance.Entities.ComplianceRestriction> ComplianceRestrictions => Set<CebizPay.Domain.Compliance.Entities.ComplianceRestriction>();
 
+    /// <summary>Gets the announcements entity set.</summary>
+    public DbSet<CebizPay.Domain.Communication.Entities.Announcement> Announcements => Set<CebizPay.Domain.Communication.Entities.Announcement>();
+
+    /// <summary>Gets the in-app notifications entity set.</summary>
+    public DbSet<CebizPay.Domain.Communication.Entities.InAppNotification> InAppNotifications => Set<CebizPay.Domain.Communication.Entities.InAppNotification>();
+
+    /// <summary>Gets the device tokens entity set.</summary>
+    public DbSet<CebizPay.Domain.Communication.Entities.DeviceToken> DeviceTokens => Set<CebizPay.Domain.Communication.Entities.DeviceToken>();
+
+    /// <summary>Gets the user notification preferences entity set.</summary>
+    public DbSet<CebizPay.Domain.Communication.Entities.UserNotificationPreference> UserNotificationPreferences => Set<CebizPay.Domain.Communication.Entities.UserNotificationPreference>();
+
+    /// <summary>Gets the notification delivery records entity set.</summary>
+    public DbSet<CebizPay.Domain.Communication.Entities.NotificationDeliveryRecord> NotificationDeliveryRecords => Set<CebizPay.Domain.Communication.Entities.NotificationDeliveryRecord>();
+
+    /// <summary>Gets the referral settings entity set.</summary>
+    public DbSet<CebizPay.Domain.Referrals.Entities.ReferralSetting> ReferralSettings => Set<CebizPay.Domain.Referrals.Entities.ReferralSetting>();
+
+    /// <summary>Gets the referral codes entity set.</summary>
+    public DbSet<CebizPay.Domain.Referrals.Entities.ReferralCode> ReferralCodes => Set<CebizPay.Domain.Referrals.Entities.ReferralCode>();
+
+    /// <summary>Gets the referral relationships entity set.</summary>
+    public DbSet<CebizPay.Domain.Referrals.Entities.ReferralRelationship> ReferralRelationships => Set<CebizPay.Domain.Referrals.Entities.ReferralRelationship>();
+
+    /// <summary>Gets the referral rewards entity set.</summary>
+    public DbSet<CebizPay.Domain.Referrals.Entities.ReferralReward> ReferralRewards => Set<CebizPay.Domain.Referrals.Entities.ReferralReward>();
+
     // Explicit IApplicationDbContext implementations returning IEntitySet<T>
     IEntitySet<IndividualProfile> IApplicationDbContext.IndividualProfiles => new EntitySet<IndividualProfile>(IndividualProfiles);
     IEntitySet<AdminProfile> IApplicationDbContext.AdminProfiles => new EntitySet<AdminProfile>(AdminProfiles);
@@ -365,6 +392,15 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Compliance.Entities.EddCase> IApplicationDbContext.EddCases => new EntitySet<CebizPay.Domain.Compliance.Entities.EddCase>(EddCases);
     IEntitySet<CebizPay.Domain.Compliance.Entities.ComplianceDecision> IApplicationDbContext.ComplianceDecisions => new EntitySet<CebizPay.Domain.Compliance.Entities.ComplianceDecision>(ComplianceDecisions);
     IEntitySet<CebizPay.Domain.Compliance.Entities.ComplianceRestriction> IApplicationDbContext.ComplianceRestrictions => new EntitySet<CebizPay.Domain.Compliance.Entities.ComplianceRestriction>(ComplianceRestrictions);
+    IEntitySet<CebizPay.Domain.Communication.Entities.Announcement> IApplicationDbContext.Announcements => new EntitySet<CebizPay.Domain.Communication.Entities.Announcement>(Announcements);
+    IEntitySet<CebizPay.Domain.Communication.Entities.InAppNotification> IApplicationDbContext.InAppNotifications => new EntitySet<CebizPay.Domain.Communication.Entities.InAppNotification>(InAppNotifications);
+    IEntitySet<CebizPay.Domain.Communication.Entities.DeviceToken> IApplicationDbContext.DeviceTokens => new EntitySet<CebizPay.Domain.Communication.Entities.DeviceToken>(DeviceTokens);
+    IEntitySet<CebizPay.Domain.Communication.Entities.UserNotificationPreference> IApplicationDbContext.UserNotificationPreferences => new EntitySet<CebizPay.Domain.Communication.Entities.UserNotificationPreference>(UserNotificationPreferences);
+    IEntitySet<CebizPay.Domain.Communication.Entities.NotificationDeliveryRecord> IApplicationDbContext.NotificationDeliveryRecords => new EntitySet<CebizPay.Domain.Communication.Entities.NotificationDeliveryRecord>(NotificationDeliveryRecords);
+    IEntitySet<CebizPay.Domain.Referrals.Entities.ReferralSetting> IApplicationDbContext.ReferralSettings => new EntitySet<CebizPay.Domain.Referrals.Entities.ReferralSetting>(ReferralSettings);
+    IEntitySet<CebizPay.Domain.Referrals.Entities.ReferralCode> IApplicationDbContext.ReferralCodes => new EntitySet<CebizPay.Domain.Referrals.Entities.ReferralCode>(ReferralCodes);
+    IEntitySet<CebizPay.Domain.Referrals.Entities.ReferralRelationship> IApplicationDbContext.ReferralRelationships => new EntitySet<CebizPay.Domain.Referrals.Entities.ReferralRelationship>(ReferralRelationships);
+    IEntitySet<CebizPay.Domain.Referrals.Entities.ReferralReward> IApplicationDbContext.ReferralRewards => new EntitySet<CebizPay.Domain.Referrals.Entities.ReferralReward>(ReferralRewards);
 
     /// <inheritdoc/>
     async Task<IDbTransaction> IApplicationDbContext.BeginTransactionAsync(CancellationToken cancellationToken)

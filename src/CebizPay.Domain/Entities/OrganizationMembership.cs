@@ -141,7 +141,7 @@ public class OrganizationMembership
             permission == Permissions.Permissions.StaffAssign || permission == Permissions.Permissions.StaffTerminate ||
             permission == Permissions.Permissions.StaffReactivate || permission == Permissions.Permissions.StaffInvite ||
             permission == Permissions.Permissions.DepartmentsManage || permission == Permissions.Permissions.RolesManage ||
-            permission == Permissions.Permissions.SalaryLevelsManage)
+            permission == Permissions.Permissions.SalaryLevelsManage || permission == Permissions.Permissions.AnnouncementsPublishWorkplace)
         {
             return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin || Role == MembershipRoleType.HrManager;
         }

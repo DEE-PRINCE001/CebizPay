@@ -497,4 +497,22 @@ public static class AuditActions
     public const string ComplianceRestrictionReleased = "COMPLIANCE_RESTRICTION_RELEASED";
     /// <summary>Audit action when a transaction is rejected due to compliance restrictions.</summary>
     public const string TransactionEligibilityRejected = "TRANSACTION_ELIGIBILITY_REJECTED";
+
+    // Communication & Announcements (Batch 6B)
+    /// <summary>Audit action when an announcement is created.</summary>
+    public const string AnnouncementCreated = "ANNOUNCEMENT_CREATED";
+    /// <summary>Audit action when an announcement is published.</summary>
+    public const string AnnouncementPublished = "ANNOUNCEMENT_PUBLISHED";
+    /// <summary>Audit action when an announcement is archived.</summary>
+    public const string AnnouncementArchived = "ANNOUNCEMENT_ARCHIVED";
+
+    // Referral Program (Batch 6D)
+    /// <summary>Audit action when global referral settings are updated.</summary>
+    public const string ReferralSettingUpdated = "REFERRAL_SETTING_UPDATED";
+    /// <summary>Audit action when a user generates a referral code.</summary>
+    public const string ReferralCodeCreated = "REFERRAL_CODE_CREATED";
+    /// <summary>Audit action when a referred user claims a referral code.</summary>
+    public const string ReferralClaimed = "REFERRAL_CLAIMED";
+    /// <summary>Audit action when a referral relationship reaches qualification.</summary>
+    public const string ReferralQualified = "REFERRAL_QUALIFIED";
 }

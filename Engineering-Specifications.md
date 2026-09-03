@@ -283,9 +283,24 @@ Owns:
 
 Owns:
 
-* Announcements
+* Announcements (Platform & Workplace scopes; lifecycle Draft -> Published -> Archived; tenant isolation via ICurrentOrganizationContext)
 * Notifications
 * Referral system
+
+### Announcements Specification (Phase 6B)
+* **Scopes & Invariants**:
+  - `PLATFORM`: Global broadcasts to platform users (`OrganizationId == null`). Strictly authorized to Super Admin (`Announcements.Publish.Platform`).
+  - `WORKPLACE`: Tenant-scoped broadcasts (`OrganizationId != null`). Strictly authorized to HR Managers / Org Owners (`Announcements.Publish.Workplace`). Organization identity is derived exclusively from server context (`ICurrentOrganizationContext`), preventing cross-tenant IDOR attacks.
+* **Publication Lifecycle**:
+  - Explicit state transitions: `Draft -> Published`, `Draft -> Archived`, `Published -> Archived`. Invalid transitions (e.g. `Archived -> Published`) are strictly rejected.
+* **API Family**:
+  - `POST /api/v1/announcements` — Create announcement (Platform or Workplace scope).
+  - `GET /api/v1/announcements/platform` — Paginated published platform feed (`PublishedAtUtc DESC, Id DESC`).
+  - `GET /api/v1/announcements/workplace` — Paginated published workplace feed for authenticated organization (`PublishedAtUtc DESC, Id DESC`).
+  - `GET /api/v1/announcements/{id}` — Single announcement lookup with strict tenant isolation (IDOR attempts return 404 Not Found without leaking existence).
+  - `POST /api/v1/announcements/{id}/publish` — Explicit transition from Draft to Published.
+  - `POST /api/v1/announcements/{id}/archive` & `DELETE /api/v1/announcements/{id}` — Archive announcement.
+  - `GET /api/v1/announcements` — Administrative management directory with filtering by scope, status, and search.
 
 ## Governance
 
@@ -2445,6 +2460,26 @@ The following decisions have been updated and synchronized across all authoritat
   - Automated regression verification: **972 / 972 tests passing (100%)** with **0 warnings and 0 errors**.
 * **REASON**: Formally certifies the platform as architecturally robust, secure, financially balanced, and ready for staging and controlled pilot deployment.
 
-
-
-
+### 11. Referral Program Foundation Architecture (Batch 6D)
+* **OLD DECISION**: Draft design referenced percentage-based referral commission and dynamic calculation rates (`referral-rate`).
+* **UPDATED DECISION**:
+  - **Fixed Reward Model**: The referral reward is a strictly positive **fixed amount per successful referral** (`RewardAmountPerSuccessfulReferral`), NOT a percentage or rate.
+  - **Per-User Referral Cap**: Configurable lifetime limit on successful/eligible referrals per referring user (`MaximumSuccessfulReferralsPerUser`). If cap is reached, referral relationships remain tracked, but reward eligibility transitions to `CapacityExceeded` without generating new reward entitlements.
+  - **Milestone Qualification**: Authoritative qualification requires BOTH:
+    1. Referred user completes KYC Tier 1 (`KycStatus.Verified`).
+    2. Referred user completes an authoritative real deposit of at least **₦1,000** (`FundingTransactionStatus.Completed`).
+    - Event order is strictly commutative: KYC-first and deposit-first both trigger qualification identically.
+  - **Financial Reward DISABLED in Phase 6**:
+    - Strictly **NO wallet credit**, **NO ledger posting**, **NO referral expense ledger account**, **NO `ILedgerPostingService` invocation**, and **NO fund movement**.
+    - `IReferralRewardActivationService` defined in Application with an explicit `DisabledReferralRewardActivationService` in Infrastructure that rejects financial disbursement.
+    - Entitlement state lifecycle: `Pending`, `Eligible`, `HeldForRiskReview`, `ReadyForActivation`, `Activated`, `Rejected`. State `Activated` is intentionally unreachable in Phase 6D.
+  - **Anti-Abuse & Isolation**:
+    - Strict self-referral rejection (`ReferrerUserId != ReferredUserId`).
+    - Identity collision checks (matching phone number or email) automatically place the referral into `HeldForRiskReview`.
+    - 1-to-1 unique database constraint: a referred user cannot be associated with multiple referrers (`IX_ReferralRelationships_ReferredUserId`).
+    - Collision-resistant, public-safe alphanumeric referral codes (`CBZ` prefix, no internal IDs or PII).
+  - **Administrative Governance**:
+    - `GET /api/v1/admin/referrals/settings` accessible by `SuperAdmin` and `Auditor`.
+    - `PUT /api/v1/admin/referrals/settings` accessible strictly by `SuperAdmin`, with immutable audit logging (`AuditActions.ReferralSettingUpdated`).
+    - User dashboard at `GET /api/v1/profile/referrals` exposing non-financial pending/eligible entitlement amounts with identity masking.
+* **REASON**: Establishes a clean, production-grade referral tracking and qualification domain without premature money movement, while providing an exact architectural boundary for future financial settlement.

@@ -127,6 +127,28 @@ public static class DependencyInjection
         services.AddHttpClient<TwilioSmsService>();
         services.AddScoped<ISmsService, TwilioSmsService>();
 
+        // Configure Notification Platform & FCM (Batch 6C)
+        services.AddOptions<CebizPay.Infrastructure.Options.FirebaseOptions>()
+            .Bind(configuration.GetSection(CebizPay.Infrastructure.Options.FirebaseOptions.SectionName));
+
+        services.AddOptions<CebizPay.Infrastructure.Options.NotificationOptions>()
+            .Bind(configuration.GetSection(CebizPay.Infrastructure.Options.NotificationOptions.SectionName));
+
+        services.AddSingleton<CebizPay.Application.Common.Interfaces.Notifications.INotificationPolicy, CebizPay.Application.Common.Notifications.NotificationPolicy>();
+        services.AddSingleton<CebizPay.Application.Common.Interfaces.Notifications.INotificationTemplateEngine, CebizPay.Application.Common.Notifications.NotificationTemplateEngine>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Notifications.INotificationRateLimiter, CebizPay.Infrastructure.Notifications.NotificationRateLimiter>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Notifications.INotificationDeduplicator, CebizPay.Infrastructure.Notifications.NotificationDeduplicator>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Notifications.IInAppNotificationChannel, CebizPay.Infrastructure.Notifications.Channels.InAppNotificationChannel>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Notifications.IPushNotificationChannel, CebizPay.Infrastructure.Notifications.Channels.FirebasePushNotificationChannel>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Notifications.IEmailNotificationChannel, CebizPay.Infrastructure.Notifications.Channels.SendGridEmailNotificationChannel>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Notifications.ISmsNotificationChannel, CebizPay.Infrastructure.Notifications.Channels.TwilioSmsNotificationChannel>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Notifications.INotificationDispatcher, CebizPay.Infrastructure.Notifications.NotificationDispatcher>();
+
+        // Configure Referral Program Foundation (Batch 6D)
+        services.AddSingleton<CebizPay.Application.Common.Interfaces.Referrals.IReferralCodeGenerator, CebizPay.Application.Common.Referrals.ReferralCodeGenerator>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Referrals.IReferralRewardActivationService, CebizPay.Infrastructure.Referrals.DisabledReferralRewardActivationService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Referrals.IReferralQualificationService, CebizPay.Infrastructure.Referrals.ReferralQualificationService>();
+
         // Configure Finance services
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IWalletService, CebizPay.Infrastructure.Finance.WalletService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.ILedgerPostingService, CebizPay.Infrastructure.Finance.LedgerPostingService>();

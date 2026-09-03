@@ -28,6 +28,9 @@ builder.Services.AddHostedService<LoanRepaymentWorker>();
 builder.Services.AddHostedService<SavingsAccrualWorker>();
 builder.Services.AddHostedService<ThriftCycleWorker>();
 builder.Services.AddHostedService<VasReconciliationWorker>();
+builder.Services.AddHostedService<NotificationDispatcherWorker>();
+builder.Services.AddHostedService<NotificationRetentionWorker>();
+builder.Services.AddHostedService<ReferralQualificationWorker>();
 
 var host = builder.Build();
 host.Run();

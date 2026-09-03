@@ -19,6 +19,7 @@
     <!-- Caching & Messaging -->
     <PackageVersion Include="StackExchange.Redis" Version="3.1.13" />
     <PackageVersion Include="RabbitMQ.Client" Version="7.2.2" />
+    <PackageVersion Include="FirebaseAdmin" Version="3.1.0" />
     <!-- Application / Utilities -->
     <PackageVersion Include="FluentValidation" Version="12.1.1" />
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />

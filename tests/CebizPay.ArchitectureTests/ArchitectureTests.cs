@@ -233,6 +233,37 @@ public sealed class ArchitectureTests
 
         Assert.True(ledgerResult.IsSuccessful, "Finance Ledger domain must remain isolated from compliance risk assessments and EDD cases.");
     }
+
+    [Fact]
+    public void DomainAndApplication_ShouldNotDependOnFirebaseAdminSdk()
+    {
+        var domainResult = Types.InAssembly(typeof(Domain.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny("FirebaseAdmin", "Google.Apis")
+            .GetResult();
+
+        var appResult = Types.InAssembly(typeof(Application.AssemblyReference).Assembly)
+            .ShouldNot()
+            .HaveDependencyOnAny("FirebaseAdmin", "Google.Apis")
+            .GetResult();
+
+        Assert.True(domainResult.IsSuccessful, "Domain layer must not reference FirebaseAdmin SDK.");
+        Assert.True(appResult.IsSuccessful, "Application layer must not reference FirebaseAdmin SDK.");
+    }
+
+    [Fact]
+    public void ReferralDomain_ShouldNotDependOnLedgerOrWalletPersistence()
+    {
+        var domainResult = Types.InNamespace("CebizPay.Domain.Referrals")
+            .ShouldNot()
+            .HaveDependencyOnAny(
+                "Microsoft.EntityFrameworkCore",
+                "Npgsql",
+                "CebizPay.Infrastructure")
+            .GetResult();
+
+        Assert.True(domainResult.IsSuccessful, "Referral domain must remain pure and free from infrastructure/EF Core/Npgsql dependencies.");
+    }
 }
 
 

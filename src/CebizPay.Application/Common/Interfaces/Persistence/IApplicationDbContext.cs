@@ -263,6 +263,33 @@ public interface IApplicationDbContext
     /// <summary>Gets the compliance restrictions entity set.</summary>
     IEntitySet<CebizPay.Domain.Compliance.Entities.ComplianceRestriction> ComplianceRestrictions { get; }
 
+    /// <summary>Gets the announcements entity set.</summary>
+    IEntitySet<CebizPay.Domain.Communication.Entities.Announcement> Announcements { get; }
+
+    /// <summary>Gets the in-app notifications entity set.</summary>
+    IEntitySet<CebizPay.Domain.Communication.Entities.InAppNotification> InAppNotifications { get; }
+
+    /// <summary>Gets the device tokens entity set.</summary>
+    IEntitySet<CebizPay.Domain.Communication.Entities.DeviceToken> DeviceTokens { get; }
+
+    /// <summary>Gets the user notification preferences entity set.</summary>
+    IEntitySet<CebizPay.Domain.Communication.Entities.UserNotificationPreference> UserNotificationPreferences { get; }
+
+    /// <summary>Gets the notification delivery records entity set.</summary>
+    IEntitySet<CebizPay.Domain.Communication.Entities.NotificationDeliveryRecord> NotificationDeliveryRecords { get; }
+
+    /// <summary>Gets the referral settings entity set.</summary>
+    IEntitySet<CebizPay.Domain.Referrals.Entities.ReferralSetting> ReferralSettings { get; }
+
+    /// <summary>Gets the referral codes entity set.</summary>
+    IEntitySet<CebizPay.Domain.Referrals.Entities.ReferralCode> ReferralCodes { get; }
+
+    /// <summary>Gets the referral relationships entity set.</summary>
+    IEntitySet<CebizPay.Domain.Referrals.Entities.ReferralRelationship> ReferralRelationships { get; }
+
+    /// <summary>Gets the referral rewards entity set.</summary>
+    IEntitySet<CebizPay.Domain.Referrals.Entities.ReferralReward> ReferralRewards { get; }
+
     /// <summary>
     /// Saves changes asynchronously to the underlying database.
     /// </summary>

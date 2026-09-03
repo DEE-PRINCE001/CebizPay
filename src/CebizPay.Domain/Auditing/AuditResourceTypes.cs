@@ -153,4 +153,16 @@ public static class AuditResourceTypes
     public const string ComplianceDecision = "COMPLIANCE_DECISION";
     /// <summary>Compliance restriction resource type.</summary>
     public const string ComplianceRestriction = "COMPLIANCE_RESTRICTION";
+    /// <summary>Announcement resource type.</summary>
+    public const string Announcement = "ANNOUNCEMENT";
+
+    // Referral Program (Batch 6D)
+    /// <summary>Referral setting resource type.</summary>
+    public const string ReferralSetting = "REFERRAL_SETTING";
+    /// <summary>Referral code resource type.</summary>
+    public const string ReferralCode = "REFERRAL_CODE";
+    /// <summary>Referral relationship resource type.</summary>
+    public const string ReferralRelationship = "REFERRAL_RELATIONSHIP";
+    /// <summary>Referral reward resource type.</summary>
+    public const string ReferralReward = "REFERRAL_REWARD";
 }
