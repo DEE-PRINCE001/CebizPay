@@ -42,6 +42,7 @@ public sealed class RedisOtpService : IOtpService
     /// <inheritdoc/>
     public async Task<(bool Success, string Code, string? Error)> RequestOtpAsync(string phoneNumber, string deviceId, CancellationToken cancellationToken = default)
     {
+        var canonicalPhone = CebizPay.Application.Common.Utils.PhoneNormalizer.NormalizeE164(phoneNumber);
         var rateLimitKey = $"otp_rate_limit:{deviceId}";
         var currentCount = await _cacheService.GetAsync<int?>(rateLimitKey, cancellationToken) ?? 0;
 
@@ -57,16 +58,16 @@ public sealed class RedisOtpService : IOtpService
         var random = new Random();
         var code = random.Next(100000, 999999).ToString(CultureInfo.InvariantCulture);
 
-        var otpKey = $"otp_code:{phoneNumber}";
+        var otpKey = $"otp_code:{canonicalPhone}";
         await _cacheService.SetAsync(otpKey, code, TimeSpan.FromMinutes(5), cancellationToken);
 
-        _logger.LogInformation("Generated OTP verification code for phone {PhoneNumber}.", phoneNumber);
+        _logger.LogInformation("Generated OTP verification code for phone {PhoneNumber}.", canonicalPhone);
 
         // Dispatch via SMS service if wired
         if (_smsService != null)
         {
             var smsMessage = $"Your CebizPay verification code is: {code}. Valid for 5 minutes. Do not share this code.";
-            await _smsService.SendSmsAsync(phoneNumber, smsMessage, cancellationToken).ConfigureAwait(false);
+            await _smsService.SendSmsAsync(canonicalPhone, smsMessage, cancellationToken).ConfigureAwait(false);
         }
 
         return (true, code, null);
@@ -75,7 +76,8 @@ public sealed class RedisOtpService : IOtpService
     /// <inheritdoc/>
     public async Task<bool> VerifyOtpAsync(string phoneNumber, string code, CancellationToken cancellationToken = default)
     {
-        var otpKey = $"otp_code:{phoneNumber}";
+        var canonicalPhone = CebizPay.Application.Common.Utils.PhoneNormalizer.NormalizeE164(phoneNumber);
+        var otpKey = $"otp_code:{canonicalPhone}";
         var storedCode = await _cacheService.GetAsync<string>(otpKey, cancellationToken);
 
         if (string.IsNullOrEmpty(storedCode) || storedCode != code.Trim())

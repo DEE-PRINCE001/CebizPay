@@ -1,4 +1,5 @@
 using CebizPay.Application.Common.Interfaces.Security;
+using CebizPay.Application.Common.Utils;
 using MediatR;
 
 namespace CebizPay.Application.UseCases.Auth.RegisterPhone;
@@ -21,7 +22,8 @@ public sealed class RegisterPhoneCommandHandler : IRequestHandler<RegisterPhoneC
     /// <inheritdoc/>
     public async Task<RegisterPhoneResponseDto> Handle(RegisterPhoneCommand request, CancellationToken cancellationToken)
     {
-        var result = await _otpService.RequestOtpAsync(request.Phone, request.DeviceId, cancellationToken);
+        var canonicalPhone = PhoneNormalizer.NormalizeE164(request.Phone);
+        var result = await _otpService.RequestOtpAsync(canonicalPhone, request.DeviceId, cancellationToken);
         if (!result.Success)
         {
             return new RegisterPhoneResponseDto(false, result.Error ?? "OTP generation failed.");

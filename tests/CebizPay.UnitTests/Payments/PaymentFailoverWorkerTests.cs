@@ -160,6 +160,7 @@ public sealed class PaymentFailoverWorkerTests
             requestReference: "REF-003-FLW",
             amount: 5000m,
             currency: Currency.NGN);
+        attempt.MarkProcessing();
         attempt.MarkSucceeded("FLW-SUCCESS");
         dbContext.PaymentAttempts.Add(attempt);
 
@@ -214,6 +215,7 @@ public sealed class PaymentFailoverWorkerTests
             requestReference: "REF-004-MNF",
             amount: 5000m,
             currency: Currency.NGN);
+        attempt.MarkProcessing();
         attempt.MarkUnknown("Gateway timeout waiting for response");
         dbContext.PaymentAttempts.Add(attempt);
 
@@ -268,6 +270,7 @@ public sealed class PaymentFailoverWorkerTests
             requestReference: "REF-005-MNF",
             amount: 5000m,
             currency: Currency.NGN);
+        attempt.MarkProcessing();
         attempt.MarkFailed("TECHNICAL_FAILURE", "Server returned 503 Service Unavailable");
         dbContext.PaymentAttempts.Add(attempt);
 

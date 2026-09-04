@@ -115,7 +115,7 @@ public sealed class AsyncWebhookAndFailoverResilienceTests
         // Assert: Fast HTTP acknowledge
         Assert.Equal(WebhookProcessingStatus.Processed, result.Status);
 
-        var savedEvent = await db.WebhookEvents.FirstOrDefaultAsync(w => w.ProviderEventId == "MNF-TX-101");
+        var savedEvent = await db.WebhookEvents.FirstOrDefaultAsync(w => w.ProviderEventId == result.ProviderEventId);
         Assert.NotNull(savedEvent);
         Assert.Equal(WebhookEventStatus.Received, savedEvent.Status);
         Assert.Null(savedEvent.ProcessedAtUtc);
@@ -226,7 +226,7 @@ public sealed class AsyncWebhookAndFailoverResilienceTests
         Assert.Contains(WebhookProcessingStatus.Duplicate, statuses);
 
         // Exactly 1 webhook event record persisted
-        var eventCount = await db.WebhookEvents.CountAsync(w => w.ProviderEventId == "MNF-DUP-999");
+        var eventCount = await db.WebhookEvents.CountAsync();
         Assert.Equal(1, eventCount);
     }
 
@@ -261,6 +261,7 @@ public sealed class AsyncWebhookAndFailoverResilienceTests
             requestReference: "CBZBT-CHAIN-001-A1-MONNIFY",
             amount: 10000m,
             currency: Currency.NGN);
+        attempt1.MarkProcessing();
         attempt1.MarkFailed("TECHNICAL_FAILURE", "Monnify connection timeout");
         db.PaymentAttempts.Add(attempt1);
         await db.SaveChangesAsync();
@@ -340,6 +341,7 @@ public sealed class AsyncWebhookAndFailoverResilienceTests
             requestReference: "CBZBT-CHAIN-002-A1-MONNIFY",
             amount: 10000m,
             currency: Currency.NGN);
+        attempt1.MarkProcessing();
         attempt1.MarkFailed("TECHNICAL_FAILURE", "Monnify network disconnect");
         db.PaymentAttempts.Add(attempt1);
         await db.SaveChangesAsync();

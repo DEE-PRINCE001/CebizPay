@@ -56,6 +56,62 @@ public static partial class PhoneNormalizer
     }
 
     /// <summary>
+    /// Normalizes a phone number to canonical E.164 format (e.g. "+2348031234567").
+    /// Handles standard Nigerian mobile numbers across all supported input styles
+    /// (local 11-digit leading 0, 10-digit without leading 0, 13-digit with 234, 14-digit with 2340,
+    /// formatted with spaces/hyphens/parentheses), as well as general international E.164 numbers.
+    /// </summary>
+    public static string NormalizeE164(string? rawPhoneNumber)
+    {
+        if (string.IsNullOrWhiteSpace(rawPhoneNumber))
+            return string.Empty;
+
+        var clean = rawPhoneNumber.Trim();
+        var digits = CleanRegex.Replace(clean, string.Empty);
+        if (string.IsNullOrEmpty(digits))
+            return string.Empty;
+
+        // Nigerian 14 digits with 2340 prefix: +234 (0) 803 123 4567 -> +2348031234567
+        if (digits.StartsWith("2340", StringComparison.Ordinal) && digits.Length == 14)
+            return $"+234{digits[4..]}";
+
+        // Nigerian local 11 digits: 08031234567 -> +2348031234567
+        if (digits.StartsWith('0') && digits.Length == 11)
+            return $"+234{digits[1..]}";
+
+        // Nigerian 10 digits without leading 0: 8031234567 -> +2348031234567
+        if (digits.Length == 10 && (digits.StartsWith('7') || digits.StartsWith('8') || digits.StartsWith('9')))
+            return $"+234{digits}";
+
+        // Nigerian 13 digits: 2348031234567 -> +2348031234567
+        if (digits.StartsWith("234", StringComparison.Ordinal) && digits.Length == 13)
+            return $"+{digits}";
+
+        // General international: ensure leading '+'
+        return clean.StartsWith('+') ? $"+{digits}" : $"+{digits}";
+    }
+
+    /// <summary>
+    /// Validates whether the given string represents an acceptable mobile phone number
+    /// (valid Nigerian mobile or standard international E.164 number between 8 and 15 digits).
+    /// </summary>
+    public static bool IsValidPhoneNumber(string? rawPhoneNumber)
+    {
+        if (string.IsNullOrWhiteSpace(rawPhoneNumber))
+            return false;
+
+        var e164 = NormalizeE164(rawPhoneNumber);
+        if (string.IsNullOrEmpty(e164) || !e164.StartsWith('+'))
+            return false;
+
+        var digits = e164[1..];
+        if (digits.Length < 8 || digits.Length > 15)
+            return false;
+
+        return true;
+    }
+
+    /// <summary>
     /// Validates whether the given string represents a valid Nigerian mobile phone number.
     /// </summary>
     public static bool IsValidNigerianPhoneNumber(string? rawPhoneNumber)

@@ -1,6 +1,7 @@
 using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Interfaces.Security;
+using CebizPay.Application.Common.Utils;
 using CebizPay.Domain.Entities;
 using CebizPay.Domain.Events;
 using MediatR;
@@ -37,14 +38,15 @@ public sealed class VerifyOtpCommandHandler : IRequestHandler<VerifyOtpCommand, 
     /// <inheritdoc/>
     public async Task<VerifyOtpResponseDto> Handle(VerifyOtpCommand request, CancellationToken cancellationToken)
     {
-        var isOtpValid = await _otpService.VerifyOtpAsync(request.Phone, request.Code, cancellationToken);
+        var canonicalPhone = PhoneNormalizer.NormalizeE164(request.Phone);
+        var isOtpValid = await _otpService.VerifyOtpAsync(canonicalPhone, request.Code, cancellationToken);
         if (!isOtpValid)
         {
             return new VerifyOtpResponseDto(false, null, null, null, OtpErrorMessages);
         }
 
         var regResult = await _identityService.RegisterUserAsync(
-            request.Email, request.Password, request.Phone, cancellationToken);
+            request.Email, request.Password, canonicalPhone, cancellationToken);
 
         if (!regResult.Succeeded)
         {
@@ -56,7 +58,7 @@ public sealed class VerifyOtpCommandHandler : IRequestHandler<VerifyOtpCommand, 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         await _eventPublisher.PublishAsync(
-            new UserRegisteredDomainEvent(regResult.UserId, request.Email, request.Phone, DateTime.UtcNow),
+            new UserRegisteredDomainEvent(regResult.UserId, request.Email, canonicalPhone, DateTime.UtcNow),
             cancellationToken);
 
         var loginResult = await _identityService.LoginAsync(request.Email, request.Password, cancellationToken);

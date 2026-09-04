@@ -5462,6 +5462,11 @@ namespace CebizPay.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("UserNameIndex");
 
+                    b.HasIndex("PhoneNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AspNetUsers_PhoneNumber")
+                        .HasFilter("\"PhoneNumber\" IS NOT NULL");
+
                     b.ToTable("AspNetUsers", (string)null);
                 });
 

@@ -1,4 +1,5 @@
 using CebizPay.Application.Common.Interfaces.Security;
+using CebizPay.Application.Common.Utils;
 using CebizPay.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -30,8 +31,12 @@ public sealed class UserLookupService : IUserLookupService
     /// <inheritdoc/>
     public async Task<UserSummary?> FindByPhoneAsync(string phoneNumber, CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(phoneNumber))
+            return null;
+
+        var canonicalPhone = PhoneNormalizer.NormalizeE164(phoneNumber);
         var user = await _userManager.Users
-            .FirstOrDefaultAsync(u => u.PhoneNumber == phoneNumber, cancellationToken);
+            .FirstOrDefaultAsync(u => u.PhoneNumber == canonicalPhone, cancellationToken);
         return user == null ? null : new UserSummary(user.Id, user.Email, user.PhoneNumber);
     }
 }

@@ -1,3 +1,4 @@
+using CebizPay.Application.Common.Utils;
 using FluentValidation;
 
 namespace CebizPay.Application.UseCases.Auth.RegisterPhone;
@@ -14,7 +15,7 @@ public sealed class RegisterPhoneCommandValidator : AbstractValidator<RegisterPh
     {
         RuleFor(x => x.Phone)
             .NotEmpty().WithMessage("Phone number is required.")
-            .Matches(@"^\+?[1-9]\d{7,14}$").WithMessage("Invalid phone number format.");
+            .Must(PhoneNormalizer.IsValidPhoneNumber).WithMessage("Invalid phone number format.");
 
         RuleFor(x => x.DeviceId)
             .NotEmpty().WithMessage("DeviceId is required for device rate-limiting.");

@@ -1,3 +1,4 @@
+using CebizPay.Application.Common.Utils;
 using FluentValidation;
 
 namespace CebizPay.Application.UseCases.Auth.VerifyOtp;
@@ -14,7 +15,8 @@ public sealed class VerifyOtpCommandValidator : AbstractValidator<VerifyOtpComma
     public VerifyOtpCommandValidator()
     {
         RuleFor(x => x.Phone)
-            .NotEmpty().WithMessage("Phone is required.");
+            .NotEmpty().WithMessage("Phone is required.")
+            .Must(PhoneNormalizer.IsValidPhoneNumber).WithMessage("Invalid phone number format.");
 
         RuleFor(x => x.Code)
             .NotEmpty().WithMessage("OTP Code is required.")

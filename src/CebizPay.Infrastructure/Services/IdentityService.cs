@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Interfaces.Security;
+using CebizPay.Application.Common.Utils;
 using CebizPay.Domain.Entities;
 using CebizPay.Infrastructure.Identity;
 using CebizPay.Infrastructure.Options;
@@ -68,29 +69,53 @@ public sealed class IdentityService : IIdentityService
         string? phoneNumber,
         CancellationToken cancellationToken = default)
     {
+        string? canonicalPhone = null;
+        if (!string.IsNullOrWhiteSpace(phoneNumber))
+        {
+            canonicalPhone = PhoneNormalizer.NormalizeE164(phoneNumber);
+
+            // Fast application-level check against existing users
+            var phoneExists = await _userManager.Users
+                .AnyAsync(u => u.PhoneNumber == canonicalPhone, cancellationToken);
+
+            if (phoneExists)
+            {
+                _logger.LogWarning("Registration rejected for {Email}: phone number {Phone} is already registered.", email, canonicalPhone);
+                return (false, string.Empty, ["Phone number is already registered to an account."]);
+            }
+        }
+
         var user = new ApplicationUser
         {
             UserName = email,
             Email = email,
-            PhoneNumber = phoneNumber,
+            PhoneNumber = canonicalPhone,
             CreatedAtUtc = DateTime.UtcNow
         };
 
-        var result = await _userManager.CreateAsync(user, password);
-        if (!result.Succeeded)
+        try
         {
-            return (false, string.Empty, result.Errors.Select(e => e.Description));
-        }
+            var result = await _userManager.CreateAsync(user, password);
+            if (!result.Succeeded)
+            {
+                return (false, string.Empty, result.Errors.Select(e => e.Description));
+            }
 
-        // Store initial password hash in password history
-        if (!string.IsNullOrEmpty(user.PasswordHash))
+            // Store initial password hash in password history
+            if (!string.IsNullOrEmpty(user.PasswordHash))
+            {
+                var history = new List<string> { user.PasswordHash };
+                user.PasswordHistoryJson = JsonSerializer.Serialize(history);
+                await _userManager.UpdateAsync(user);
+            }
+
+            return (true, user.Id, Array.Empty<string>());
+        }
+        catch (DbUpdateException ex)
         {
-            var history = new List<string> { user.PasswordHash };
-            user.PasswordHistoryJson = JsonSerializer.Serialize(history);
-            await _userManager.UpdateAsync(user);
+            _logger.LogWarning(ex, "Database unique constraint violation while registering user {Email} with phone {Phone}.", email, canonicalPhone);
+            return (false, string.Empty, ["Phone number or email is already registered to an account."]);
         }
-
-        return (true, user.Id, Array.Empty<string>());
     }
 
     /// <inheritdoc/>

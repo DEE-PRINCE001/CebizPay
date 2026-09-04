@@ -129,9 +129,21 @@ public sealed partial class ReferralQualificationService : IReferralQualificatio
                 var referredUser = await _dbContext.Users
                     .FirstOrDefaultAsync(u => u.Id == currentRel.ReferredUserId, cancellationToken);
 
-                bool hasCollision = referrerUser != null && referredUser != null && (
-                    (!string.IsNullOrWhiteSpace(referrerUser.PhoneNumber) && referrerUser.PhoneNumber == referredUser.PhoneNumber) ||
-                    (!string.IsNullOrWhiteSpace(referrerUser.Email) && referrerUser.Email.Equals(referredUser.Email, StringComparison.OrdinalIgnoreCase)));
+                bool hasPhoneCollision = false;
+                if (referrerUser != null && referredUser != null &&
+                    !string.IsNullOrWhiteSpace(referrerUser.PhoneNumber) &&
+                    !string.IsNullOrWhiteSpace(referredUser.PhoneNumber))
+                {
+                    var canonicalReferrer = CebizPay.Application.Common.Utils.PhoneNormalizer.NormalizeE164(referrerUser.PhoneNumber);
+                    var canonicalReferred = CebizPay.Application.Common.Utils.PhoneNormalizer.NormalizeE164(referredUser.PhoneNumber);
+                    hasPhoneCollision = !string.IsNullOrEmpty(canonicalReferrer) && canonicalReferrer == canonicalReferred;
+                }
+
+                bool hasEmailCollision = referrerUser != null && referredUser != null &&
+                    !string.IsNullOrWhiteSpace(referrerUser.Email) &&
+                    referrerUser.Email.Equals(referredUser.Email, StringComparison.OrdinalIgnoreCase);
+
+                bool hasCollision = hasPhoneCollision || hasEmailCollision;
 
                 if (hasCollision)
                 {

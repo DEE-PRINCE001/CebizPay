@@ -10,6 +10,7 @@
     <Project Path="tests/CebizPay.ApiTests/CebizPay.ApiTests.csproj" />
     <Project Path="tests/CebizPay.ArchitectureTests/CebizPay.ArchitectureTests.csproj" />
     <Project Path="tests/CebizPay.IntegrationTests/CebizPay.IntegrationTests.csproj" />
+    <Project Path="tests/CebizPay.LoadTests/CebizPay.LoadTests.csproj" />
     <Project Path="tests/CebizPay.UnitTests/CebizPay.UnitTests.csproj" />
   </Folder>
 </Solution>
