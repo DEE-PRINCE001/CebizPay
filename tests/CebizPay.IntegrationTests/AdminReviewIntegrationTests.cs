@@ -49,6 +49,7 @@ public sealed class AdminReviewIntegrationTests : IClassFixture<InfrastructureFi
         var userId = $"indiv_{Guid.NewGuid():N}";
         var adminId = $"superadmin_{Guid.NewGuid():N}";
 
+        db.AdminProfiles.Add(new AdminProfile(adminId, AdminRoleType.SuperAdmin));
         var profile = new IndividualProfile(userId, "Alice", "Review");
         db.IndividualProfiles.Add(profile);
 
@@ -82,6 +83,7 @@ public sealed class AdminReviewIntegrationTests : IClassFixture<InfrastructureFi
         var adminId = $"superadmin_{Guid.NewGuid():N}";
         const string rejectionReason = "Document expired.";
 
+        db.AdminProfiles.Add(new AdminProfile(adminId, AdminRoleType.SuperAdmin));
         var profile = new IndividualProfile(userId, "Bob", "Rejected");
         db.IndividualProfiles.Add(profile);
 
@@ -126,6 +128,7 @@ public sealed class AdminReviewIntegrationTests : IClassFixture<InfrastructureFi
         await db.Database.EnsureCreatedAsync();
 
         var userId = $"user_{Guid.NewGuid():N}";
+        db.AdminProfiles.Add(new AdminProfile(userId, AdminRoleType.SuperAdmin));
         var profile = new IndividualProfile(userId, "SelfApprove", "Test");
         db.IndividualProfiles.Add(profile);
         await db.SaveChangesAsync();
@@ -149,6 +152,7 @@ public sealed class AdminReviewIntegrationTests : IClassFixture<InfrastructureFi
         await db.Database.EnsureCreatedAsync();
 
         var adminId = $"superadmin_{Guid.NewGuid():N}";
+        db.AdminProfiles.Add(new AdminProfile(adminId, AdminRoleType.SuperAdmin));
         var org = new Organization("Acme Corp", $"acme_{Guid.NewGuid():N}@corp.com", "+2348000000001");
         org.CompleteStep2("RC123456", "https://logo.url", "https://cac.url");
         db.Organizations.Add(org);
@@ -178,6 +182,7 @@ public sealed class AdminReviewIntegrationTests : IClassFixture<InfrastructureFi
         await db.Database.EnsureCreatedAsync();
 
         var adminId = $"superadmin_{Guid.NewGuid():N}";
+        db.AdminProfiles.Add(new AdminProfile(adminId, AdminRoleType.SuperAdmin));
         var org = new Organization("Beta Corp", $"beta_{Guid.NewGuid():N}@corp.com", "+2348000000002");
         org.CompleteStep2("RC654321", "https://beta.logo.url", "https://beta.cac.url");
         db.Organizations.Add(org);

@@ -1,17 +1,18 @@
 using Asp.Versioning;
 using CebizPay.Application.Common.Interfaces.Payroll;
+using CebizPay.Application.Common.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace CebizPay.Api.Controllers.v1;
 
 /// <summary>
-/// Super Admin read-only administrative payroll analytics endpoints.
+/// Platform Admin read-only administrative payroll analytics endpoints.
 /// </summary>
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/admin/organizations/{id:guid}/payroll-analytics")]
-[Authorize]
+[Authorize(Policy = AuthorizationPolicies.RequirePlatformAdmin)]
 public sealed class AdminPayrollController : ControllerBase
 {
     private readonly IPayrollBatchService _batchService;
@@ -28,6 +29,8 @@ public sealed class AdminPayrollController : ControllerBase
     /// Retrieves aggregated multi-currency payroll analytics for an organization.
     /// </summary>
     [HttpGet]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetPayrollAnalytics(
         [FromRoute] Guid id,
         CancellationToken cancellationToken)

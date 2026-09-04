@@ -31,6 +31,8 @@ public sealed class WorkforceApiTests
         ICurrentOrganizationContext orgContext,
         ICurrentUserService currentUserService)
     {
+        orgContext.HasPermissionAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+
         var host = await new HostBuilder()
             .ConfigureWebHost(webBuilder =>
             {

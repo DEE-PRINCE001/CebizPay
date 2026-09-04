@@ -61,7 +61,8 @@ public sealed class PayrollBatchServiceTests
         dbContext.SalaryLevels.Add(level);
 
         var member = new OrganizationMembership("emp_1", org.Id, MembershipRoleType.Member, null, null, level.Id);
-        dbContext.OrganizationMemberships.Add(member);
+        var initiator = new OrganizationMembership("usr_1", org.Id, MembershipRoleType.PayrollManager);
+        dbContext.OrganizationMemberships.AddRange(member, initiator);
 
         // Org wallet with only 100,000 NGN balance (needed 500,000 NGN)
         var wallet = Wallet.CreateOrganizationWallet(org.Id, Currency.NGN);

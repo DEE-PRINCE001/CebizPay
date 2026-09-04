@@ -126,6 +126,15 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
 
         if (existingEvent != null)
         {
+            if (existingEvent.Status == WebhookEventStatus.Failed || existingEvent.Status == WebhookEventStatus.DeadLetter)
+            {
+                existingEvent.ReleaseClaim("Re-triggered via duplicate delivery for previously failed event", TimeSpan.Zero);
+                RecordAudit(AuditActions.WebhookReactivated, AuditResourceTypes.WebhookEvent, existingEvent.Id.ToString(),
+                    JsonSerializer.Serialize(new { Provider = providerName, ProviderEventId = parsed.ProviderEventId, PreviousStatus = existingEvent.Status.ToString() }));
+                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                return WebhookProcessingResult.Processed(parsed.ProviderEventId);
+            }
+
             LogWebhookDuplicate(_logger, providerName, parsed.ProviderEventId);
             RecordAudit(AuditActions.WebhookDuplicate, AuditResourceTypes.WebhookEvent, existingEvent.Id.ToString(),
                 JsonSerializer.Serialize(new { Provider = providerName, ProviderEventId = parsed.ProviderEventId }));
@@ -622,7 +631,7 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         {
             await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
             LogVirtualAccountDepositException(_logger, parsed.ProviderEventId, ex);
-            webhookEvent.MarkFailed($"Credit failure: {ex.Message}");
+            webhookEvent.ReleaseClaim($"Credit failure: {ex.Message}", TimeSpan.FromSeconds(10));
             await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return WebhookProcessingResult.Error(parsed.ProviderEventId, ex.Message);
         }
@@ -693,7 +702,7 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         {
             await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
             LogVirtualAccountDepositException(_logger, parsed.ProviderEventId, ex);
-            webhookEvent.MarkFailed($"Credit failure: {ex.Message}");
+            webhookEvent.ReleaseClaim($"Credit failure: {ex.Message}", TimeSpan.FromSeconds(10));
             await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return WebhookProcessingResult.Error(parsed.ProviderEventId, ex.Message);
         }
@@ -793,7 +802,7 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             {
                 await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 LogCardFundingException(_logger, fundingTx.ProviderTransactionReference, ex);
-                webhookEvent.MarkFailed($"Credit failure: {ex.Message}");
+                webhookEvent.ReleaseClaim($"Credit failure: {ex.Message}", TimeSpan.FromSeconds(10));
                 await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 return WebhookProcessingResult.Error(parsed.ProviderEventId, ex.Message);
             }

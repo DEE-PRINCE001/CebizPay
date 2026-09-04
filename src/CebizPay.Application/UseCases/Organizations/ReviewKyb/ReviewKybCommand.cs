@@ -54,22 +54,41 @@ public sealed class ReviewKybCommandHandler : IRequestHandler<ReviewKybCommand, 
 {
     private readonly IApplicationDbContext _dbContext;
     private readonly IEventPublisher _eventPublisher;
+    private readonly CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? _currentUserService;
 
     /// <summary>
     /// Initializes a new instance of <see cref="ReviewKybCommandHandler"/>.
     /// </summary>
-    public ReviewKybCommandHandler(IApplicationDbContext dbContext, IEventPublisher eventPublisher)
+    public ReviewKybCommandHandler(
+        IApplicationDbContext dbContext,
+        IEventPublisher eventPublisher,
+        CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? currentUserService = null)
     {
         _dbContext = dbContext;
         _eventPublisher = eventPublisher;
+        _currentUserService = currentUserService;
     }
 
     /// <inheritdoc/>
     public async Task<ReviewKybResponseDto> Handle(ReviewKybCommand request, CancellationToken cancellationToken)
     {
+        var effectiveAdminUserId = _currentUserService?.UserId ?? request.AdminUserId;
+        if (string.IsNullOrWhiteSpace(effectiveAdminUserId))
+        {
+            throw new UnauthorizedAccessException("Authenticated admin user is required.");
+        }
+
+        var adminProfile = await _dbContext.AdminProfiles
+            .FirstOrDefaultAsync(a => a.UserId == effectiveAdminUserId && !a.IsDeleted && a.IsActive, cancellationToken);
+
+        if (adminProfile == null || (adminProfile.Role != AdminRoleType.SuperAdmin && !adminProfile.HasPermission(Domain.Permissions.Permissions.KybReview)))
+        {
+            throw new UnauthorizedAccessException("User is not authorized to review KYB submissions.");
+        }
+
         // Self-approval check: User cannot approve an organization where they hold active membership
         var isMember = await _dbContext.OrganizationMemberships
-            .AnyAsync(m => m.OrganizationId == request.OrganizationId && m.UserId == request.AdminUserId && m.Status == MembershipStatus.Active, cancellationToken);
+            .AnyAsync(m => m.OrganizationId == request.OrganizationId && m.UserId == effectiveAdminUserId && m.Status == MembershipStatus.Active, cancellationToken);
 
         if (isMember)
         {
@@ -89,7 +108,7 @@ public sealed class ReviewKybCommandHandler : IRequestHandler<ReviewKybCommand, 
         {
             org.SetKybStatus(KybStatus.Verified);
             org.TransitionStatus(OrganizationStatus.Verified);
-            kybDetail?.Verify(request.AdminUserId, DateTime.UtcNow);
+            kybDetail?.Verify(effectiveAdminUserId, DateTime.UtcNow);
         }
         else if (request.NewStatus == KybStatus.Rejected)
         {
@@ -97,7 +116,7 @@ public sealed class ReviewKybCommandHandler : IRequestHandler<ReviewKybCommand, 
                 throw new ArgumentException("Rejection reason is required when rejecting KYB.", nameof(request));
 
             org.SetKybStatus(KybStatus.Rejected);
-            kybDetail?.Reject(request.AdminUserId, request.Reason, DateTime.UtcNow);
+            kybDetail?.Reject(effectiveAdminUserId, request.Reason, DateTime.UtcNow);
         }
         else
         {
@@ -107,7 +126,7 @@ public sealed class ReviewKybCommandHandler : IRequestHandler<ReviewKybCommand, 
         // Add audit log entry
         var action = request.NewStatus == KybStatus.Verified ? Domain.Auditing.AuditActions.KybVerified : Domain.Auditing.AuditActions.KybRejected;
         _dbContext.AuditLogs.Add(Domain.Entities.AuditLog.Create(
-            actorId: request.AdminUserId,
+            actorId: effectiveAdminUserId,
             action: action,
             resourceType: Domain.Auditing.AuditResourceTypes.KybApplication,
             resourceId: org.Id.ToString(),

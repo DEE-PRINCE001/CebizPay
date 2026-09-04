@@ -45,23 +45,33 @@ public sealed class GrantAdminPermissionCommandValidator : AbstractValidator<Gra
 public sealed class GrantAdminPermissionCommandHandler : IRequestHandler<GrantAdminPermissionCommand, AdminPermissionResponseDto>
 {
     private readonly IApplicationDbContext _dbContext;
+    private readonly CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? _currentUserService;
 
     /// <summary>
     /// Initializes a new instance of <see cref="GrantAdminPermissionCommandHandler"/>.
     /// </summary>
-    public GrantAdminPermissionCommandHandler(IApplicationDbContext dbContext)
+    public GrantAdminPermissionCommandHandler(
+        IApplicationDbContext dbContext,
+        CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? currentUserService = null)
     {
         _dbContext = dbContext;
+        _currentUserService = currentUserService;
     }
 
     /// <inheritdoc/>
     public async Task<AdminPermissionResponseDto> Handle(GrantAdminPermissionCommand request, CancellationToken cancellationToken)
     {
+        var callerUserId = _currentUserService?.UserId ?? request.SuperAdminUserId;
+        if (string.IsNullOrWhiteSpace(callerUserId))
+        {
+            throw new UnauthorizedAccessException("Authenticated Super Admin user is required.");
+        }
+
         // Verify caller is Super Admin
         var callerAdmin = await _dbContext.AdminProfiles
-            .FirstOrDefaultAsync(a => a.UserId == request.SuperAdminUserId, cancellationToken);
+            .FirstOrDefaultAsync(a => a.UserId == callerUserId && !a.IsDeleted && a.IsActive, cancellationToken);
 
-        if (callerAdmin == null || callerAdmin.Role != AdminRoleType.SuperAdmin || !callerAdmin.IsActive)
+        if (callerAdmin == null || callerAdmin.Role != AdminRoleType.SuperAdmin)
         {
             throw new UnauthorizedAccessException("Only active Super Admins can grant administrative permissions.");
         }
@@ -70,7 +80,7 @@ public sealed class GrantAdminPermissionCommandHandler : IRequestHandler<GrantAd
             .FirstOrDefaultAsync(a => a.Id == request.TargetAdminProfileId, cancellationToken)
             ?? throw new KeyNotFoundException($"Admin profile with ID {request.TargetAdminProfileId} not found.");
 
-        if (targetAdmin.UserId == request.SuperAdminUserId)
+        if (targetAdmin.UserId == callerUserId)
         {
             throw new InvalidOperationException("Super Admins cannot modify their own permission assignments via delegation.");
         }
@@ -79,7 +89,7 @@ public sealed class GrantAdminPermissionCommandHandler : IRequestHandler<GrantAd
 
         // Add audit log entry
         _dbContext.AuditLogs.Add(Domain.Entities.AuditLog.Create(
-            actorId: request.SuperAdminUserId,
+            actorId: callerUserId,
             action: Domain.Auditing.AuditActions.AdminPermissionGranted,
             resourceType: Domain.Auditing.AuditResourceTypes.AdminProfile,
             resourceId: targetAdmin.Id.ToString(),

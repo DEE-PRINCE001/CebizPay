@@ -53,7 +53,7 @@ public sealed class OrganizationKybController : ControllerBase
     /// Updates organization status (Admin lifecycle transition).
     /// </summary>
     [HttpPatch("organizations/{id:guid}/status")]
-    [Authorize]
+    [Authorize(Policy = CebizPay.Application.Common.Security.AuthorizationPolicies.RequirePlatformAdmin)]
     public async Task<IActionResult> UpdateStatus(
         [FromRoute] Guid id,
         [FromBody] UpdateOrganizationStatusRequest request,

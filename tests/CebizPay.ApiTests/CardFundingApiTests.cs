@@ -5,12 +5,19 @@ using System.Text.Encodings.Web;
 using Asp.Versioning;
 using CebizPay.Api.Controllers.v1;
 using CebizPay.Application.Common.Interfaces.Payments;
+using CebizPay.Application.Common.Interfaces.Persistence;
+using CebizPay.Domain.Entities;
+using CebizPay.Domain.Enums;
+using CebizPay.Domain.Finance.Entities;
 using CebizPay.Domain.Finance.Enums;
 using CebizPay.Domain.Payments.Enums;
+using CebizPay.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.TestHost;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -22,8 +29,27 @@ namespace CebizPay.ApiTests;
 
 public sealed class CardFundingApiTests
 {
-    private static async Task<(IHost host, HttpClient client)> CreateTestServer(ICardFundingService cardFundingService)
+    private static ApplicationDbContext CreateInMemoryDbContext()
     {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(InMemoryEventId.TransactionIgnoredWarning))
+            .Options;
+        return new ApplicationDbContext(options);
+    }
+
+    private static async Task<(IHost host, HttpClient client)> CreateTestServer(
+        ICardFundingService cardFundingService,
+        IApplicationDbContext? dbContext = null)
+    {
+        if (dbContext == null)
+        {
+            var db = CreateInMemoryDbContext();
+            db.AdminProfiles.Add(new AdminProfile("usr_test_123", AdminRoleType.SuperAdmin));
+            db.SaveChanges();
+            dbContext = db;
+        }
+
         var host = await new HostBuilder()
             .ConfigureWebHost(webBuilder =>
             {
@@ -45,6 +71,7 @@ public sealed class CardFundingApiTests
                     var currentUserService = Substitute.For<CebizPay.Application.Common.Interfaces.Security.ICurrentUserService>();
                     currentUserService.UserId.Returns("usr_test_123");
                     services.AddSingleton(currentUserService);
+                    services.AddSingleton(dbContext);
                 });
                 webBuilder.Configure(app =>
                 {
@@ -118,7 +145,13 @@ public sealed class CardFundingApiTests
         service.InitializeCardFundingAsync(walletId, 10000m, Currency.NGN, PaymentProvider.Flutterwave, "https://callback.com", Arg.Any<CancellationToken>())
             .Returns(expectedResponse);
 
-        var (host, client) = await CreateTestServer(service);
+        var db = CreateInMemoryDbContext();
+        var wallet = Wallet.CreateIndividualWallet("usr_test_123", Currency.NGN);
+        typeof(Wallet).GetProperty(nameof(Wallet.Id))!.SetValue(wallet, walletId);
+        db.Wallets.Add(wallet);
+        await db.SaveChangesAsync();
+
+        var (host, client) = await CreateTestServer(service, db);
         using (host)
         {
             var request = new InitializeCardFundingApiRequest(

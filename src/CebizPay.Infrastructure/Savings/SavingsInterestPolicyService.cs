@@ -14,13 +14,17 @@ namespace CebizPay.Infrastructure.Savings;
 public class SavingsInterestPolicyService : ISavingsInterestPolicyService
 {
     private readonly IApplicationDbContext _dbContext;
+    private readonly CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? _currentUserService;
 
     /// <summary>
     /// Initializes a new instance of SavingsInterestPolicyService.
     /// </summary>
-    public SavingsInterestPolicyService(IApplicationDbContext dbContext)
+    public SavingsInterestPolicyService(
+        IApplicationDbContext dbContext,
+        CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? currentUserService = null)
     {
         _dbContext = dbContext;
+        _currentUserService = currentUserService;
     }
 
     /// <inheritdoc/>
@@ -37,6 +41,17 @@ public class SavingsInterestPolicyService : ISavingsInterestPolicyService
     /// <inheritdoc/>
     public async Task<SavingsInterestPolicyDto> CreateAndActivatePolicyAsync(CreateSavingsInterestPolicyRequest request, CancellationToken cancellationToken = default)
     {
+        var actorId = _currentUserService?.UserId ?? "SYSTEM";
+        if (!string.IsNullOrWhiteSpace(_currentUserService?.UserId))
+        {
+            var admin = await _dbContext.AdminProfiles
+                .FirstOrDefaultAsync(a => a.UserId == _currentUserService.UserId && !a.IsDeleted && a.IsActive, cancellationToken);
+            if (admin == null || admin.Role != Domain.Enums.AdminRoleType.SuperAdmin)
+            {
+                throw new UnauthorizedAccessException("Only Super Admins can configure platform savings interest policies.");
+            }
+        }
+
         // Find existing active policies for this plan type and deactivate them
         var activePolicies = await _dbContext.SavingsInterestPolicies
             .Where(p => p.PlanType == request.PlanType && p.IsActive)
@@ -46,7 +61,7 @@ public class SavingsInterestPolicyService : ISavingsInterestPolicyService
         {
             activePolicy.Deactivate();
             var deactivateAudit = AuditLog.Create(
-                actorId: "SYSTEM",
+                actorId: actorId,
                 action: AuditActions.SavingsInterestPolicyDeactivated,
                 resourceType: AuditResourceTypes.SavingsInterestPolicy,
                 resourceId: activePolicy.Id.ToString(),
@@ -71,7 +86,7 @@ public class SavingsInterestPolicyService : ISavingsInterestPolicyService
         _dbContext.SavingsInterestPolicies.Add(newPolicy);
 
         var audit = AuditLog.Create(
-            actorId: "SYSTEM",
+            actorId: actorId,
             action: AuditActions.SavingsInterestPolicyCreated,
             resourceType: AuditResourceTypes.SavingsInterestPolicy,
             resourceId: newPolicy.Id.ToString(),

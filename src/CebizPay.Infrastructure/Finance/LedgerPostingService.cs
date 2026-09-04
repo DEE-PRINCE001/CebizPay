@@ -79,7 +79,8 @@ public sealed class LedgerPostingService : ILedgerPostingService
         if (sourceLedgerAccountId == targetLedgerAccountId)
             throw new ArgumentException("Source and target ledger accounts must be different.", nameof(targetLedgerAccountId));
 
-        using var dbTransaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var isAmbientTransaction = _dbContext.Database.CurrentTransaction != null;
+        var dbTransaction = isAmbientTransaction ? null : await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
@@ -167,14 +168,27 @@ public sealed class LedgerPostingService : ILedgerPostingService
             _dbContext.LedgerEntries.AddRange(debitEntry, creditEntry);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
-            await dbTransaction.CommitAsync(cancellationToken);
+            if (dbTransaction != null)
+            {
+                await dbTransaction.CommitAsync(cancellationToken);
+            }
 
             return transaction;
         }
         catch
         {
-            await dbTransaction.RollbackAsync(cancellationToken);
+            if (dbTransaction != null)
+            {
+                await dbTransaction.RollbackAsync(cancellationToken);
+            }
             throw;
+        }
+        finally
+        {
+            if (dbTransaction != null)
+            {
+                await dbTransaction.DisposeAsync();
+            }
         }
     }
 
@@ -199,7 +213,8 @@ public sealed class LedgerPostingService : ILedgerPostingService
         if (rate <= 0)
             throw new ArgumentException("Rate must be positive.", nameof(rate));
 
-        using var dbTransaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var isAmbientTransaction = _dbContext.Database.CurrentTransaction != null;
+        var dbTransaction = isAmbientTransaction ? null : await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
@@ -267,14 +282,27 @@ public sealed class LedgerPostingService : ILedgerPostingService
             _dbContext.FxConversions.Add(fxConversion);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
-            await dbTransaction.CommitAsync(cancellationToken);
+            if (dbTransaction != null)
+            {
+                await dbTransaction.CommitAsync(cancellationToken);
+            }
 
             return (transaction, fxConversion);
         }
         catch
         {
-            await dbTransaction.RollbackAsync(cancellationToken);
+            if (dbTransaction != null)
+            {
+                await dbTransaction.RollbackAsync(cancellationToken);
+            }
             throw;
+        }
+        finally
+        {
+            if (dbTransaction != null)
+            {
+                await dbTransaction.DisposeAsync();
+            }
         }
     }
 
@@ -287,7 +315,8 @@ public sealed class LedgerPostingService : ILedgerPostingService
         if (string.IsNullOrWhiteSpace(reason))
             throw new ArgumentException("Reversal reason is required.", nameof(reason));
 
-        using var dbTransaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var isAmbientTransaction = _dbContext.Database.CurrentTransaction != null;
+        var dbTransaction = isAmbientTransaction ? null : await _dbContext.Database.BeginTransactionAsync(cancellationToken);
 
         try
         {
@@ -359,14 +388,27 @@ public sealed class LedgerPostingService : ILedgerPostingService
             _dbContext.LedgerEntries.AddRange(reversalEntries);
 
             await _dbContext.SaveChangesAsync(cancellationToken);
-            await dbTransaction.CommitAsync(cancellationToken);
+            if (dbTransaction != null)
+            {
+                await dbTransaction.CommitAsync(cancellationToken);
+            }
 
             return reversalTxn;
         }
         catch
         {
-            await dbTransaction.RollbackAsync(cancellationToken);
+            if (dbTransaction != null)
+            {
+                await dbTransaction.RollbackAsync(cancellationToken);
+            }
             throw;
+        }
+        finally
+        {
+            if (dbTransaction != null)
+            {
+                await dbTransaction.DisposeAsync();
+            }
         }
     }
 

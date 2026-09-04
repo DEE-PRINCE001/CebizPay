@@ -2,6 +2,7 @@ using Asp.Versioning;
 using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Application.Common.Models;
 using CebizPay.Application.UseCases.Organizations.Workforce;
+using CebizPay.Domain.Permissions;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -44,6 +45,7 @@ public sealed class SalaryLevelsController : ControllerBase
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<SalaryLevelDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetSalaryLevels(
         [FromQuery] string? currency,
         [FromQuery] string? search,
@@ -52,6 +54,11 @@ public sealed class SalaryLevelsController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var query = new GetSalaryLevelsQuery(orgId, currency, search, pageNumber, pageSize);
         var result = await _sender.Send(query, cancellationToken);
         return Ok(result);
@@ -63,11 +70,17 @@ public sealed class SalaryLevelsController : ControllerBase
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(SalaryLevelDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetSalaryLevelById(
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var query = new GetSalaryLevelByIdQuery(id, orgId);
         var result = await _sender.Send(query, cancellationToken);
         if (result == null)
@@ -88,11 +101,17 @@ public sealed class SalaryLevelsController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(Guid), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CreateSalaryLevel(
         [FromBody] CreateSalaryLevelApiRequest request,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.SalaryLevelsManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new CreateSalaryLevelCommand(orgId, request.LevelName, request.BaseAmount, request.Currency ?? "NGN");
         var id = await _sender.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetSalaryLevelById), new { version = "1.0", id }, new { id });
@@ -105,12 +124,18 @@ public sealed class SalaryLevelsController : ControllerBase
     [ProducesResponseType(typeof(Guid), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> UpdateSalaryLevel(
         [FromRoute] Guid id,
         [FromBody] UpdateSalaryLevelApiRequest request,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.SalaryLevelsManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new UpdateSalaryLevelCommand(id, orgId, request.LevelName, request.BaseAmount, request.Currency ?? "NGN");
         var resultId = await _sender.Send(command, cancellationToken);
         return Ok(new { id = resultId });
@@ -123,11 +148,17 @@ public sealed class SalaryLevelsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> DeleteSalaryLevel(
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.SalaryLevelsManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new DeleteSalaryLevelCommand(id, orgId);
         await _sender.Send(command, cancellationToken);
         return NoContent();

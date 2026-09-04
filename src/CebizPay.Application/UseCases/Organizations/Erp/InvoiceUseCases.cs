@@ -284,7 +284,10 @@ public sealed class RecordInvoicePaymentCommandHandler : IRequestHandler<RecordI
 
         var now = DateTime.UtcNow;
 
-        if (request.SettlementMethod == InvoiceSettlementMethod.Wallet)
+        await using var tx = await _dbContext.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            if (request.SettlementMethod == InvoiceSettlementMethod.Wallet)
         {
             if (string.IsNullOrWhiteSpace(request.Pin))
             {
@@ -438,8 +441,15 @@ public sealed class RecordInvoicePaymentCommandHandler : IRequestHandler<RecordI
         }
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
         return receiptId;
     }
+    catch
+    {
+        await tx.RollbackAsync(cancellationToken);
+        throw;
+    }
+}
 }
 
 /// <summary>Handler for <see cref="CancelInvoiceCommand"/>.</summary>

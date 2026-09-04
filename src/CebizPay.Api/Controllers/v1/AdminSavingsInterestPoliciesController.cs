@@ -9,7 +9,7 @@ namespace CebizPay.Api.Controllers.v1;
 /// </summary>
 [ApiController]
 [Route("api/v1/admin/savings/interest-policies")]
-[Authorize]
+[Authorize(Policy = CebizPay.Application.Common.Security.AuthorizationPolicies.RequirePlatformAdmin)]
 public sealed class AdminSavingsInterestPoliciesController : ControllerBase
 {
     private readonly ISavingsInterestPolicyService _policyService;
@@ -37,6 +37,7 @@ public sealed class AdminSavingsInterestPoliciesController : ControllerBase
     /// Creates and activates a new interest policy version, atomically superseding prior versions.
     /// </summary>
     [HttpPost]
+    [Authorize(Policy = CebizPay.Application.Common.Security.AuthorizationPolicies.RequireSuperAdmin)]
     [ProducesResponseType(typeof(SavingsInterestPolicyDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> CreatePolicy(

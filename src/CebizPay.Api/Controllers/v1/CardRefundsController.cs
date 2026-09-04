@@ -95,6 +95,7 @@ public sealed class CardRefundsController : ControllerBase
     /// Reconciles or re-attempts ledger reversal for a card refund.
     /// </summary>
     [HttpPost("{id:guid}/reconcile")]
+    [Authorize(Policy = CebizPay.Application.Common.Security.AuthorizationPolicies.RequirePlatformAdmin)]
     public async Task<IActionResult> ReconcileRefund(
         [FromRoute] Guid id,
         CancellationToken cancellationToken)

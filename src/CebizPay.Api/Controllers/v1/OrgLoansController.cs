@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using CebizPay.Application.Common.Interfaces.Loans;
+using CebizPay.Application.Common.Interfaces.Security;
+using CebizPay.Domain.Permissions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -16,33 +18,34 @@ public sealed class OrgLoansController : ControllerBase
 {
     private readonly ILoanApplicationService _applicationService;
     private readonly ILoanContractService _contractService;
+    private readonly ICurrentOrganizationContext _orgContext;
+    private readonly ICurrentUserService _currentUserService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="OrgLoansController"/> class.
     /// </summary>
     public OrgLoansController(
         ILoanApplicationService applicationService,
-        ILoanContractService contractService)
+        ILoanContractService contractService,
+        ICurrentOrganizationContext orgContext,
+        ICurrentUserService currentUserService)
     {
         _applicationService = applicationService;
         _contractService = contractService;
+        _orgContext = orgContext;
+        _currentUserService = currentUserService;
     }
 
     private Guid GetOrganizationId()
     {
-        var orgIdClaim = User.FindFirstValue("OrganizationId") ?? User.FindFirstValue("org_id");
-        if (string.IsNullOrEmpty(orgIdClaim) || !Guid.TryParse(orgIdClaim, out var orgId))
-        {
-            throw new UnauthorizedAccessException("Organization context is missing from token.");
-        }
-        return orgId;
+        return _orgContext.CurrentOrganizationId
+            ?? throw new UnauthorizedAccessException("Organization context is missing from request. Provide a valid 'X-Organization-Id' header.");
     }
 
     private string GetUserId()
     {
-        return User.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? User.FindFirstValue("sub")
-            ?? throw new UnauthorizedAccessException("User ID is missing from token.");
+        return _currentUserService.UserId
+            ?? throw new UnauthorizedAccessException("User authentication context is required.");
     }
 
     /// <summary>
@@ -50,9 +53,15 @@ public sealed class OrgLoansController : ControllerBase
     /// </summary>
     [HttpGet("applications")]
     [ProducesResponseType(typeof(IReadOnlyList<LoanApplicationDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetApplications(CancellationToken cancellationToken)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.LoanView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var apps = await _applicationService.GetApplicationsForOrgAsync(orgId, cancellationToken);
         return Ok(apps);
     }
@@ -63,11 +72,17 @@ public sealed class OrgLoansController : ControllerBase
     [HttpGet("applications/{id:guid}")]
     [ProducesResponseType(typeof(LoanApplicationDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetApplicationById(
         Guid id,
         CancellationToken cancellationToken)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.LoanView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var app = await _applicationService.GetApplicationByIdAsync(orgId, id, null, cancellationToken);
         if (app == null)
         {
@@ -89,11 +104,17 @@ public sealed class OrgLoansController : ControllerBase
     [ProducesResponseType(typeof(LoanContractDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> ApproveApplication(
         Guid id,
         CancellationToken cancellationToken)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.LoanApprove, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var approverUserId = GetUserId();
 
         var contract = await _applicationService.ApproveApplicationAsync(orgId, id, approverUserId, cancellationToken);
@@ -107,12 +128,18 @@ public sealed class OrgLoansController : ControllerBase
     [ProducesResponseType(typeof(LoanApplicationDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> DeclineApplication(
         Guid id,
         [FromBody] DeclineLoanApplicationRequest request,
         CancellationToken cancellationToken)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.LoanDecide, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var deciderUserId = GetUserId();
 
         var app = await _applicationService.DeclineApplicationAsync(orgId, id, deciderUserId, request.Reason, cancellationToken);
@@ -124,9 +151,15 @@ public sealed class OrgLoansController : ControllerBase
     /// </summary>
     [HttpGet("contracts")]
     [ProducesResponseType(typeof(IReadOnlyList<LoanContractDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetContracts(CancellationToken cancellationToken)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.LoanView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var contracts = await _contractService.GetContractsForOrgAsync(orgId, cancellationToken);
         return Ok(contracts);
     }
@@ -137,11 +170,17 @@ public sealed class OrgLoansController : ControllerBase
     [HttpGet("contracts/{id:guid}")]
     [ProducesResponseType(typeof(LoanContractDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetContractById(
         Guid id,
         CancellationToken cancellationToken)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.LoanView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var contract = await _contractService.GetContractByIdAsync(orgId, id, null, cancellationToken);
         if (contract == null)
         {
@@ -161,12 +200,18 @@ public sealed class OrgLoansController : ControllerBase
     [HttpPost("staff/{staffUserId}/convert-offboarding")]
     [ProducesResponseType(typeof(IReadOnlyList<LoanContractDto>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> ConvertTerminatedStaffLoans(
         string staffUserId,
         [FromBody] ConvertStaffLoansRequest request,
         CancellationToken cancellationToken)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.LoanDecide, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var actorUserId = GetUserId();
 
         var converted = await _contractService.ConvertTerminatedStaffLoansAsync(

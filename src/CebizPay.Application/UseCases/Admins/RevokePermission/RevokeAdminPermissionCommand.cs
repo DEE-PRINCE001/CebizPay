@@ -37,23 +37,33 @@ public sealed class RevokeAdminPermissionCommandValidator : AbstractValidator<Re
 public sealed class RevokeAdminPermissionCommandHandler : IRequestHandler<RevokeAdminPermissionCommand, AdminPermissionResponseDto>
 {
     private readonly IApplicationDbContext _dbContext;
+    private readonly CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? _currentUserService;
 
     /// <summary>
     /// Initializes a new instance of <see cref="RevokeAdminPermissionCommandHandler"/>.
     /// </summary>
-    public RevokeAdminPermissionCommandHandler(IApplicationDbContext dbContext)
+    public RevokeAdminPermissionCommandHandler(
+        IApplicationDbContext dbContext,
+        CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? currentUserService = null)
     {
         _dbContext = dbContext;
+        _currentUserService = currentUserService;
     }
 
     /// <inheritdoc/>
     public async Task<AdminPermissionResponseDto> Handle(RevokeAdminPermissionCommand request, CancellationToken cancellationToken)
     {
+        var callerUserId = _currentUserService?.UserId ?? request.SuperAdminUserId;
+        if (string.IsNullOrWhiteSpace(callerUserId))
+        {
+            throw new UnauthorizedAccessException("Authenticated Super Admin user is required.");
+        }
+
         // Verify caller is Super Admin
         var callerAdmin = await _dbContext.AdminProfiles
-            .FirstOrDefaultAsync(a => a.UserId == request.SuperAdminUserId, cancellationToken);
+            .FirstOrDefaultAsync(a => a.UserId == callerUserId && !a.IsDeleted && a.IsActive, cancellationToken);
 
-        if (callerAdmin == null || callerAdmin.Role != AdminRoleType.SuperAdmin || !callerAdmin.IsActive)
+        if (callerAdmin == null || callerAdmin.Role != AdminRoleType.SuperAdmin)
         {
             throw new UnauthorizedAccessException("Only active Super Admins can revoke administrative permissions.");
         }
@@ -66,7 +76,7 @@ public sealed class RevokeAdminPermissionCommandHandler : IRequestHandler<Revoke
 
         // Add audit log entry
         _dbContext.AuditLogs.Add(Domain.Entities.AuditLog.Create(
-            actorId: request.SuperAdminUserId,
+            actorId: callerUserId,
             action: Domain.Auditing.AuditActions.AdminPermissionRevoked,
             resourceType: Domain.Auditing.AuditResourceTypes.AdminProfile,
             resourceId: targetAdmin.Id.ToString(),

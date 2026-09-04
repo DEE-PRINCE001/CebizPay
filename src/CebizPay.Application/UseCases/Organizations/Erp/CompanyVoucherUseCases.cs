@@ -179,6 +179,12 @@ public sealed class ApproveCompanyVoucherCommandHandler : IRequestHandler<Approv
             throw new UnauthorizedAccessException("You do not have access to this organization.");
         }
 
+        var hasPermission = await _orgContext.HasPermissionAsync(request.OrganizationId, Domain.Permissions.Permissions.CompanyVouchersApprove, cancellationToken);
+        if (!hasPermission)
+        {
+            throw new UnauthorizedAccessException("You do not have permission to approve company vouchers.");
+        }
+
         var org = await _dbContext.Organizations.FirstOrDefaultAsync(o => o.Id == request.OrganizationId, cancellationToken)
             ?? throw new KeyNotFoundException($"Organization '{request.OrganizationId}' not found.");
 
@@ -254,6 +260,12 @@ public sealed class PayCompanyVoucherCommandHandler : IRequestHandler<PayCompany
             throw new UnauthorizedAccessException("You do not have access to this organization.");
         }
 
+        var hasPermission = await _orgContext.HasPermissionAsync(request.OrganizationId, Domain.Permissions.Permissions.CompanyVouchersPay, cancellationToken);
+        if (!hasPermission)
+        {
+            throw new UnauthorizedAccessException("You do not have permission to pay company vouchers.");
+        }
+
         var org = await _dbContext.Organizations.FirstOrDefaultAsync(o => o.Id == request.OrganizationId, cancellationToken)
             ?? throw new KeyNotFoundException($"Organization '{request.OrganizationId}' not found.");
 
@@ -272,6 +284,10 @@ public sealed class PayCompanyVoucherCommandHandler : IRequestHandler<PayCompany
         var now = DateTime.UtcNow;
         Guid? walletId = null;
         Guid? ledgerTxId = null;
+
+        await using var tx = await _dbContext.BeginTransactionAsync(cancellationToken);
+        try
+        {
 
         if (request.PaymentMethod == CompanyVoucherPaymentMethod.Wallet)
         {
@@ -387,8 +403,15 @@ public sealed class PayCompanyVoucherCommandHandler : IRequestHandler<PayCompany
             now));
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+        await tx.CommitAsync(cancellationToken);
         return Unit.Value;
     }
+    catch
+    {
+        await tx.RollbackAsync(cancellationToken);
+        throw;
+    }
+}
 }
 
 /// <summary>Handler for <see cref="CancelCompanyVoucherCommand"/>.</summary>

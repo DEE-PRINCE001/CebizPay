@@ -1,10 +1,12 @@
 #pragma warning disable CS1591
 using CebizPay.Application.Common.Interfaces.Compliance;
+using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Domain.Compliance.Enums;
 using CebizPay.Domain.Enums;
 using FluentValidation;
 using MediatR;
+using CebizPay.Application.Common.Extensions;
 
 namespace CebizPay.Application.UseCases.Compliance;
 
@@ -37,21 +39,76 @@ public sealed class VerifyBvnCommandValidator : AbstractValidator<VerifyBvnComma
     }
 }
 
+internal static class ComplianceSecurityHelper
+{
+    public static async Task VerifyTargetUserAccessAsync(
+        string? targetUserId,
+        ICurrentUserService currentUserService,
+        IApplicationDbContext? dbContext,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(targetUserId) || targetUserId == currentUserService.UserId)
+            return;
+
+        var callerId = currentUserService.UserId;
+        if (string.IsNullOrWhiteSpace(callerId))
+            throw new UnauthorizedAccessException("Caller must be authenticated.");
+
+        if (dbContext != null)
+        {
+            var admin = await dbContext.AdminProfiles
+                .FirstOrDefaultAsync(a => a.UserId == callerId && !a.IsDeleted && a.IsActive, cancellationToken);
+            if (admin == null || (admin.Role != Domain.Enums.AdminRoleType.SuperAdmin && !admin.HasPermission(Domain.Permissions.Permissions.KycReview) && !admin.HasPermission(Domain.Permissions.Permissions.ComplianceReview)))
+            {
+                throw new UnauthorizedAccessException("Caller is not authorized to submit compliance verification on behalf of another user.");
+            }
+        }
+    }
+
+    public static async Task VerifyOrganizationAccessAsync(
+        Guid organizationId,
+        ICurrentUserService? currentUserService,
+        IApplicationDbContext? dbContext,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(currentUserService?.UserId) || dbContext == null)
+            return;
+
+        var callerId = currentUserService.UserId;
+        var isMember = await dbContext.OrganizationMemberships
+            .AnyAsync(m => m.OrganizationId == organizationId && m.UserId == callerId && m.Status == Domain.Enums.MembershipStatus.Active, cancellationToken);
+        if (!isMember)
+        {
+            var isAdmin = await dbContext.AdminProfiles
+                .AnyAsync(a => a.UserId == callerId && !a.IsDeleted && a.IsActive, cancellationToken);
+            if (!isAdmin)
+            {
+                throw new UnauthorizedAccessException("Caller is not authorized to perform compliance operations for this organization.");
+            }
+        }
+    }
+}
+
 public sealed class VerifyBvnCommandHandler : IRequestHandler<VerifyBvnCommand, VerificationOperationResponse>
 {
     private readonly IVerificationOrchestrator _orchestrator;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IApplicationDbContext? _dbContext;
 
     public VerifyBvnCommandHandler(
         IVerificationOrchestrator orchestrator,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        IApplicationDbContext? dbContext = null)
     {
         _orchestrator = orchestrator;
         _currentUserService = currentUserService;
+        _dbContext = dbContext;
     }
 
     public async Task<VerificationOperationResponse> Handle(VerifyBvnCommand request, CancellationToken cancellationToken)
     {
+        await ComplianceSecurityHelper.VerifyTargetUserAccessAsync(request.TargetUserId, _currentUserService, _dbContext, cancellationToken);
+
         var effectiveUserId = !string.IsNullOrWhiteSpace(request.TargetUserId) ? request.TargetUserId : _currentUserService.UserId;
 
         if (string.IsNullOrWhiteSpace(effectiveUserId))
@@ -101,17 +158,22 @@ public sealed class VerifyNinCommandHandler : IRequestHandler<VerifyNinCommand, 
 {
     private readonly IVerificationOrchestrator _orchestrator;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IApplicationDbContext? _dbContext;
 
     public VerifyNinCommandHandler(
         IVerificationOrchestrator orchestrator,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        IApplicationDbContext? dbContext = null)
     {
         _orchestrator = orchestrator;
         _currentUserService = currentUserService;
+        _dbContext = dbContext;
     }
 
     public async Task<VerificationOperationResponse> Handle(VerifyNinCommand request, CancellationToken cancellationToken)
     {
+        await ComplianceSecurityHelper.VerifyTargetUserAccessAsync(request.TargetUserId, _currentUserService, _dbContext, cancellationToken);
+
         var effectiveUserId = !string.IsNullOrWhiteSpace(request.TargetUserId) ? request.TargetUserId : _currentUserService.UserId;
 
         if (string.IsNullOrWhiteSpace(effectiveUserId))
@@ -151,17 +213,22 @@ public sealed class VerifyBiometricsCommandHandler : IRequestHandler<VerifyBiome
 {
     private readonly IVerificationOrchestrator _orchestrator;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IApplicationDbContext? _dbContext;
 
     public VerifyBiometricsCommandHandler(
         IVerificationOrchestrator orchestrator,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        IApplicationDbContext? dbContext = null)
     {
         _orchestrator = orchestrator;
         _currentUserService = currentUserService;
+        _dbContext = dbContext;
     }
 
     public async Task<VerificationOperationResponse> Handle(VerifyBiometricsCommand request, CancellationToken cancellationToken)
     {
+        await ComplianceSecurityHelper.VerifyTargetUserAccessAsync(request.TargetUserId, _currentUserService, _dbContext, cancellationToken);
+
         var effectiveUserId = !string.IsNullOrWhiteSpace(request.TargetUserId) ? request.TargetUserId : _currentUserService.UserId;
 
         if (string.IsNullOrWhiteSpace(effectiveUserId))
@@ -206,17 +273,22 @@ public sealed class VerifyDocumentCommandHandler : IRequestHandler<VerifyDocumen
 {
     private readonly IVerificationOrchestrator _orchestrator;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IApplicationDbContext? _dbContext;
 
     public VerifyDocumentCommandHandler(
         IVerificationOrchestrator orchestrator,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        IApplicationDbContext? dbContext = null)
     {
         _orchestrator = orchestrator;
         _currentUserService = currentUserService;
+        _dbContext = dbContext;
     }
 
     public async Task<VerificationOperationResponse> Handle(VerifyDocumentCommand request, CancellationToken cancellationToken)
     {
+        await ComplianceSecurityHelper.VerifyTargetUserAccessAsync(request.TargetUserId, _currentUserService, _dbContext, cancellationToken);
+
         var effectiveUserId = !string.IsNullOrWhiteSpace(request.TargetUserId) ? request.TargetUserId : _currentUserService.UserId;
 
         if (string.IsNullOrWhiteSpace(effectiveUserId))
@@ -261,13 +333,16 @@ public sealed class ScreenAmlCommandHandler : IRequestHandler<ScreenAmlCommand, 
 {
     private readonly IVerificationOrchestrator _orchestrator;
     private readonly ICurrentUserService _currentUserService;
+    private readonly IApplicationDbContext? _dbContext;
 
     public ScreenAmlCommandHandler(
         IVerificationOrchestrator orchestrator,
-        ICurrentUserService currentUserService)
+        ICurrentUserService currentUserService,
+        IApplicationDbContext? dbContext = null)
     {
         _orchestrator = orchestrator;
         _currentUserService = currentUserService;
+        _dbContext = dbContext;
     }
 
     public async Task<VerificationOperationResponse> Handle(ScreenAmlCommand request, CancellationToken cancellationToken)
@@ -277,6 +352,8 @@ public sealed class ScreenAmlCommandHandler : IRequestHandler<ScreenAmlCommand, 
             if (!request.OrganizationId.HasValue || request.OrganizationId.Value == Guid.Empty)
                 throw new ArgumentException("OrganizationId is required for entity AML screening.", nameof(request));
 
+            await ComplianceSecurityHelper.VerifyOrganizationAccessAsync(request.OrganizationId.Value, _currentUserService, _dbContext, cancellationToken);
+
             return await _orchestrator.ScreenEntityAmlAsync(
                 request.OrganizationId.Value,
                 request.Name,
@@ -285,6 +362,8 @@ public sealed class ScreenAmlCommandHandler : IRequestHandler<ScreenAmlCommand, 
                 request.IdempotencyKey,
                 cancellationToken);
         }
+
+        await ComplianceSecurityHelper.VerifyTargetUserAccessAsync(request.TargetUserId, _currentUserService, _dbContext, cancellationToken);
 
         var effectiveUserId = !string.IsNullOrWhiteSpace(request.TargetUserId) ? request.TargetUserId : _currentUserService.UserId;
 
@@ -330,14 +409,23 @@ public sealed class VerifyBusinessCommandValidator : AbstractValidator<VerifyBus
 public sealed class VerifyBusinessCommandHandler : IRequestHandler<VerifyBusinessCommand, VerificationOperationResponse>
 {
     private readonly IVerificationOrchestrator _orchestrator;
+    private readonly ICurrentUserService? _currentUserService;
+    private readonly IApplicationDbContext? _dbContext;
 
-    public VerifyBusinessCommandHandler(IVerificationOrchestrator orchestrator)
+    public VerifyBusinessCommandHandler(
+        IVerificationOrchestrator orchestrator,
+        ICurrentUserService? currentUserService = null,
+        IApplicationDbContext? dbContext = null)
     {
         _orchestrator = orchestrator;
+        _currentUserService = currentUserService;
+        _dbContext = dbContext;
     }
 
     public async Task<VerificationOperationResponse> Handle(VerifyBusinessCommand request, CancellationToken cancellationToken)
     {
+        await ComplianceSecurityHelper.VerifyOrganizationAccessAsync(request.OrganizationId, _currentUserService, _dbContext, cancellationToken);
+
         return await _orchestrator.VerifyBusinessAsync(
             request.OrganizationId,
             request.CacNumber,
@@ -358,14 +446,23 @@ public sealed record GetBeneficialOwnersCommand(
 public sealed class GetBeneficialOwnersCommandHandler : IRequestHandler<GetBeneficialOwnersCommand, VerificationOperationResponse>
 {
     private readonly IVerificationOrchestrator _orchestrator;
+    private readonly ICurrentUserService? _currentUserService;
+    private readonly IApplicationDbContext? _dbContext;
 
-    public GetBeneficialOwnersCommandHandler(IVerificationOrchestrator orchestrator)
+    public GetBeneficialOwnersCommandHandler(
+        IVerificationOrchestrator orchestrator,
+        ICurrentUserService? currentUserService = null,
+        IApplicationDbContext? dbContext = null)
     {
         _orchestrator = orchestrator;
+        _currentUserService = currentUserService;
+        _dbContext = dbContext;
     }
 
     public async Task<VerificationOperationResponse> Handle(GetBeneficialOwnersCommand request, CancellationToken cancellationToken)
     {
+        await ComplianceSecurityHelper.VerifyOrganizationAccessAsync(request.OrganizationId, _currentUserService, _dbContext, cancellationToken);
+
         return await _orchestrator.GetBeneficialOwnersAsync(
             request.OrganizationId,
             request.CacNumber,

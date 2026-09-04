@@ -46,7 +46,23 @@ public static class SecurityExtensions
             };
         });
 
-        services.AddAuthorizationBuilder();
+        services.AddAuthorizationBuilder()
+            .AddPolicy(CebizPay.Application.Common.Security.AuthorizationPolicies.RequireSuperAdmin, policy =>
+                policy.RequireAuthenticatedUser().RequireRole(CebizPay.Domain.Enums.AdminRoleType.SuperAdmin.ToString()))
+            .AddPolicy(CebizPay.Application.Common.Security.AuthorizationPolicies.RequireComplianceAdmin, policy =>
+                policy.RequireAuthenticatedUser().RequireRole(CebizPay.Domain.Enums.AdminRoleType.SuperAdmin.ToString(), CebizPay.Domain.Enums.AdminRoleType.Admin.ToString()))
+            .AddPolicy(CebizPay.Application.Common.Security.AuthorizationPolicies.RequireFinanceAdmin, policy =>
+                policy.RequireAuthenticatedUser().RequireRole(CebizPay.Domain.Enums.AdminRoleType.SuperAdmin.ToString(), CebizPay.Domain.Enums.AdminRoleType.Admin.ToString()))
+            .AddPolicy(CebizPay.Application.Common.Security.AuthorizationPolicies.RequirePlatformAdmin, policy =>
+                policy.RequireAuthenticatedUser().RequireRole(CebizPay.Domain.Enums.AdminRoleType.SuperAdmin.ToString(), CebizPay.Domain.Enums.AdminRoleType.Admin.ToString()))
+            .AddPolicy(CebizPay.Application.Common.Security.AuthorizationPolicies.RequireAuditor, policy =>
+                policy.RequireAuthenticatedUser().RequireRole(CebizPay.Domain.Enums.AdminRoleType.SuperAdmin.ToString(), CebizPay.Domain.Enums.AdminRoleType.Admin.ToString(), CebizPay.Domain.Enums.AdminRoleType.Auditor.ToString()))
+            .AddPolicy(CebizPay.Application.Common.Security.AuthorizationPolicies.RequireOrganizationFinanceApproval, policy =>
+                policy.RequireAuthenticatedUser())
+            .AddPolicy(CebizPay.Application.Common.Security.AuthorizationPolicies.RequirePayrollExecution, policy =>
+                policy.RequireAuthenticatedUser())
+            .AddPolicy(CebizPay.Application.Common.Security.AuthorizationPolicies.RequireWorkforceManagement, policy =>
+                policy.RequireAuthenticatedUser());
 
         return services;
     }

@@ -37,6 +37,7 @@ public sealed class AuditTrailIntegrationTests : IClassFixture<InfrastructureFix
         await db.Database.EnsureCreatedAsync();
 
         var adminId = $"admin_{Guid.NewGuid():N}";
+        db.AdminProfiles.Add(new AdminProfile(adminId, AdminRoleType.SuperAdmin));
         var org = new Organization($"Org-{Guid.NewGuid():N}", "org@example.com", "+2348012345678");
         org.TransitionStatus(OrganizationStatus.Verified);
         db.Organizations.Add(org);

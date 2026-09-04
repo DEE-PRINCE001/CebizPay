@@ -78,6 +78,16 @@ public sealed partial class PayrollBatchService : IPayrollBatchService
             throw new InvalidOperationException("Organization must be fully verified and approved before executing payroll.");
         }
 
+        // Verify initiator holds active membership with Payroll.Execute permission
+        var membership = await _dbContext.OrganizationMemberships
+            .FirstOrDefaultAsync(m => m.OrganizationId == organizationId && m.UserId == initiatorUserId && m.Status == MembershipStatus.Active, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (membership == null || !membership.HasPermission(Domain.Permissions.Permissions.PayrollExecute))
+        {
+            throw new UnauthorizedAccessException("Initiator does not have permission to execute payroll for this organization.");
+        }
+
         // 2. Perform deterministic calculation dry-run to snapshot items
         var calcResult = await _calculationService.CalculatePayrollAsync(organizationId, currency, criteria, cancellationToken).ConfigureAwait(false);
         if (calcResult.Items.Count == 0)

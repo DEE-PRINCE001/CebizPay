@@ -91,6 +91,46 @@ public sealed class CardRefundService : ICardRefundService
         if (fundingTx == null)
             throw new InvalidOperationException($"FundingTransaction '{fundingTransactionId}' not found.");
 
+        if (!string.IsNullOrWhiteSpace(actorUserId) && actorUserId != "SYSTEM")
+        {
+            var wallet = await _dbContext.Wallets.AsNoTracking()
+                .FirstOrDefaultAsync(w => w.Id == fundingTx.WalletId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (wallet == null)
+                throw new InvalidOperationException($"Wallet '{fundingTx.WalletId}' not found.");
+
+            bool isAuthorized = false;
+            if (wallet.IndividualId == actorUserId)
+            {
+                isAuthorized = true;
+            }
+            else if (wallet.OrganizationId.HasValue)
+            {
+                var membership = await _dbContext.OrganizationMemberships.AsNoTracking()
+                    .FirstOrDefaultAsync(m => m.OrganizationId == wallet.OrganizationId.Value && m.UserId == actorUserId && m.Status == Domain.Enums.MembershipStatus.Active, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (membership != null && (membership.Role == Domain.Enums.MembershipRoleType.Owner || membership.Role == Domain.Enums.MembershipRoleType.Admin || membership.HasPermission(Domain.Permissions.Permissions.WalletTransfer)))
+                {
+                    isAuthorized = true;
+                }
+            }
+
+            if (!isAuthorized)
+            {
+                var isAdmin = await _dbContext.AdminProfiles.AsNoTracking()
+                    .AnyAsync(a => a.UserId == actorUserId && !a.IsDeleted && a.IsActive, cancellationToken)
+                    .ConfigureAwait(false);
+                if (isAdmin) isAuthorized = true;
+            }
+
+            if (!isAuthorized)
+            {
+                throw new UnauthorizedAccessException("Caller is not authorized to request a refund for this transaction.");
+            }
+        }
+
         if (fundingTx.Status != FundingTransactionStatus.Completed)
             throw new InvalidOperationException($"Cannot refund funding transaction in status '{fundingTx.Status}'. Must be Completed.");
 
@@ -233,7 +273,42 @@ public sealed class CardRefundService : ICardRefundService
             .FirstOrDefaultAsync(r => r.Id == refundId, cancellationToken)
             .ConfigureAwait(false);
 
-        return refund == null ? null : MapToDto(refund);
+        if (refund == null) return null;
+
+        if (!string.IsNullOrWhiteSpace(actorUserId) && actorUserId != "SYSTEM")
+        {
+            var wallet = await _dbContext.Wallets.AsNoTracking()
+                .FirstOrDefaultAsync(w => w.Id == refund.WalletId, cancellationToken)
+                .ConfigureAwait(false);
+
+            bool isAuthorized = false;
+            if (wallet != null && wallet.IndividualId == actorUserId)
+            {
+                isAuthorized = true;
+            }
+            else if (wallet != null && wallet.OrganizationId.HasValue)
+            {
+                var membership = await _dbContext.OrganizationMemberships.AsNoTracking()
+                    .FirstOrDefaultAsync(m => m.OrganizationId == wallet.OrganizationId.Value && m.UserId == actorUserId && m.Status == Domain.Enums.MembershipStatus.Active, cancellationToken)
+                    .ConfigureAwait(false);
+                if (membership != null) isAuthorized = true;
+            }
+
+            if (!isAuthorized)
+            {
+                var isAdmin = await _dbContext.AdminProfiles.AsNoTracking()
+                    .AnyAsync(a => a.UserId == actorUserId && !a.IsDeleted && a.IsActive, cancellationToken)
+                    .ConfigureAwait(false);
+                if (isAdmin) isAuthorized = true;
+            }
+
+            if (!isAuthorized)
+            {
+                throw new UnauthorizedAccessException("You do not have permission to view this card refund.");
+            }
+        }
+
+        return MapToDto(refund);
     }
 
     /// <inheritdoc/>

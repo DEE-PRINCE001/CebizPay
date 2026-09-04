@@ -6,6 +6,7 @@ using System.Text.Json;
 using Asp.Versioning;
 using CebizPay.Api.Controllers.v1;
 using CebizPay.Application.Common.Interfaces.Loans;
+using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Domain.Loans.Enums;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Builder;
@@ -25,8 +26,27 @@ public sealed class LoansApiTests
     private static async Task<(IHost host, HttpClient client)> CreateTestServer(
         ILoanPlanService planService,
         ILoanApplicationService applicationService,
-        ILoanContractService contractService)
+        ILoanContractService contractService,
+        ICurrentOrganizationContext? orgContext = null,
+        ICurrentUserService? currentUserService = null)
     {
+        if (orgContext == null)
+        {
+            var mockOrg = Substitute.For<ICurrentOrganizationContext>();
+            var testOrgId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+            mockOrg.CurrentOrganizationId.Returns(testOrgId);
+            mockOrg.HasPermissionAsync(Arg.Any<Guid>(), Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+            mockOrg.HasAccessToOrganizationAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>()).Returns(true);
+            orgContext = mockOrg;
+        }
+
+        if (currentUserService == null)
+        {
+            var mockUser = Substitute.For<ICurrentUserService>();
+            mockUser.UserId.Returns("test-user-id");
+            currentUserService = mockUser;
+        }
+
         var host = await new HostBuilder()
             .ConfigureWebHost(webBuilder =>
             {
@@ -47,6 +67,8 @@ public sealed class LoansApiTests
                     services.AddSingleton(planService);
                     services.AddSingleton(applicationService);
                     services.AddSingleton(contractService);
+                    services.AddSingleton(orgContext);
+                    services.AddSingleton(currentUserService);
                 });
                 webBuilder.Configure(app =>
                 {

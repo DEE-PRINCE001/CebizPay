@@ -58,7 +58,7 @@ public sealed class IndividualKycController : ControllerBase
     /// Admin endpoint to update an individual's KYC status.
     /// </summary>
     [HttpPatch("{id}/kyc-status")]
-    [Authorize]
+    [Authorize(Policy = CebizPay.Application.Common.Security.AuthorizationPolicies.RequirePlatformAdmin)]
     public async Task<IActionResult> UpdateKycStatus(
         [FromRoute] string id,
         [FromBody] UpdateKycStatusRequest request,

@@ -15,7 +15,7 @@ namespace CebizPay.Api.Controllers.v1;
 [ApiController]
 [ApiVersion("1.0")]
 [Route("api/v{version:apiVersion}/admin")]
-[Authorize]
+[Authorize(Policy = CebizPay.Application.Common.Security.AuthorizationPolicies.RequirePlatformAdmin)]
 public sealed class AdminReviewController : ControllerBase
 {
     private readonly ISender _sender;
@@ -52,6 +52,7 @@ public sealed class AdminReviewController : ControllerBase
     /// Grants a delegated permission to an admin profile (Super Admin only).
     /// </summary>
     [HttpPost("permissions/grant")]
+    [Authorize(Policy = CebizPay.Application.Common.Security.AuthorizationPolicies.RequireSuperAdmin)]
     public async Task<IActionResult> GrantPermission([FromBody] GrantAdminPermissionCommand command, CancellationToken cancellationToken)
     {
         var response = await _sender.Send(command, cancellationToken);
@@ -62,6 +63,7 @@ public sealed class AdminReviewController : ControllerBase
     /// Revokes a delegated permission from an admin profile (Super Admin only).
     /// </summary>
     [HttpPost("permissions/revoke")]
+    [Authorize(Policy = CebizPay.Application.Common.Security.AuthorizationPolicies.RequireSuperAdmin)]
     public async Task<IActionResult> RevokePermission([FromBody] RevokeAdminPermissionCommand command, CancellationToken cancellationToken)
     {
         var response = await _sender.Send(command, cancellationToken);

@@ -57,20 +57,39 @@ public sealed class UpdateKycStatusCommandHandler : IRequestHandler<UpdateKycSta
 {
     private readonly IApplicationDbContext _dbContext;
     private readonly IEventPublisher _eventPublisher;
+    private readonly CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? _currentUserService;
 
     /// <summary>
     /// Initializes a new instance of <see cref="UpdateKycStatusCommandHandler"/>.
     /// </summary>
-    public UpdateKycStatusCommandHandler(IApplicationDbContext dbContext, IEventPublisher eventPublisher)
+    public UpdateKycStatusCommandHandler(
+        IApplicationDbContext dbContext,
+        IEventPublisher eventPublisher,
+        CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? currentUserService = null)
     {
         _dbContext = dbContext;
         _eventPublisher = eventPublisher;
+        _currentUserService = currentUserService;
     }
 
     /// <inheritdoc/>
     public async Task<UpdateKycStatusResponseDto> Handle(UpdateKycStatusCommand request, CancellationToken cancellationToken)
     {
-        if (request.AdminUserId == request.UserId)
+        var effectiveAdminUserId = _currentUserService?.UserId ?? request.AdminUserId;
+        if (string.IsNullOrWhiteSpace(effectiveAdminUserId))
+        {
+            throw new UnauthorizedAccessException("Authenticated admin user is required.");
+        }
+
+        var adminProfile = await _dbContext.AdminProfiles
+            .FirstOrDefaultAsync(a => a.UserId == effectiveAdminUserId && !a.IsDeleted && a.IsActive, cancellationToken);
+
+        if (adminProfile == null || (adminProfile.Role != AdminRoleType.SuperAdmin && !adminProfile.HasPermission(Domain.Permissions.Permissions.KycReview)))
+        {
+            throw new UnauthorizedAccessException("User is not authorized to review KYC submissions.");
+        }
+
+        if (effectiveAdminUserId == request.UserId)
         {
             throw new InvalidOperationException("Admins cannot review or approve their own KYC status.");
         }
@@ -92,18 +111,18 @@ public sealed class UpdateKycStatusCommandHandler : IRequestHandler<UpdateKycSta
         {
             if (request.NewStatus == KycStatus.Verified)
             {
-                latestDoc.Approve(request.AdminUserId, DateTime.UtcNow);
+                latestDoc.Approve(effectiveAdminUserId, DateTime.UtcNow);
             }
             else if (request.NewStatus == KycStatus.Rejected)
             {
-                latestDoc.Reject(request.AdminUserId, request.Reason ?? "KYC rejected during review.", DateTime.UtcNow);
+                latestDoc.Reject(effectiveAdminUserId, request.Reason ?? "KYC rejected during review.", DateTime.UtcNow);
             }
         }
 
         // Add audit log entry
         var action = request.NewStatus == KycStatus.Verified ? Domain.Auditing.AuditActions.KycVerified : Domain.Auditing.AuditActions.KycRejected;
         _dbContext.AuditLogs.Add(Domain.Entities.AuditLog.Create(
-            actorId: request.AdminUserId,
+            actorId: effectiveAdminUserId,
             action: action,
             resourceType: Domain.Auditing.AuditResourceTypes.KycDocument,
             resourceId: profile.UserId,

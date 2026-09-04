@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using CebizPay.Application.Common.Interfaces.Loans;
+using CebizPay.Application.Common.Interfaces.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -15,33 +16,34 @@ public sealed class StaffLoansController : ControllerBase
 {
     private readonly ILoanApplicationService _applicationService;
     private readonly ILoanContractService _contractService;
+    private readonly ICurrentOrganizationContext _orgContext;
+    private readonly ICurrentUserService _currentUserService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StaffLoansController"/> class.
     /// </summary>
     public StaffLoansController(
         ILoanApplicationService applicationService,
-        ILoanContractService contractService)
+        ILoanContractService contractService,
+        ICurrentOrganizationContext orgContext,
+        ICurrentUserService currentUserService)
     {
         _applicationService = applicationService;
         _contractService = contractService;
+        _orgContext = orgContext;
+        _currentUserService = currentUserService;
     }
 
     private Guid GetOrganizationId()
     {
-        var orgIdClaim = User.FindFirstValue("OrganizationId") ?? User.FindFirstValue("org_id");
-        if (string.IsNullOrEmpty(orgIdClaim) || !Guid.TryParse(orgIdClaim, out var orgId))
-        {
-            throw new UnauthorizedAccessException("Organization context is missing from token.");
-        }
-        return orgId;
+        return _orgContext.CurrentOrganizationId
+            ?? throw new UnauthorizedAccessException("Organization context is missing from request. Provide a valid 'X-Organization-Id' header.");
     }
 
     private string GetUserId()
     {
-        return User.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? User.FindFirstValue("sub")
-            ?? throw new UnauthorizedAccessException("User ID is missing from token.");
+        return _currentUserService.UserId
+            ?? throw new UnauthorizedAccessException("User authentication context is required.");
     }
 
     /// <summary>

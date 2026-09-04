@@ -174,6 +174,8 @@ public static class AuditActions
     public const string WebhookRejected = "WEBHOOK_REJECTED";
     /// <summary>Audit action when a duplicate provider webhook is safely acknowledged.</summary>
     public const string WebhookDuplicate = "WEBHOOK_DUPLICATE";
+    /// <summary>Audit action when a duplicate provider webhook re-triggers processing for a previously failed event.</summary>
+    public const string WebhookReactivated = "WEBHOOK_REACTIVATED";
     /// <summary>Audit action when a webhook references an unmapped / unknown account.</summary>
     public const string WebhookUnmatchedTransaction = "WEBHOOK_UNMATCHED_TRANSACTION";
     /// <summary>Audit action when a payment attempt is reconciled via webhook or query.</summary>

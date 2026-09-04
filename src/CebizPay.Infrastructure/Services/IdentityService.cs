@@ -371,6 +371,16 @@ public sealed class IdentityService : IIdentityService
             new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
+        if (_dbContext != null)
+        {
+            var admin = _dbContext.AdminProfiles
+                .FirstOrDefault(a => a.UserId == user.Id && a.IsActive && !a.IsDeleted);
+            if (admin != null)
+            {
+                claims.Add(new Claim(ClaimTypes.Role, admin.Role.ToString()));
+            }
+        }
+
         // Access token: authoritative 15 minutes as per PRD §4.1 and Engineering Spec §9
         var expirationMinutes = _jwtOptions.ExpirationInMinutes > 0 ? _jwtOptions.ExpirationInMinutes : 15;
         var tokenDescriptor = new SecurityTokenDescriptor

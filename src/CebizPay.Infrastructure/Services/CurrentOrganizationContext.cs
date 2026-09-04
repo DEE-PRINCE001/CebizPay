@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Interfaces.Security;
+using CebizPay.Domain.Entities;
 using CebizPay.Domain.Enums;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -147,4 +148,72 @@ public sealed class CurrentOrganizationContext : ICurrentOrganizationContext
 
         return hasActiveMembership;
     }
+
+    /// <inheritdoc/>
+    public async Task<OrganizationMembership?> GetCurrentMembershipAsync(Guid organizationId, CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty) return null;
+
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext?.User?.Identity?.IsAuthenticated != true) return null;
+
+        var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId)) return null;
+
+        return await _dbContext.OrganizationMemberships
+            .FirstOrDefaultAsync(m => m.UserId == userId && m.OrganizationId == organizationId && m.Status == MembershipStatus.Active, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> HasPermissionAsync(Guid organizationId, string permission, CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || string.IsNullOrWhiteSpace(permission)) return false;
+
+        if (await IsSuperAdminAsync(cancellationToken)) return true;
+
+        var membership = await GetCurrentMembershipAsync(organizationId, cancellationToken);
+        if (membership == null) return false;
+
+        return membership.HasPermission(permission);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> HasRoleAsync(Guid organizationId, MembershipRoleType[] allowedRoles, CancellationToken cancellationToken = default)
+    {
+        if (organizationId == Guid.Empty || allowedRoles == null || allowedRoles.Length == 0) return false;
+
+        if (await IsSuperAdminAsync(cancellationToken)) return true;
+
+        var membership = await GetCurrentMembershipAsync(organizationId, cancellationToken);
+        if (membership == null) return false;
+
+        return allowedRoles.Contains(membership.Role);
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> IsSuperAdminAsync(CancellationToken cancellationToken = default)
+    {
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext?.User?.Identity?.IsAuthenticated != true) return false;
+
+        var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId)) return false;
+
+        return await _dbContext.AdminProfiles
+            .AnyAsync(a => a.UserId == userId && a.IsActive && !a.IsDeleted && a.Role == AdminRoleType.SuperAdmin, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<AdminProfile?> GetCurrentAdminProfileAsync(CancellationToken cancellationToken = default)
+    {
+        var httpContext = _httpContextAccessor.HttpContext;
+        if (httpContext?.User?.Identity?.IsAuthenticated != true) return null;
+
+        var userId = httpContext.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (string.IsNullOrWhiteSpace(userId)) return null;
+
+        return await _dbContext.AdminProfiles
+            .FirstOrDefaultAsync(a => a.UserId == userId && a.IsActive && !a.IsDeleted, cancellationToken);
+    }
 }
+

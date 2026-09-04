@@ -6,6 +6,7 @@ using CebizPay.Application.UseCases.StaffInvitations.AcceptInvitation;
 using CebizPay.Application.UseCases.StaffInvitations.InviteStaff;
 using CebizPay.Application.UseCases.StaffInvitations.SuspendStaff;
 using CebizPay.Domain.Enums;
+using CebizPay.Domain.Permissions;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -48,6 +49,7 @@ public sealed class StaffController : ControllerBase
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<StaffSummaryDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetStaffDirectory(
         [FromQuery] string? search,
         [FromQuery] Guid? departmentId,
@@ -59,6 +61,11 @@ public sealed class StaffController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var query = new GetStaffDirectoryQuery(orgId, search, departmentId, roleId, salaryLevelId, status, pageNumber, pageSize);
         var result = await _sender.Send(query, cancellationToken);
         return Ok(result);
@@ -70,11 +77,17 @@ public sealed class StaffController : ControllerBase
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(StaffProfileDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetStaffProfile(
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var query = new GetStaffProfileQuery(orgId, id);
         var result = await _sender.Send(query, cancellationToken);
         if (result == null)
@@ -95,11 +108,18 @@ public sealed class StaffController : ControllerBase
     [HttpPost("create")]
     [ProducesResponseType(typeof(Guid), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CreateStaffDirect(
         [FromBody] CreateStaffDirectApiRequest request,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffCreate, cancellationToken) &&
+            !await _orgContext.HasPermissionAsync(orgId, Permissions.StaffManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new CreateStaffDirectCommand(
             orgId,
             request.Email,
@@ -120,11 +140,18 @@ public sealed class StaffController : ControllerBase
     [HttpPost("invite")]
     [ProducesResponseType(typeof(InviteStaffResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> InviteStaff(
         [FromBody] InviteStaffApiRequest request,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffInvite, cancellationToken) &&
+            !await _orgContext.HasPermissionAsync(orgId, Permissions.StaffManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new InviteStaffCommand(orgId, request.Email);
         var response = await _sender.Send(command, cancellationToken);
         return Ok(response);
@@ -136,11 +163,18 @@ public sealed class StaffController : ControllerBase
     [HttpPost("invite-bulk")]
     [ProducesResponseType(typeof(BulkInviteSummaryDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> InviteStaffBulk(
         [FromBody] InviteStaffBulkApiRequest request,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffInvite, cancellationToken) &&
+            !await _orgContext.HasPermissionAsync(orgId, Permissions.StaffManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new InviteStaffBulkCommand(orgId, request.Emails);
         var response = await _sender.Send(command, cancellationToken);
         return Ok(response);
@@ -167,12 +201,19 @@ public sealed class StaffController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> AssignStaffWorkforce(
         [FromRoute] Guid id,
         [FromBody] AssignStaffWorkforceApiRequest request,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffAssign, cancellationToken) &&
+            !await _orgContext.HasPermissionAsync(orgId, Permissions.StaffManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new AssignStaffWorkforceCommand(orgId, id, request.DepartmentId, request.WorkforceRoleId, request.SalaryLevelId);
         await _sender.Send(command, cancellationToken);
         return Ok(new { success = true, message = "Staff workforce details assigned successfully." });
@@ -185,11 +226,18 @@ public sealed class StaffController : ControllerBase
     [ProducesResponseType(typeof(SuspendStaffMembershipResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> SuspendStaff(
         [FromRoute] Guid id,
         [FromBody] SuspendStaffApiRequest request,
         CancellationToken cancellationToken = default)
     {
+        var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new SuspendStaffMembershipCommand(id, request.Reason);
         var response = await _sender.Send(command, cancellationToken);
         return Ok(response);
@@ -202,11 +250,18 @@ public sealed class StaffController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> ReactivateStaff(
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffReactivate, cancellationToken) &&
+            !await _orgContext.HasPermissionAsync(orgId, Permissions.StaffManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new ReactivateStaffMembershipCommand(orgId, id);
         await _sender.Send(command, cancellationToken);
         return Ok(new { success = true, message = "Staff membership reactivated successfully." });
@@ -219,12 +274,18 @@ public sealed class StaffController : ControllerBase
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> TerminateStaff(
         [FromRoute] Guid id,
         [FromBody] TerminateStaffApiRequest request,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffTerminate, cancellationToken) &&
+            !await _orgContext.HasPermissionAsync(orgId, Permissions.StaffManage, cancellationToken))
+        {
+            return Forbid();
+        }
         var command = new TerminateStaffMembershipCommand(orgId, id, request.Reason);
         await _sender.Send(command, cancellationToken);
         return Ok(new { success = true, message = "Staff membership terminated and corporate loans converted successfully." });

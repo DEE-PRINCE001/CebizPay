@@ -202,6 +202,7 @@ public sealed class ErpOrdersUseCasesTests
         await db.SaveChangesAsync();
 
         orgContext.HasAccessToOrganizationAsync(org.Id, Arg.Any<CancellationToken>()).Returns(true);
+        orgContext.HasPermissionAsync(org.Id, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
         userContext.UserId.Returns("user-1");
         pinService.VerifyPinAsync("user-1", "1234", Arg.Any<CancellationToken>()).Returns((true, false, null));
         ledgerService.GetOrCreateSystemSettlementAccountAsync(Currency.NGN, Arg.Any<CancellationToken>()).Returns(sysExpenseAccount);

@@ -76,7 +76,8 @@ public sealed class PayrollIntegrationTests : IClassFixture<InfrastructureFixtur
             var profile = new IndividualProfile(empUserId, $"Employee{i}", "Test");
             dbContext.IndividualProfiles.Add(profile);
 
-            var membership = new OrganizationMembership(empUserId, org.Id, MembershipRoleType.Member, null, null, salaryLevel.Id);
+            var role = i == 1 ? MembershipRoleType.Owner : MembershipRoleType.Member;
+            var membership = new OrganizationMembership(empUserId, org.Id, role, null, null, salaryLevel.Id);
             dbContext.OrganizationMemberships.Add(membership);
 
             var empWallet = Wallet.CreateIndividualWallet(empUserId, Currency.NGN);
@@ -89,7 +90,7 @@ public sealed class PayrollIntegrationTests : IClassFixture<InfrastructureFixtur
         var criteria = new PayrollSelectionCriteria(PayrollSelectionMode.All);
         var batchDto = await batchService.CreateAndEnqueueBatchAsync(
             organizationId: org.Id,
-            initiatorUserId: "usr_admin",
+            initiatorUserId: employeeUserIds[0],
             currency: Currency.NGN,
             periodStart: DateTime.UtcNow.AddDays(-30),
             periodEnd: DateTime.UtcNow,
@@ -173,7 +174,7 @@ public sealed class PayrollIntegrationTests : IClassFixture<InfrastructureFixtur
         var emp1 = $"emp_retry_1_{Guid.NewGuid():N}";
         var emp2 = $"emp_retry_2_{Guid.NewGuid():N}";
 
-        var m1 = new OrganizationMembership(emp1, org.Id, MembershipRoleType.Member, null, null, level.Id);
+        var m1 = new OrganizationMembership(emp1, org.Id, MembershipRoleType.Owner, null, null, level.Id);
         var m2 = new OrganizationMembership(emp2, org.Id, MembershipRoleType.Member, null, null, level.Id);
         dbContext.OrganizationMemberships.AddRange(m1, m2);
 
@@ -184,7 +185,7 @@ public sealed class PayrollIntegrationTests : IClassFixture<InfrastructureFixtur
         await dbContext.SaveChangesAsync();
 
         // Enqueue batch (Requires 1,000,000 NGN total)
-        var batch = await batchService.CreateAndEnqueueBatchAsync(org.Id, "usr_admin", Currency.NGN, DateTime.UtcNow.AddDays(-30), DateTime.UtcNow, new PayrollSelectionCriteria());
+        var batch = await batchService.CreateAndEnqueueBatchAsync(org.Id, emp1, Currency.NGN, DateTime.UtcNow.AddDays(-30), DateTime.UtcNow, new PayrollSelectionCriteria());
 
         // Simulate concurrent balance reduction on Org wallet (e.g. external transfer reduced balance to 500k)
         orgWallet.Debit(600000m); // Remaining balance: 400,000 NGN
@@ -206,7 +207,7 @@ public sealed class PayrollIntegrationTests : IClassFixture<InfrastructureFixtur
         await dbContext.SaveChangesAsync();
 
         // Trigger Retry
-        var retriedCount = await batchService.RetryFailedItemsAsync(org.Id, batch.BatchId, "usr_admin");
+        var retriedCount = await batchService.RetryFailedItemsAsync(org.Id, batch.BatchId, emp1);
         Assert.Equal(1, retriedCount);
 
         // Execute retried item

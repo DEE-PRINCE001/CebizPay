@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using CebizPay.Application.Common.Interfaces.Savings;
+using CebizPay.Application.Common.Interfaces.Security;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -14,30 +15,31 @@ namespace CebizPay.Api.Controllers.v1;
 public sealed class StaffSavingsController : ControllerBase
 {
     private readonly ISavingsService _savingsService;
+    private readonly ICurrentOrganizationContext _orgContext;
+    private readonly ICurrentUserService _currentUserService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="StaffSavingsController"/> class.
     /// </summary>
-    public StaffSavingsController(ISavingsService savingsService)
+    public StaffSavingsController(
+        ISavingsService savingsService,
+        ICurrentOrganizationContext orgContext,
+        ICurrentUserService currentUserService)
     {
         _savingsService = savingsService;
+        _orgContext = orgContext;
+        _currentUserService = currentUserService;
     }
 
     private string GetUserId()
     {
-        return User.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? User.FindFirstValue("sub")
-            ?? throw new UnauthorizedAccessException("User ID is missing from token.");
+        return _currentUserService.UserId
+            ?? throw new UnauthorizedAccessException("User authentication context is required.");
     }
 
     private Guid? GetOrganizationId()
     {
-        var orgIdClaim = User.FindFirstValue("OrganizationId") ?? User.FindFirstValue("org_id");
-        if (!string.IsNullOrEmpty(orgIdClaim) && Guid.TryParse(orgIdClaim, out var orgId))
-        {
-            return orgId;
-        }
-        return null;
+        return _orgContext.CurrentOrganizationId;
     }
 
     /// <summary>

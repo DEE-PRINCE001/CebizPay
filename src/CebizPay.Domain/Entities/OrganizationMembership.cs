@@ -127,35 +127,43 @@ public class OrganizationMembership
     /// </summary>
     public bool HasPermission(string permission)
     {
-        if (permission == Permissions.Permissions.WalletTransfer || permission == Permissions.Permissions.PayrollExecute ||
-            permission == Permissions.Permissions.LoanManagePlan || permission == Permissions.Permissions.SavingsManagePlan ||
-            permission == Permissions.Permissions.ThriftManage)
+        if (Status != MembershipStatus.Active) return false;
+        if (string.IsNullOrWhiteSpace(permission)) return false;
+
+        var clean = permission.Trim();
+
+        if (Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin)
         {
-            return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin || Role == MembershipRoleType.PayrollManager;
+            return Permissions.Permissions.OrgSuperAdminPermissions.Contains(clean) ||
+                   Permissions.Permissions.ReadOnlyAdminPermissions.Contains(clean);
         }
-        if (permission == Permissions.Permissions.LoanApprove || permission == Permissions.Permissions.LoanDecide)
+        if (Role == MembershipRoleType.PayrollManager)
         {
-            return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin;
+            return Permissions.Permissions.FinanceManagerPermissions.Contains(clean) ||
+                   Permissions.Permissions.ReadOnlyAdminPermissions.Contains(clean);
         }
-        if (permission == Permissions.Permissions.StaffManage || permission == Permissions.Permissions.StaffCreate ||
-            permission == Permissions.Permissions.StaffAssign || permission == Permissions.Permissions.StaffTerminate ||
-            permission == Permissions.Permissions.StaffReactivate || permission == Permissions.Permissions.StaffInvite ||
-            permission == Permissions.Permissions.DepartmentsManage || permission == Permissions.Permissions.RolesManage ||
-            permission == Permissions.Permissions.SalaryLevelsManage || permission == Permissions.Permissions.AnnouncementsPublishWorkplace)
+        if (Role == MembershipRoleType.HrManager)
         {
-            return Role == MembershipRoleType.Owner || Role == MembershipRoleType.Admin || Role == MembershipRoleType.HrManager;
+            return Permissions.Permissions.HrManagerPermissions.Contains(clean) ||
+                   Permissions.Permissions.ReadOnlyAdminPermissions.Contains(clean);
         }
-        if (permission == Permissions.Permissions.PayrollView || permission == Permissions.Permissions.WalletView ||
-            permission == Permissions.Permissions.LoanView || permission == Permissions.Permissions.LoanRepaymentView ||
-            permission == Permissions.Permissions.LoanCreate || permission == Permissions.Permissions.SavingsView ||
-            permission == Permissions.Permissions.SavingsCreate || permission == Permissions.Permissions.SavingsContribute ||
-            permission == Permissions.Permissions.SavingsWithdraw || permission == Permissions.Permissions.ThriftView ||
-            permission == Permissions.Permissions.ThriftCreate || permission == Permissions.Permissions.ThriftInvite ||
-            permission == Permissions.Permissions.ThriftContribute || permission == Permissions.Permissions.ThriftPayoutView ||
-            permission == Permissions.Permissions.StaffView)
-        {
-            return true;
-        }
-        return Role == MembershipRoleType.Owner;
+
+        // Standard Member role has default staff self-service and viewing permissions
+        return clean == Permissions.Permissions.PayrollView ||
+               clean == Permissions.Permissions.WalletView ||
+               clean == Permissions.Permissions.LoanView ||
+               clean == Permissions.Permissions.LoanRepaymentView ||
+               clean == Permissions.Permissions.LoanCreate ||
+               clean == Permissions.Permissions.SavingsView ||
+               clean == Permissions.Permissions.SavingsCreate ||
+               clean == Permissions.Permissions.SavingsContribute ||
+               clean == Permissions.Permissions.SavingsWithdraw ||
+               clean == Permissions.Permissions.ThriftView ||
+               clean == Permissions.Permissions.ThriftCreate ||
+               clean == Permissions.Permissions.ThriftInvite ||
+               clean == Permissions.Permissions.ThriftContribute ||
+               clean == Permissions.Permissions.ThriftPayoutView ||
+               clean == Permissions.Permissions.StaffView;
     }
 }
+

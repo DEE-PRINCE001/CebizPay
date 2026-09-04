@@ -1,8 +1,10 @@
 using Asp.Versioning;
 using CebizPay.Application.Common.Interfaces.Payments;
 using CebizPay.Application.Common.Interfaces.Security;
+using CebizPay.Domain.Enums;
 using CebizPay.Domain.Finance.Enums;
 using CebizPay.Domain.Payments.Enums;
+using CebizPay.Domain.Permissions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -38,6 +40,9 @@ public sealed class VirtualAccountsController : ControllerBase
     /// Provisions a dedicated virtual account (DVA) for the authenticated individual or active organization.
     /// </summary>
     [HttpPost("provision")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> Provision(
         [FromBody] ProvisionVirtualAccountApiRequest request,
         CancellationToken cancellationToken)
@@ -48,6 +53,13 @@ public sealed class VirtualAccountsController : ControllerBase
         var orgId = _orgContext.CurrentOrganizationId;
         if (orgId.HasValue && orgId.Value != Guid.Empty)
         {
+            var canManage = await _orgContext.HasRoleAsync(orgId.Value, new[] { MembershipRoleType.Owner, MembershipRoleType.Admin, MembershipRoleType.PayrollManager }, cancellationToken)
+                || await _orgContext.HasPermissionAsync(orgId.Value, Permissions.WalletFund, cancellationToken);
+            if (!canManage)
+            {
+                return Forbid();
+            }
+
             var orgResult = await _virtualAccountService.ProvisionOrganizationVirtualAccountAsync(
                 orgId.Value,
                 currency,
@@ -76,12 +88,23 @@ public sealed class VirtualAccountsController : ControllerBase
     /// Retrieves the primary dedicated virtual account for the authenticated user or organization.
     /// </summary>
     [HttpGet("primary")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> GetPrimary(
         [FromQuery] Currency currency = Currency.NGN,
         CancellationToken cancellationToken = default)
     {
         var orgId = _orgContext.CurrentOrganizationId;
         var userId = _currentUserService.UserId;
+
+        if (orgId.HasValue && orgId.Value != Guid.Empty)
+        {
+            if (!await _orgContext.HasPermissionAsync(orgId.Value, Permissions.WalletView, cancellationToken))
+            {
+                return Forbid();
+            }
+        }
 
         var account = await _virtualAccountService.GetVirtualAccountForOwnerAsync(
             individualId: orgId.HasValue && orgId.Value != Guid.Empty ? null : userId,

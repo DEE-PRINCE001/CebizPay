@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using CebizPay.Application.Common.Interfaces.Loans;
+using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Domain.Permissions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -15,30 +16,32 @@ namespace CebizPay.Api.Controllers.v1;
 public sealed class CorporateLoanPlansController : ControllerBase
 {
     private readonly ILoanPlanService _planService;
+    private readonly ICurrentOrganizationContext _orgContext;
+    private readonly ICurrentUserService _currentUserService;
 
     /// <summary>
     /// Initializes a new instance of the <see cref="CorporateLoanPlansController"/> class.
     /// </summary>
-    public CorporateLoanPlansController(ILoanPlanService planService)
+    public CorporateLoanPlansController(
+        ILoanPlanService planService,
+        ICurrentOrganizationContext orgContext,
+        ICurrentUserService currentUserService)
     {
         _planService = planService;
+        _orgContext = orgContext;
+        _currentUserService = currentUserService;
     }
 
     private Guid GetOrganizationId()
     {
-        var orgIdClaim = User.FindFirstValue("OrganizationId") ?? User.FindFirstValue("org_id");
-        if (string.IsNullOrEmpty(orgIdClaim) || !Guid.TryParse(orgIdClaim, out var orgId))
-        {
-            throw new UnauthorizedAccessException("Organization context is missing from token.");
-        }
-        return orgId;
+        return _orgContext.CurrentOrganizationId
+            ?? throw new UnauthorizedAccessException("Organization context is missing from request. Provide a valid 'X-Organization-Id' header.");
     }
 
     private string GetUserId()
     {
-        return User.FindFirstValue(ClaimTypes.NameIdentifier)
-            ?? User.FindFirstValue("sub")
-            ?? throw new UnauthorizedAccessException("User ID is missing from token.");
+        return _currentUserService.UserId
+            ?? throw new UnauthorizedAccessException("User authentication context is required.");
     }
 
     /// <summary>
@@ -47,11 +50,17 @@ public sealed class CorporateLoanPlansController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(CorporateLoanPlanDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CreatePlan(
         [FromBody] CreateLoanPlanRequest request,
         CancellationToken cancellationToken)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.LoanManagePlan, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var userId = GetUserId();
 
         var plan = await _planService.CreatePlanAsync(orgId, request, userId, cancellationToken);
@@ -63,11 +72,17 @@ public sealed class CorporateLoanPlansController : ControllerBase
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(IReadOnlyList<CorporateLoanPlanDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetPlans(
         [FromQuery] bool activeOnly = false,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.LoanView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var plans = await _planService.GetPlansForOrgAsync(orgId, activeOnly, cancellationToken);
         return Ok(plans);
     }
@@ -78,11 +93,17 @@ public sealed class CorporateLoanPlansController : ControllerBase
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(CorporateLoanPlanDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetPlanById(
         Guid id,
         CancellationToken cancellationToken)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.LoanView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var plan = await _planService.GetPlanByIdAsync(orgId, id, cancellationToken);
         if (plan == null)
         {
@@ -103,12 +124,18 @@ public sealed class CorporateLoanPlansController : ControllerBase
     [ProducesResponseType(typeof(CorporateLoanPlanDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> UpdatePlan(
         Guid id,
         [FromBody] UpdateLoanPlanRequest request,
         CancellationToken cancellationToken)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.LoanManagePlan, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var userId = GetUserId();
 
         var updated = await _planService.UpdatePlanAsync(orgId, id, request, userId, cancellationToken);

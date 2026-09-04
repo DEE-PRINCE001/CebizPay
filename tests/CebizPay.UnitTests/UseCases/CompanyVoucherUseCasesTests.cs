@@ -83,6 +83,7 @@ public sealed class CompanyVoucherUseCasesTests
         await db.SaveChangesAsync();
 
         orgContext.HasAccessToOrganizationAsync(org.Id, Arg.Any<CancellationToken>()).Returns(true);
+        orgContext.HasPermissionAsync(org.Id, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
         userContext.UserId.Returns("manager-1");
 
         var handler = new ApproveCompanyVoucherCommandHandler(db, orgContext, userContext, outbox);
@@ -130,6 +131,7 @@ public sealed class CompanyVoucherUseCasesTests
         await db.SaveChangesAsync();
 
         orgContext.HasAccessToOrganizationAsync(org.Id, Arg.Any<CancellationToken>()).Returns(true);
+        orgContext.HasPermissionAsync(org.Id, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
         userContext.UserId.Returns("user-1");
         pinService.VerifyPinAsync("user-1", "1234", Arg.Any<CancellationToken>()).Returns((true, false, null));
         ledgerService.GetOrCreateSystemSettlementAccountAsync(Currency.NGN, Arg.Any<CancellationToken>()).Returns(sysDisbursementAccount);
@@ -193,6 +195,7 @@ public sealed class CompanyVoucherUseCasesTests
         await db.SaveChangesAsync();
 
         orgContext.HasAccessToOrganizationAsync(org.Id, Arg.Any<CancellationToken>()).Returns(true);
+        orgContext.HasPermissionAsync(org.Id, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
         userContext.UserId.Returns("user-1");
 
         var handler = new PayCompanyVoucherCommandHandler(db, orgContext, userContext, pinService, ledgerService, idempotencyService, outbox);

@@ -2,6 +2,7 @@ using Asp.Versioning;
 using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Application.Common.Models;
 using CebizPay.Application.UseCases.Organizations.Workforce;
+using CebizPay.Domain.Permissions;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -44,6 +45,7 @@ public sealed class WorkforceRolesController : ControllerBase
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<WorkforceRoleDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetRoles(
         [FromQuery] Guid? departmentId,
         [FromQuery] string? search,
@@ -52,6 +54,11 @@ public sealed class WorkforceRolesController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var query = new GetWorkforceRolesQuery(orgId, departmentId, search, pageNumber, pageSize);
         var result = await _sender.Send(query, cancellationToken);
         return Ok(result);
@@ -63,11 +70,17 @@ public sealed class WorkforceRolesController : ControllerBase
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(WorkforceRoleDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetRoleById(
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var query = new GetWorkforceRoleByIdQuery(id, orgId);
         var result = await _sender.Send(query, cancellationToken);
         if (result == null)
@@ -88,11 +101,17 @@ public sealed class WorkforceRolesController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(Guid), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CreateRole(
         [FromBody] CreateWorkforceRoleApiRequest request,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.RolesManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new CreateWorkforceRoleCommand(orgId, request.Title, request.DepartmentId, request.Description);
         var id = await _sender.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetRoleById), new { version = "1.0", id }, new { id });
@@ -105,12 +124,18 @@ public sealed class WorkforceRolesController : ControllerBase
     [ProducesResponseType(typeof(Guid), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> UpdateRole(
         [FromRoute] Guid id,
         [FromBody] UpdateWorkforceRoleApiRequest request,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.RolesManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new UpdateWorkforceRoleCommand(id, orgId, request.Title, request.DepartmentId, request.Description);
         var resultId = await _sender.Send(command, cancellationToken);
         return Ok(new { id = resultId });
@@ -123,11 +148,17 @@ public sealed class WorkforceRolesController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> DeleteRole(
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.RolesManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new DeleteWorkforceRoleCommand(id, orgId);
         await _sender.Send(command, cancellationToken);
         return NoContent();

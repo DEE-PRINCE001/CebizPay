@@ -2,6 +2,7 @@ using Asp.Versioning;
 using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Application.Common.Models;
 using CebizPay.Application.UseCases.Organizations.Workforce;
+using CebizPay.Domain.Permissions;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -44,6 +45,7 @@ public sealed class DepartmentsController : ControllerBase
     /// </summary>
     [HttpGet]
     [ProducesResponseType(typeof(PagedResult<DepartmentDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetDepartments(
         [FromQuery] string? search,
         [FromQuery] int pageNumber = 1,
@@ -51,6 +53,11 @@ public sealed class DepartmentsController : ControllerBase
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var query = new GetDepartmentsQuery(orgId, search, pageNumber, pageSize);
         var result = await _sender.Send(query, cancellationToken);
         return Ok(result);
@@ -62,11 +69,17 @@ public sealed class DepartmentsController : ControllerBase
     [HttpGet("{id:guid}")]
     [ProducesResponseType(typeof(DepartmentDto), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetDepartmentById(
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffView, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var query = new GetDepartmentByIdQuery(id, orgId);
         var result = await _sender.Send(query, cancellationToken);
         if (result == null)
@@ -87,11 +100,17 @@ public sealed class DepartmentsController : ControllerBase
     [HttpPost]
     [ProducesResponseType(typeof(Guid), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CreateDepartment(
         [FromBody] CreateDepartmentApiRequest request,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.DepartmentsManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new CreateDepartmentCommand(orgId, request.Name, request.Description);
         var id = await _sender.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetDepartmentById), new { version = "1.0", id }, new { id });
@@ -104,12 +123,18 @@ public sealed class DepartmentsController : ControllerBase
     [ProducesResponseType(typeof(Guid), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> UpdateDepartment(
         [FromRoute] Guid id,
         [FromBody] UpdateDepartmentApiRequest request,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.DepartmentsManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new UpdateDepartmentCommand(id, orgId, request.Name, request.Description);
         var resultId = await _sender.Send(command, cancellationToken);
         return Ok(new { id = resultId });
@@ -122,11 +147,17 @@ public sealed class DepartmentsController : ControllerBase
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> DeleteDepartment(
         [FromRoute] Guid id,
         CancellationToken cancellationToken = default)
     {
         var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.DepartmentsManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
         var command = new DeleteDepartmentCommand(id, orgId);
         await _sender.Send(command, cancellationToken);
         return NoContent();

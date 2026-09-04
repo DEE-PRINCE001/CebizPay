@@ -1,3 +1,6 @@
+using CebizPay.Domain.Entities;
+using CebizPay.Domain.Enums;
+
 namespace CebizPay.Application.Common.Interfaces.Security;
 
 /// <summary>
@@ -26,4 +29,30 @@ public interface ICurrentOrganizationContext
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>True if authorized; otherwise false.</returns>
     Task<bool> HasAccessToOrganizationAsync(Guid organizationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves the active organization membership for the current authenticated user.
+    /// </summary>
+    Task<OrganizationMembership?> GetCurrentMembershipAsync(Guid organizationId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates that the authenticated user has a specific organization permission (or is SuperAdmin).
+    /// </summary>
+    Task<bool> HasPermissionAsync(Guid organizationId, string permission, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Validates that the authenticated user holds one of the specified membership roles (or is SuperAdmin).
+    /// </summary>
+    Task<bool> HasRoleAsync(Guid organizationId, MembershipRoleType[] allowedRoles, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Checks whether the authenticated user is an active platform SuperAdmin.
+    /// </summary>
+    Task<bool> IsSuperAdminAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves the active platform AdminProfile for the authenticated user, or null if none.
+    /// </summary>
+    Task<AdminProfile?> GetCurrentAdminProfileAsync(CancellationToken cancellationToken = default);
 }
+
