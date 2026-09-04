@@ -1,0 +1,36 @@
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+WORKDIR /src
+
+# Copy CPM and solution files first for layer caching
+COPY ["Directory.Build.props", "."]
+COPY ["Directory.Packages.props", "."]
+COPY ["CebizPay.slnx", "."]
+
+# Copy csproj files
+COPY ["src/CebizPay.Api/CebizPay.Api.csproj", "src/CebizPay.Api/"]
+COPY ["src/CebizPay.Application/CebizPay.Application.csproj", "src/CebizPay.Application/"]
+COPY ["src/CebizPay.Domain/CebizPay.Domain.csproj", "src/CebizPay.Domain/"]
+COPY ["src/CebizPay.Infrastructure/CebizPay.Infrastructure.csproj", "src/CebizPay.Infrastructure/"]
+COPY ["src/CebizPay.Workers/CebizPay.Workers.csproj", "src/CebizPay.Workers/"]
+
+# Restore packages
+RUN dotnet restore "src/CebizPay.Workers/CebizPay.Workers.csproj"
+
+# Copy source code
+COPY . .
+
+# Publish worker app
+WORKDIR "/src/src/CebizPay.Workers"
+RUN dotnet publish "CebizPay.Workers.csproj" -c Release -o /app/publish /p:UseAppHost=false
+
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
+WORKDIR /app
+
+# Run as non-root user
+USER $APP_UID
+
+COPY --from=build /app/publish .
+
+ENTRYPOINT ["dotnet", "CebizPay.Workers.dll"]

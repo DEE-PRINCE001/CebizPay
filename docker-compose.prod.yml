@@ -1,0 +1,119 @@
+services:
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: cebizpay-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cebizpay}
+      POSTGRES_USER: ${POSTGRES_USER:-cebizpay}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Database password must be set}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - cebizpay-backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  redis:
+    image: redis:8-alpine
+    container_name: cebizpay-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Redis password must be set}"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - cebizpay-backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    container_name: cebizpay-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-cebizpay}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RabbitMQ password must be set}
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - cebizpay-backend
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: cebizpay-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-cebizpay};Username=${POSTGRES_USER:-cebizpay};Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__Redis: redis:6379,password=${REDIS_PASSWORD}
+      ConnectionStrings__RabbitMQ: amqp://${RABBITMQ_USER:-cebizpay}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+      Jwt__Secret: ${JWT_SECRET:?JWT Secret must be set}
+      Jwt__Issuer: ${JWT_ISSUER:-CebizPay}
+      Jwt__Audience: ${JWT_AUDIENCE:-CebizPayApp}
+      Jwt__ExpirationInMinutes: "15"
+    ports:
+      - "8080:8080"
+    networks:
+      - cebizpay-backend
+      - cebizpay-frontend
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    container_name: cebizpay-worker
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DOTNET_ENVIRONMENT: Production
+      ConnectionStrings__DefaultConnection: Host=postgres;Port=5432;Database=${POSTGRES_DB:-cebizpay};Username=${POSTGRES_USER:-cebizpay};Password=${POSTGRES_PASSWORD}
+      ConnectionStrings__Redis: redis:6379,password=${REDIS_PASSWORD}
+      ConnectionStrings__RabbitMQ: amqp://${RABBITMQ_USER:-cebizpay}:${RABBITMQ_PASSWORD}@rabbitmq:5672
+    networks:
+      - cebizpay-backend
+
+networks:
+  cebizpay-backend:
+    internal: true
+  cebizpay-frontend:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  redis_data:
+  rabbitmq_data:
