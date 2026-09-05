@@ -124,6 +124,9 @@ public sealed class PayrollBatchServiceTests
         using var dbContext = CreateInMemoryDbContext();
         var orgId = Guid.NewGuid();
 
+        var initiator = new OrganizationMembership("usr_1", orgId, MembershipRoleType.PayrollManager);
+        dbContext.OrganizationMemberships.Add(initiator);
+
         var batch = PayrollBatch.Create(
             orgId, Currency.NGN, PayrollSelectionMode.All, DateTime.UtcNow.AddDays(-30), DateTime.UtcNow, "usr_1");
 

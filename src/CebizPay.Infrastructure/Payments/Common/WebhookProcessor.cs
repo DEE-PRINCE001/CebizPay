@@ -128,7 +128,7 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         {
             if (existingEvent.Status == WebhookEventStatus.Failed || existingEvent.Status == WebhookEventStatus.DeadLetter)
             {
-                existingEvent.ReleaseClaim("Re-triggered via duplicate delivery for previously failed event", TimeSpan.Zero);
+                existingEvent.ReactivateForRetry("Re-triggered via provider retry/redelivery for previously failed event", TimeSpan.Zero);
                 RecordAudit(AuditActions.WebhookReactivated, AuditResourceTypes.WebhookEvent, existingEvent.Id.ToString(),
                     JsonSerializer.Serialize(new { Provider = providerName, ProviderEventId = parsed.ProviderEventId, PreviousStatus = existingEvent.Status.ToString() }));
                 await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -155,10 +155,26 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             safeMetadata: safeMetadataJson,
             correlationReference: correlationRef);
 
-        _dbContext.WebhookEvents.Add(webhookEvent);
-        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            _dbContext.WebhookEvents.Add(webhookEvent);
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return WebhookProcessingResult.Processed(parsed.ProviderEventId);
+        }
+        catch (DbUpdateException)
+        {
+            _dbContext.Entry(webhookEvent).State = EntityState.Detached;
+            existingEvent = await _dbContext.WebhookEvents
+                .FirstOrDefaultAsync(w => w.Provider == provider && w.ProviderEventId == parsed.ProviderEventId, cancellationToken)
+                .ConfigureAwait(false);
 
-        return WebhookProcessingResult.Processed(parsed.ProviderEventId);
+            if (existingEvent != null && (existingEvent.Status == WebhookEventStatus.Processed || existingEvent.Status == WebhookEventStatus.Duplicate))
+            {
+                return WebhookProcessingResult.Duplicate(parsed.ProviderEventId);
+            }
+
+            return WebhookProcessingResult.Processed(parsed.ProviderEventId);
+        }
     }
 
     /// <inheritdoc/>

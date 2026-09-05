@@ -143,6 +143,22 @@ public sealed class WebhookEvent
     }
 
     /// <summary>
+    /// Reactivates a failed or dead-lettered webhook event for retry/reprocessing following a provider redelivery or manual retry trigger.
+    /// Resets execution claims and sets status to Received with immediate or scheduled retry.
+    /// </summary>
+    public void ReactivateForRetry(string? reason = null, TimeSpan? retryDelay = null)
+    {
+        var now = DateTime.UtcNow;
+        Status = WebhookEventStatus.Received;
+        LockedBy = null;
+        LockedUntilUtc = null;
+        NextRetryAtUtc = retryDelay.HasValue ? now.Add(retryDelay.Value) : now;
+        AttemptCount = 0;
+        ProcessingError = reason?.Trim();
+        UpdatedAtUtc = now;
+    }
+
+    /// <summary>
     /// Marks the webhook event as successfully processed and reconciled.
     /// </summary>
     public void MarkProcessed(Guid? paymentAttemptId = null, string? safeMetadata = null, string? correlationReference = null)

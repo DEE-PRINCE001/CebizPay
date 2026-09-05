@@ -287,12 +287,27 @@ public sealed partial class PayrollBatchService : IPayrollBatchService
         string initiatorUserId,
         CancellationToken cancellationToken = default)
     {
+        // 1. Verify initiator holds active membership with Payroll.Execute permission
+        var membership = await _dbContext.OrganizationMemberships
+            .FirstOrDefaultAsync(m => m.OrganizationId == organizationId && m.UserId == initiatorUserId && m.Status == MembershipStatus.Active, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (membership == null || !membership.HasPermission(Domain.Permissions.Permissions.PayrollExecute))
+        {
+            throw new UnauthorizedAccessException("Initiator does not have permission to retry payroll items for this organization.");
+        }
+
         var batch = await _dbContext.PayrollBatches
             .FirstOrDefaultAsync(b => b.Id == batchId && b.OrganizationId == organizationId, cancellationToken)
             .ConfigureAwait(false);
 
         if (batch == null)
             throw new InvalidOperationException($"PayrollBatch '{batchId}' not found.");
+
+        if (batch.Status == PayrollBatchStatus.Cancelled)
+        {
+            throw new InvalidOperationException($"Cannot retry failed items for batch in status '{batch.Status}'.");
+        }
 
         var failedItems = await _dbContext.PayrollItems
             .Where(i => i.PayrollBatchId == batchId && i.Status == PayrollItemStatus.Failed)
@@ -341,6 +356,16 @@ public sealed partial class PayrollBatchService : IPayrollBatchService
         string initiatorUserId,
         CancellationToken cancellationToken = default)
     {
+        // 1. Verify initiator holds active membership with Payroll.Execute permission
+        var membership = await _dbContext.OrganizationMemberships
+            .FirstOrDefaultAsync(m => m.OrganizationId == organizationId && m.UserId == initiatorUserId && m.Status == MembershipStatus.Active, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (membership == null || !membership.HasPermission(Domain.Permissions.Permissions.PayrollExecute))
+        {
+            throw new UnauthorizedAccessException("Initiator does not have permission to cancel payroll for this organization.");
+        }
+
         var batch = await _dbContext.PayrollBatches
             .FirstOrDefaultAsync(b => b.Id == batchId && b.OrganizationId == organizationId, cancellationToken)
             .ConfigureAwait(false);

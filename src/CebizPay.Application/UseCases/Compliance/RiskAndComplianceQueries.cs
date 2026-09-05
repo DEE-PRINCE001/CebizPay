@@ -2,6 +2,7 @@
 using CebizPay.Application.Common.Extensions;
 using CebizPay.Application.Common.Interfaces.Compliance;
 using CebizPay.Application.Common.Interfaces.Persistence;
+using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Domain.Compliance.Enums;
 using CebizPay.Domain.Finance.Enums;
 using MediatR;
@@ -24,19 +25,33 @@ public sealed class GetComplianceProfileQueryHandler : IRequestHandler<GetCompli
     private readonly ICddService _cddService;
     private readonly IComplianceDecisionService _decisionService;
     private readonly IComplianceRestrictionService _restrictionService;
+    private readonly IApplicationDbContext _dbContext;
+    private readonly ICurrentUserService _currentUserService;
 
     public GetComplianceProfileQueryHandler(
         ICddService cddService,
         IComplianceDecisionService decisionService,
-        IComplianceRestrictionService restrictionService)
+        IComplianceRestrictionService restrictionService,
+        IApplicationDbContext dbContext,
+        ICurrentUserService currentUserService)
     {
-        _cddService = cddService;
-        _decisionService = decisionService;
-        _restrictionService = restrictionService;
+        _cddService = cddService ?? throw new ArgumentNullException(nameof(cddService));
+        _decisionService = decisionService ?? throw new ArgumentNullException(nameof(decisionService));
+        _restrictionService = restrictionService ?? throw new ArgumentNullException(nameof(restrictionService));
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
     }
 
     public async Task<ComplianceProfileResponse> Handle(GetComplianceProfileQuery request, CancellationToken cancellationToken)
     {
+        await ComplianceSecurityHelper.VerifyComplianceReadAccessAsync(
+            request.SubjectType,
+            request.SubjectId,
+            request.OrganizationId,
+            _currentUserService,
+            _dbContext,
+            cancellationToken);
+
         var cdd = await _cddService.GetOrCreateCddProfileAsync(request.SubjectType, request.SubjectId, request.OrganizationId, cancellationToken);
         var decision = await _decisionService.EvaluateDecisionAsync(request.SubjectType, request.SubjectId, request.OrganizationId, cancellationToken);
         var restrictions = await _restrictionService.GetActiveRestrictionsAsync(request.SubjectType, request.SubjectId, cancellationToken);
@@ -54,14 +69,24 @@ public sealed record GetRiskAssessmentQuery(
 public sealed class GetRiskAssessmentQueryHandler : IRequestHandler<GetRiskAssessmentQuery, RiskAssessmentResult?>
 {
     private readonly IApplicationDbContext _dbContext;
+    private readonly ICurrentUserService _currentUserService;
 
-    public GetRiskAssessmentQueryHandler(IApplicationDbContext dbContext)
+    public GetRiskAssessmentQueryHandler(IApplicationDbContext dbContext, ICurrentUserService currentUserService)
     {
-        _dbContext = dbContext;
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
     }
 
     public async Task<RiskAssessmentResult?> Handle(GetRiskAssessmentQuery request, CancellationToken cancellationToken)
     {
+        await ComplianceSecurityHelper.VerifyComplianceReadAccessAsync(
+            request.SubjectType,
+            request.SubjectId,
+            request.OrganizationId,
+            _currentUserService,
+            _dbContext,
+            cancellationToken);
+
         var assessment = await _dbContext.RiskAssessments
             .Where(a => a.SubjectType == request.SubjectType && a.SubjectId == request.SubjectId && a.IsCurrent)
             .OrderByDescending(a => a.EvaluatedAtUtc)
@@ -107,14 +132,24 @@ public sealed record GetRiskHistoryQuery(
 public sealed class GetRiskHistoryQueryHandler : IRequestHandler<GetRiskHistoryQuery, IReadOnlyList<RiskAssessmentResult>>
 {
     private readonly IApplicationDbContext _dbContext;
+    private readonly ICurrentUserService _currentUserService;
 
-    public GetRiskHistoryQueryHandler(IApplicationDbContext dbContext)
+    public GetRiskHistoryQueryHandler(IApplicationDbContext dbContext, ICurrentUserService currentUserService)
     {
-        _dbContext = dbContext;
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
     }
 
     public async Task<IReadOnlyList<RiskAssessmentResult>> Handle(GetRiskHistoryQuery request, CancellationToken cancellationToken)
     {
+        await ComplianceSecurityHelper.VerifyComplianceReadAccessAsync(
+            request.SubjectType,
+            request.SubjectId,
+            null,
+            _currentUserService,
+            _dbContext,
+            cancellationToken);
+
         var assessments = await _dbContext.RiskAssessments
             .Where(a => a.SubjectType == request.SubjectType && a.SubjectId == request.SubjectId)
             .OrderByDescending(a => a.EvaluatedAtUtc)
@@ -259,14 +294,29 @@ public sealed record GetComplianceRestrictionsQuery(
 public sealed class GetComplianceRestrictionsQueryHandler : IRequestHandler<GetComplianceRestrictionsQuery, IReadOnlyList<ComplianceRestrictionDto>>
 {
     private readonly IComplianceRestrictionService _restrictionService;
+    private readonly IApplicationDbContext _dbContext;
+    private readonly ICurrentUserService _currentUserService;
 
-    public GetComplianceRestrictionsQueryHandler(IComplianceRestrictionService restrictionService)
+    public GetComplianceRestrictionsQueryHandler(
+        IComplianceRestrictionService restrictionService,
+        IApplicationDbContext dbContext,
+        ICurrentUserService currentUserService)
     {
-        _restrictionService = restrictionService;
+        _restrictionService = restrictionService ?? throw new ArgumentNullException(nameof(restrictionService));
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _currentUserService = currentUserService ?? throw new ArgumentNullException(nameof(currentUserService));
     }
 
     public async Task<IReadOnlyList<ComplianceRestrictionDto>> Handle(GetComplianceRestrictionsQuery request, CancellationToken cancellationToken)
     {
+        await ComplianceSecurityHelper.VerifyComplianceReadAccessAsync(
+            request.SubjectType,
+            request.SubjectId,
+            null,
+            _currentUserService,
+            _dbContext,
+            cancellationToken);
+
         return await _restrictionService.GetActiveRestrictionsAsync(request.SubjectType, request.SubjectId, cancellationToken);
     }
 }

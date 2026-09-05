@@ -135,6 +135,12 @@ public sealed class PayrollController : ControllerBase
             return BadRequest(new { code = "INVALID_CONTEXT", message = "Active organization and user context are required." });
         }
 
+        var hasPermission = await _orgContext.HasPermissionAsync(orgId.Value, Domain.Permissions.Permissions.PayrollExecute, cancellationToken).ConfigureAwait(false);
+        if (!hasPermission)
+        {
+            throw new UnauthorizedAccessException("You do not have permission to retry failed payroll items for this organization.");
+        }
+
         var retriedCount = await _batchService.RetryFailedItemsAsync(orgId.Value, batchId, userId, cancellationToken).ConfigureAwait(false);
         return Ok(new { batchId, retriedCount, message = $"{retriedCount} failed item(s) queued for retry." });
     }
@@ -153,6 +159,12 @@ public sealed class PayrollController : ControllerBase
         if (!orgId.HasValue || orgId.Value == Guid.Empty || string.IsNullOrWhiteSpace(userId))
         {
             return BadRequest(new { code = "INVALID_CONTEXT", message = "Active organization and user context are required." });
+        }
+
+        var hasPermission = await _orgContext.HasPermissionAsync(orgId.Value, Domain.Permissions.Permissions.PayrollExecute, cancellationToken).ConfigureAwait(false);
+        if (!hasPermission)
+        {
+            throw new UnauthorizedAccessException("You do not have permission to cancel payroll for this organization.");
         }
 
         await _batchService.CancelBatchAsync(orgId.Value, batchId, userId, cancellationToken).ConfigureAwait(false);

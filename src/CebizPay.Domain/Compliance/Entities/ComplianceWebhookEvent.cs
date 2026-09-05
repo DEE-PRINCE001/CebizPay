@@ -143,6 +143,21 @@ public class ComplianceWebhookEvent
     }
 
     /// <summary>
+    /// Reactivates a failed or dead-lettered compliance webhook event for retry.
+    /// </summary>
+    public void ReactivateForRetry(string? reason = null, TimeSpan? retryDelay = null)
+    {
+        var now = DateTime.UtcNow;
+        Status = ComplianceWebhookEventStatus.Received;
+        LockedBy = null;
+        LockedUntilUtc = null;
+        NextRetryAtUtc = retryDelay.HasValue ? now.Add(retryDelay.Value) : now;
+        AttemptCount = 0;
+        ProcessingError = reason?.Trim();
+        UpdatedAtUtc = now;
+    }
+
+    /// <summary>
     /// Marks the webhook event as successfully processed.
     /// </summary>
     public void MarkProcessed(Guid? verificationOperationId = null, string? safeMetadata = null, string? correlationReference = null)

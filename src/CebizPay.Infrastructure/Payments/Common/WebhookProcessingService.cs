@@ -84,6 +84,12 @@ public sealed class WebhookProcessingService : IWebhookProcessingService
         if (evt.Status == WebhookEventStatus.Processed)
             return WebhookProcessingResult.Processed(evt.ProviderEventId, evt.PaymentAttemptId, "Already processed.");
 
+        if (evt.Status == WebhookEventStatus.DeadLetter || evt.Status == WebhookEventStatus.Failed)
+        {
+            evt.ReactivateForRetry("Direct retry triggered");
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         var providerName = evt.Provider.ToString();
         try
         {
@@ -138,6 +144,12 @@ public sealed class WebhookProcessingService : IWebhookProcessingService
 
         if (evt.Status == ComplianceWebhookEventStatus.Processed)
             return ComplianceWebhookProcessingResult.Processed(evt.ProviderEventId, "Already processed.", evt.VerificationOperationId);
+
+        if (evt.Status == ComplianceWebhookEventStatus.DeadLetter || evt.Status == ComplianceWebhookEventStatus.Failed)
+        {
+            evt.ReactivateForRetry("Direct retry triggered");
+            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         var providerName = evt.Provider.ToString();
         try

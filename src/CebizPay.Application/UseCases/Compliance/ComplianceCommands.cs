@@ -87,6 +87,68 @@ internal static class ComplianceSecurityHelper
             }
         }
     }
+
+    public static async Task VerifyComplianceReadAccessAsync(
+        RiskSubjectType subjectType,
+        string subjectId,
+        Guid? organizationId,
+        ICurrentUserService currentUserService,
+        IApplicationDbContext dbContext,
+        CancellationToken cancellationToken)
+    {
+        var callerId = currentUserService.UserId;
+        if (string.IsNullOrWhiteSpace(callerId))
+        {
+            throw new UnauthorizedAccessException("Caller must be authenticated.");
+        }
+
+        // 1. Platform / Compliance Administrator Access
+        var admin = await dbContext.AdminProfiles
+            .FirstOrDefaultAsync(a => a.UserId == callerId && !a.IsDeleted && a.IsActive, cancellationToken);
+        if (admin != null && (admin.Role == Domain.Enums.AdminRoleType.SuperAdmin ||
+                              admin.Role == Domain.Enums.AdminRoleType.Admin ||
+                              admin.HasPermission(Domain.Permissions.Permissions.ComplianceView) ||
+                              admin.HasPermission(Domain.Permissions.Permissions.ComplianceReview) ||
+                              admin.HasPermission(Domain.Permissions.Permissions.KycView) ||
+                              admin.HasPermission(Domain.Permissions.Permissions.KybView)))
+        {
+            return;
+        }
+
+        // 2. Individual Self-Service Access
+        if (subjectType == RiskSubjectType.Individual)
+        {
+            if (string.Equals(callerId, subjectId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            throw new UnauthorizedAccessException("Caller is not authorized to view compliance data for this subject.");
+        }
+
+        // 3. Organization-Scoped Access
+        if (subjectType == RiskSubjectType.Organization || organizationId.HasValue)
+        {
+            var targetOrgId = organizationId ?? (Guid.TryParse(subjectId, out var parsedOrgId) ? parsedOrgId : Guid.Empty);
+            if (targetOrgId != Guid.Empty)
+            {
+                var membership = await dbContext.OrganizationMemberships
+                    .FirstOrDefaultAsync(m => m.OrganizationId == targetOrgId && m.UserId == callerId && m.Status == Domain.Enums.MembershipStatus.Active, cancellationToken);
+
+                if (membership != null && (membership.Role == Domain.Enums.MembershipRoleType.Owner ||
+                                           membership.Role == Domain.Enums.MembershipRoleType.Admin ||
+                                           membership.HasPermission(Domain.Permissions.Permissions.KybView) ||
+                                           membership.HasPermission(Domain.Permissions.Permissions.ComplianceView)))
+                {
+                    return;
+                }
+            }
+
+            throw new UnauthorizedAccessException("Caller is not authorized to view compliance data for this organization.");
+        }
+
+        throw new UnauthorizedAccessException("Caller is not authorized to view compliance data.");
+    }
 }
 
 public sealed class VerifyBvnCommandHandler : IRequestHandler<VerifyBvnCommand, VerificationOperationResponse>
