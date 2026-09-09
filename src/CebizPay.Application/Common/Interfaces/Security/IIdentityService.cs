@@ -69,4 +69,24 @@ public interface IIdentityService
     Task<IDictionary<string, (string Email, string? PhoneNumber)>> GetUserDetailsByIdsAsync(
         IEnumerable<string> userIds,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves detailed identity information (email, phone, confirmation states, two-factor, pin status) for a user by ID.
+    /// </summary>
+    Task<UserIdentityDetails?> GetUserIdentityByIdAsync(
+        string userId,
+        CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// Authoritative identity user details from the identity store.
+/// </summary>
+public sealed record UserIdentityDetails(
+    string UserId,
+    string Email,
+    bool EmailConfirmed,
+    string? PhoneNumber,
+    bool PhoneNumberConfirmed,
+    bool TwoFactorEnabled,
+    bool HasTransactionPin,
+    DateTime CreatedAtUtc);

@@ -442,4 +442,41 @@ public sealed class IdentityService : IIdentityService
             u => u.Id,
             u => (u.Email ?? string.Empty, u.PhoneNumber));
     }
+
+    /// <inheritdoc/>
+    public async Task<UserIdentityDetails?> GetUserIdentityByIdAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+        {
+            return null;
+        }
+
+        var user = await _userManager.FindByIdAsync(userId);
+        if (user == null)
+        {
+            return null;
+        }
+
+        var isMfaEnabled = false;
+        try
+        {
+            isMfaEnabled = await _mfaService.IsMfaEnabledAsync(userId, cancellationToken);
+        }
+        catch
+        {
+            // fallback gracefully if mfa service fails
+        }
+
+        return new UserIdentityDetails(
+            user.Id,
+            user.Email ?? string.Empty,
+            user.EmailConfirmed,
+            user.PhoneNumber,
+            user.PhoneNumberConfirmed,
+            user.TwoFactorEnabled || isMfaEnabled,
+            !string.IsNullOrWhiteSpace(user.TransactionPinHash),
+            user.CreatedAtUtc);
+    }
 }

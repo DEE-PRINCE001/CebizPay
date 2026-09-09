@@ -1,5 +1,6 @@
 using Asp.Versioning;
 using CebizPay.Application.UseCases.Auth.ChangePassword;
+using CebizPay.Application.UseCases.Auth.GetCurrentUser;
 using CebizPay.Application.UseCases.Auth.Login;
 using CebizPay.Application.UseCases.Auth.RegisterPhone;
 using CebizPay.Application.UseCases.Auth.ToggleMfa;
@@ -176,6 +177,22 @@ public sealed class AuthController : ControllerBase
         {
             return BadRequest(response);
         }
+        return Ok(response);
+    }
+
+    /// <summary>
+    /// Retrieves full profile, identity, admin, and workplace details of the currently authenticated user.
+    /// Rate limited by AuthPolicy.
+    /// </summary>
+    [HttpGet("me")]
+    [Authorize]
+    [EnableRateLimiting("AuthPolicy")]
+    [ProducesResponseType(typeof(CurrentUserDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetCurrentUser(CancellationToken cancellationToken)
+    {
+        var response = await _sender.Send(new GetCurrentUserQuery(), cancellationToken);
         return Ok(response);
     }
 }
