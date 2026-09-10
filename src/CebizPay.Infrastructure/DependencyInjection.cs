@@ -85,6 +85,7 @@ public static class DependencyInjection
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
         services.AddSingleton<IAsyncQueryExecutor, EfCoreAsyncQueryExecutor>();
         CebizPay.Application.Common.Extensions.AsyncQueryableExtensions.SetExecutor(new EfCoreAsyncQueryExecutor());
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Analytics.IPlatformAnalyticsQueryService, CebizPay.Infrastructure.Persistence.Queries.PlatformAnalyticsQueryService>();
 
         // Configure Identity with unified ApplicationUser
         services.AddIdentityCore<ApplicationUser>(options =>
