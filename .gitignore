@@ -19,6 +19,8 @@ TestResults/
 coverage/
 *.trx
 
+scratch/
+
 # Environment / secrets
 .env
 .env.*

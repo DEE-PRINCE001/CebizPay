@@ -1,40 +1,56 @@
-# Backend Endpoints Needed for Organizations Module
+# Backend Endpoints Needed for Individuals Module
 
-This document tracks endpoints required by the frontend application that are not yet available or fully exposed in the backend OpenAPI specification (`https://cebizpay.onrender.com/openapi/v1.json`).
+This document tracks the administrative endpoints required by the frontend application for the **Individual** module that are **not yet available** on the live backend (`https://cebizpay.onrender.com/openapi/v1.json`).
+
+> **Note on Existing Endpoints**:
+> - `GET /api/v1/individuals/{id}/kyc-documents` is **already available** and verified.
+> - `PATCH /api/v1/individuals/{id}/kyc-status` is **already available** and verified.
+> - The endpoints below are **missing (currently returning 404 Not Found)** and are required for the Individual admin screens.
 
 ---
 
-## 1. Platform Organizations Directory
-Retrieves a paginated list of all onboarded organizations across the platform for administrative oversight.
+## 1. Platform Individuals Directory
+Retrieves a paginated list of all onboarded individual users across the platform for administrative oversight.
 
 - **Method**: `GET`
-- **Route**: `/api/v1/admin/organizations`
+- **Route**: `/api/v1/admin/individuals`
 - **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
 - **Query Parameters**:
   - `pageNumber` (`integer`, optional, default: `1`): The 1-based page number.
   - `pageSize` (`integer`, optional, default: `10`): Number of records per page.
-  - `search` (`string`, optional): Search query matching organization name, email, or address.
+  - `search` (`string`, optional): Search query matching individual's full name, email, or phone number.
   - `status` (`string` or `integer`, optional): Filter by lifecycle status (`Pending`, `Verified`, `Suspended`, `Rejected`).
-  - `category` (`string`, optional): Filter by industry category (e.g. `Technology`, `Finance`).
+  - `professionalStatus` (`string`, optional): Filter by employment classification (`Staff`, `Not-a-Staff`).
 - **Success Response (`200 OK`)**:
 ```json
 {
   "items": [
     {
       "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-      "name": "Cebis Tech",
-      "category": "Technology",
-      "email": "cebistech@gmail.com",
-      "address": "Abuja Obanikoro.......",
-      "status": "Pending",
-      "staffCount": 56,
-      "logoUrl": null,
-      "createdAt": "2026-01-15T09:30:00Z"
+      "name": "Johnson Mile",
+      "email": "Mile@gmail.com",
+      "phoneNumber": "0815275927",
+      "professionalStatus": "Staff",
+      "companyName": "Cebis Company",
+      "status": "Suspended",
+      "avatarUrl": "https://storage.cebizpay.com/avatars/user_01.jpg",
+      "createdAt": "2026-01-10T12:00:00Z"
+    },
+    {
+      "id": "4bc96g75-6828-5673-c4gd-3d074g77bgb7",
+      "name": "Mike Johnson",
+      "email": "Mike@gmail.com",
+      "phoneNumber": "0815275927",
+      "professionalStatus": "Not-a-Staff",
+      "companyName": "None",
+      "status": "Verified",
+      "avatarUrl": null,
+      "createdAt": "2026-01-12T14:30:00Z"
     }
   ],
   "pageNumber": 1,
   "pageSize": 10,
-  "totalCount": 45,
+  "totalCount": 42,
   "totalPages": 5,
   "hasNextPage": true,
   "hasPreviousPage": false
@@ -43,47 +59,33 @@ Retrieves a paginated list of all onboarded organizations across the platform fo
 
 ---
 
-## 2. Organization Details by ID
-Retrieves full operational and KYB profile details for a specific organization.
+## 2. Individual Profile Details by ID
+Retrieves full profile, employment, and submitted KYC credential details for an individual user.
 
 - **Method**: `GET`
-- **Route**: `/api/v1/admin/organizations/{id}`
+- **Route**: `/api/v1/admin/individuals/{id}`
 - **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
 - **Path Parameters**:
-  - `id` (`uuid`, required): Organization unique identifier.
+  - `id` (`uuid` or `string`, required): Individual user unique identifier.
 - **Success Response (`200 OK`)**:
 ```json
 {
   "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "name": "Cebis Tech",
-  "category": "Technology",
-  "email": "cebistech@gmail.com",
-  "address": "Abuja Obanikoro.......",
-  "status": "Pending",
-  "staffCount": 56,
-  "logoUrl": null,
-  "photoUrl": null,
+  "name": "Mike Johnson",
+  "email": "Mike@gmail.com",
+  "phoneNumber": "0815275927",
+  "status": "Active",
+  "professionalStatus": "Staff",
+  "companyName": "Cebis Company",
+  "photoUrl": "https://storage.cebizpay.com/photos/mike_johnson.jpg",
   "registeredAt": "2026-01-10T12:00:00Z",
   "credentials": [
     {
       "id": "doc-001",
-      "title": "Corporative Association Community",
-      "documentType": "CAC_CERTIFICATE",
-      "fileUrl": "https://storage.cebizpay.com/docs/cac_cebis_tech.pdf",
-      "uploadedAt": "2026-01-10T12:15:00Z"
-    },
-    {
-      "id": "doc-002",
-      "title": "Corporative Association Community",
-      "documentType": "MEMORANDUM_OF_ASSOCIATION",
-      "fileUrl": "https://storage.cebizpay.com/docs/moa_cebis_tech.pdf",
-      "uploadedAt": "2026-01-10T12:15:00Z"
-    },
-    {
-      "id": "doc-003",
-      "title": "Corporative Association Community",
-      "documentType": "TAX_CLEARANCE",
-      "fileUrl": "https://storage.cebizpay.com/docs/tax_cebis_tech.pdf",
+      "title": "National Identity Card",
+      "documentType": "NIN",
+      "documentNumber": "12345678901",
+      "fileUrl": "https://storage.cebizpay.com/docs/nin_card.pdf",
       "uploadedAt": "2026-01-10T12:15:00Z"
     }
   ]
@@ -92,38 +94,77 @@ Retrieves full operational and KYB profile details for a specific organization.
 
 ---
 
-## 3. Organization Staff Roster (Platform Admin Scope)
-Retrieves staff members associated with a specific organization when viewed by a platform administrator.
-*(Note: `/api/v1/org/staff` currently requires tenant organization context `X-Organization-Id`; this endpoint allows platform admins to view staff by organization ID).*
+## 3. Individual Transactions (Admin View)
+Retrieves the paginated ledger transaction history for a specific individual.
 
 - **Method**: `GET`
-- **Route**: `/api/v1/admin/organizations/{id}/staff`
+- **Route**: `/api/v1/admin/individuals/{id}/transactions`
 - **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
 - **Path Parameters**:
-  - `id` (`uuid`, required): Organization unique identifier.
+  - `id` (`uuid` or `string`, required): Individual user unique identifier.
 - **Query Parameters**:
   - `pageNumber` (`integer`, optional, default: `1`): The 1-based page number.
   - `pageSize` (`integer`, optional, default: `10`): Number of records per page.
-  - `search` (`string`, optional): Search staff name, wallet ID, or email.
+  - `search` (`string`, optional): Search query matching counterparty, transaction ID, or account number.
+  - `type` (`string`, optional): Filter by transaction type (`Send`, `Receives`).
+  - `status` (`string`, optional): Filter by status (`Successfull`, `Pending`, `Reversed`, `Failed`).
 - **Success Response (`200 OK`)**:
 ```json
 {
   "items": [
     {
-      "id": "staff-001",
-      "name": "Johnson Mike",
-      "walletId": "781797168ID",
-      "bankAccount": "02826893 AC",
-      "email": "Mile@gmail.com",
-      "monthlySalary": "34,9713",
-      "status": "Verified",
-      "avatarUrl": null
+      "id": "tx-1029384756",
+      "counterpartyName": "Johnson Mike",
+      "counterpartyAvatarUrl": null,
+      "amount": 25000.00,
+      "transactionType": "Send",
+      "receiverSenderId": "7817971681ID",
+      "method": "Wallet ID",
+      "accountOrWalletId": "156191667631",
+      "dateTime": "2021-05-27T16:18:00Z",
+      "status": "Successfull"
+    },
+    {
+      "id": "tx-1029384757",
+      "counterpartyName": "Johnson Mike",
+      "counterpartyAvatarUrl": null,
+      "amount": 10500.00,
+      "transactionType": "Receives",
+      "receiverSenderId": "7817971681ID",
+      "method": "Bank Account",
+      "accountOrWalletId": "156191667631",
+      "dateTime": "2021-05-27T16:18:00Z",
+      "status": "Pending"
+    },
+    {
+      "id": "tx-1029384758",
+      "counterpartyName": "Johnson Mike",
+      "counterpartyAvatarUrl": null,
+      "amount": 50000.00,
+      "transactionType": "Send",
+      "receiverSenderId": "7817971681ID",
+      "method": "Wallet ID",
+      "accountOrWalletId": "156191667631",
+      "dateTime": "2021-05-27T16:18:00Z",
+      "status": "Reversed"
+    },
+    {
+      "id": "tx-1029384759",
+      "counterpartyName": "Johnson Mike",
+      "counterpartyAvatarUrl": null,
+      "amount": 1200.00,
+      "transactionType": "Receives",
+      "receiverSenderId": "7817971681ID",
+      "method": "Bank Account",
+      "accountOrWalletId": "156191667631",
+      "dateTime": "2021-05-27T16:18:00Z",
+      "status": "Failed"
     }
   ],
   "pageNumber": 1,
   "pageSize": 10,
-  "totalCount": 65,
-  "totalPages": 7,
+  "totalCount": 130,
+  "totalPages": 13,
   "hasNextPage": true,
   "hasPreviousPage": false
 }
@@ -131,68 +172,69 @@ Retrieves staff members associated with a specific organization when viewed by a
 
 ---
 
-## 4. Organization Submitted Credentials & Documents
-Retrieves or downloads the verification document files (e.g. CAC certificate, Memorandum of Association, Tax Clearance) submitted during KYB onboarding.
+## 4. Individual Wallets Overview (Admin View)
+Retrieves wallet account balances and ledger metadata for a specific individual.
 
 - **Method**: `GET`
-- **Route**: `/api/v1/admin/organizations/{id}/documents`
+- **Route**: `/api/v1/admin/individuals/{id}/wallets`
 - **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
 - **Path Parameters**:
-  - `id` (`uuid`, required): Organization unique identifier.
+  - `id` (`uuid` or `string`, required): Individual user unique identifier.
 - **Success Response (`200 OK`)**:
 ```json
 {
-  "organizationId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-  "documents": [
-    {
-      "id": "doc-001",
-      "title": "Corporative Association Community",
-      "documentType": "CAC_CERTIFICATE",
-      "fileUrl": "https://cebizpay-storage.s3.amazonaws.com/kyb/cac_certificate.pdf",
-      "fileSizeBytes": 1048576,
-      "uploadedAt": "2026-01-10T12:15:00Z"
-    }
-  ]
+  "walletId": "WAL-89234710",
+  "availableBalance": 450000.00,
+  "ledgerBalance": 450000.00,
+  "currency": "NGN",
+  "tier": 2,
+  "virtualAccountNumber": "0123456789",
+  "bankName": "Wema Bank / CebizPay",
+  "status": "Active"
 }
 ```
 
 ---
 
-## 5. Server-Side Streaming CSV Export
-Allows exporting filtered organization datasets directly as a downloadable CSV or Excel file.
+## 5. Individual Savings Plans (Admin View)
+Retrieves active and completed savings plans associated with a specific individual.
 
 - **Method**: `GET`
-- **Route**: `/api/v1/admin/organizations/export`
+- **Route**: `/api/v1/admin/individuals/{id}/savings`
 - **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
-- **Query Parameters**:
-  - `search` (`string`, optional)
-  - `status` (`string` or `integer`, optional)
-  - `format` (`string`, optional, default: `csv`): `csv` or `xlsx`.
-- **Response (`200 OK`)**:
-  - `Content-Type`: `text/csv`
-  - `Content-Disposition`: `attachment; filename="organizations_export.csv"`
+- **Path Parameters**:
+  - `id` (`uuid` or `string`, required): Individual user unique identifier.
+- **Success Response (`200 OK`)**:
+```json
+{
+  "items": [
+    {
+      "id": "sav-001",
+      "name": "Target Savings - New Car",
+      "targetAmount": 2000000.00,
+      "currentAmount": 650000.00,
+      "frequency": "Monthly",
+      "interestRate": 12.5,
+      "startDate": "2025-06-01T00:00:00Z",
+      "maturityDate": "2026-06-01T00:00:00Z",
+      "status": "Active"
+    }
+  ],
+  "totalCount": 1
+}
+```
 
 ---
 
-## 6. Organization Status Enum Specification (Existing Live Endpoint)
-For reference with the live endpoint `PATCH /api/v1/organizations/{id}/status`:
-- **Payload**:
-```json
-{
-  "status": 2,
-  "reason": "Approved by administrator"
-}
-```
-- **Enum Integer Mapping (`OrganizationStatus` - 1-based enum in backend Domain entity)**:
-  - `1`: `Pending` (Under KYB review)
-  - `2`: `Verified` / `Active` (Approved and fully operational)
-  - `3`: `Rejected` (Verification rejected)
-  - `4`: `Suspended` (Temporarily restricted by administrator)
+## 6. Export Individuals Directory
+Exports the individual directory list to a downloadable CSV file.
 
-- **Domain Lifecycle Transition Rules (`Organization.TransitionStatus`)**:
-  - `Pending (1)` $\rightarrow$ Can transition to `Verified (2)` or `Rejected (3)`
-  - `Verified (2)` $\rightarrow$ Can transition to `Suspended (4)`
-  - `Suspended (4)` $\rightarrow$ Can transition to `Verified (2)` (Re-activate)
-  - `Rejected (3)` $\rightarrow$ Can transition to `Pending (1)` (Review)
-  *Note: Attempting transitions outside these rules (e.g. sending 0 or jumping from Pending to Suspended directly) causes a `500 System.InvalidOperationException` on the backend.*
-
+- **Method**: `GET`
+- **Route**: `/api/v1/admin/individuals/export`
+- **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
+- **Query Parameters**:
+  - `search` (`string`, optional): Search query filter.
+  - `status` (`string` or `integer`, optional): Lifecycle status filter.
+- **Success Response (`200 OK`)**:
+  - Content-Type: `text/csv; charset=utf-8`
+  - Body: Binary CSV stream.
