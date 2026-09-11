@@ -78,7 +78,8 @@ var defaultDevOrigins = new[]
     "http://localhost:5015",
     "http://127.0.0.1:5015",
     "http://localhost:3000",
-    "http://127.0.0.1:3000"
+    "http://127.0.0.1:3000",
+    "https://cebiz-pay-web-five.vercel.app"
 };
 
 var effectiveOrigins = corsOptions.AllowedOrigins.Length > 0
