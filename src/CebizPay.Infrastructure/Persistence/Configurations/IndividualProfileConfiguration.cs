@@ -33,6 +33,9 @@ public sealed class IndividualProfileConfiguration : IEntityTypeConfiguration<In
         builder.Property(x => x.MiddleName)
             .HasMaxLength(100);
 
+        builder.Property(x => x.AvatarUrl)
+            .HasMaxLength(1024);
+
         builder.Property(x => x.KycStatus)
             .HasConversion<int>()
             .IsRequired();

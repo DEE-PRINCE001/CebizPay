@@ -18,6 +18,8 @@ public class IndividualProfile
     public string LastName { get; private set; } = string.Empty;
     /// <summary>Optional middle name.</summary>
     public string? MiddleName { get; private set; }
+    /// <summary>Optional profile avatar/photo URL.</summary>
+    public string? AvatarUrl { get; private set; }
     /// <summary>KYC status.</summary>
     public KycStatus KycStatus { get; private set; } = KycStatus.Pending;
     /// <summary>Professional staff status.</summary>
@@ -32,7 +34,7 @@ public class IndividualProfile
     /// <summary>
     /// Creates a new individual profile.
     /// </summary>
-    public IndividualProfile(string userId, string firstName, string lastName, string? middleName = null)
+    public IndividualProfile(string userId, string firstName, string lastName, string? middleName = null, string? avatarUrl = null)
     {
         if (string.IsNullOrWhiteSpace(userId))
             throw new ArgumentException("UserId is required.", nameof(userId));
@@ -46,9 +48,19 @@ public class IndividualProfile
         FirstName = firstName.Trim();
         LastName = lastName.Trim();
         MiddleName = middleName?.Trim();
+        AvatarUrl = avatarUrl?.Trim();
         KycStatus = KycStatus.Pending;
         ProfessionalStatus = ProfessionalStatus.NotAStaff;
         CreatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Updates the avatar photo URL.
+    /// </summary>
+    public void UpdateAvatarUrl(string? avatarUrl)
+    {
+        AvatarUrl = string.IsNullOrWhiteSpace(avatarUrl) ? null : avatarUrl.Trim();
+        UpdatedAtUtc = DateTime.UtcNow;
     }
 
     /// <summary>

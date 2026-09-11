@@ -444,6 +444,49 @@ public sealed class IdentityService : IIdentityService
     }
 
     /// <inheritdoc/>
+    public async Task<IReadOnlyList<string>> SearchUserIdsAsync(
+        string searchTerm,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(searchTerm))
+            return Array.Empty<string>();
+
+        var term = searchTerm.Trim().ToLowerInvariant();
+#pragma warning disable CA1862, CA1304, CA1311
+        return await _userManager.Users
+            .Where(u => (u.Email != null && u.Email.ToLower().Contains(term)) ||
+                        (u.PhoneNumber != null && u.PhoneNumber.Contains(term)))
+            .Select(u => u.Id)
+            .ToListAsync(cancellationToken);
+#pragma warning restore CA1862, CA1304, CA1311
+    }
+
+    /// <inheritdoc/>
+    public async Task<IDictionary<string, (string Email, string? PhoneNumber, bool IsLockedOut)>> GetUserDetailsWithLockoutByIdsAsync(
+        IEnumerable<string> userIds,
+        CancellationToken cancellationToken = default)
+    {
+        var idsList = userIds.Distinct().ToList();
+        if (idsList.Count == 0)
+        {
+            return new Dictionary<string, (string Email, string? PhoneNumber, bool IsLockedOut)>();
+        }
+
+        var users = await _userManager.Users
+            .Where(u => idsList.Contains(u.Id))
+            .ToListAsync(cancellationToken);
+
+        var now = DateTimeOffset.UtcNow;
+        return users.ToDictionary(
+            u => u.Id,
+            u => (
+                u.Email ?? string.Empty,
+                u.PhoneNumber,
+                u.LockoutEnd.HasValue && u.LockoutEnd.Value > now
+            ));
+    }
+
+    /// <inheritdoc/>
     public async Task<UserIdentityDetails?> GetUserIdentityByIdAsync(
         string userId,
         CancellationToken cancellationToken = default)

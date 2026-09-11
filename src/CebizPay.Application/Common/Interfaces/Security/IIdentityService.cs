@@ -71,6 +71,20 @@ public interface IIdentityService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Searches user IDs matching an email or phone query.
+    /// </summary>
+    Task<IReadOnlyList<string>> SearchUserIdsAsync(
+        string searchTerm,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Batch retrieves user identity information including lockout status keyed by user ID.
+    /// </summary>
+    Task<IDictionary<string, (string Email, string? PhoneNumber, bool IsLockedOut)>> GetUserDetailsWithLockoutByIdsAsync(
+        IEnumerable<string> userIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Retrieves detailed identity information (email, phone, confirmation states, two-factor, pin status) for a user by ID.
     /// </summary>
     Task<UserIdentityDetails?> GetUserIdentityByIdAsync(
