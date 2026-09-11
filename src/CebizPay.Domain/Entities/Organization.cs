@@ -21,6 +21,12 @@ public class Organization
     public string? LogoUrl { get; private set; }
     /// <summary>CAC certificate document URL.</summary>
     public string? CacCertificateUrl { get; private set; }
+    /// <summary>Industry or business category.</summary>
+    public string? Category { get; private set; }
+    /// <summary>Physical or registered business address.</summary>
+    public string? Address { get; private set; }
+    /// <summary>Company photo or banner URL.</summary>
+    public string? PhotoUrl { get; private set; }
     /// <summary>Organization lifecycle status.</summary>
     public OrganizationStatus Status { get; private set; } = OrganizationStatus.Pending;
     /// <summary>KYB verification status.</summary>
@@ -41,7 +47,7 @@ public class Organization
     /// <summary>
     /// Creates a new organization (Step 1 registration).
     /// </summary>
-    public Organization(string companyName, string email, string phone)
+    public Organization(string companyName, string email, string phone, string? category = null, string? address = null)
     {
         if (string.IsNullOrWhiteSpace(companyName))
         {
@@ -60,10 +66,23 @@ public class Organization
         CompanyName = companyName.Trim();
         Email = email.Trim().ToLowerInvariant();
         Phone = phone.Trim();
+        Category = category?.Trim();
+        Address = address?.Trim();
         Status = OrganizationStatus.Pending;
         KybStatus = KybStatus.Step1Completed;
         CanEditDetails = true;
         CreatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Updates operational profile details.
+    /// </summary>
+    public void UpdateProfileDetails(string? category, string? address, string? photoUrl)
+    {
+        Category = category?.Trim();
+        Address = address?.Trim();
+        PhotoUrl = photoUrl?.Trim();
+        UpdatedAtUtc = DateTime.UtcNow;
     }
 
     /// <summary>

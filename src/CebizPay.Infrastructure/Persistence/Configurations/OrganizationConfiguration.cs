@@ -39,6 +39,15 @@ public sealed class OrganizationConfiguration : IEntityTypeConfiguration<Organiz
         builder.Property(x => x.CacCertificateUrl)
             .HasMaxLength(1000);
 
+        builder.Property(x => x.Category)
+            .HasMaxLength(100);
+
+        builder.Property(x => x.Address)
+            .HasMaxLength(500);
+
+        builder.Property(x => x.PhotoUrl)
+            .HasMaxLength(1000);
+
         builder.Property(x => x.Status)
             .HasConversion<int>()
             .IsRequired();
