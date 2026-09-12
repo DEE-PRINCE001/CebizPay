@@ -89,21 +89,24 @@ public sealed class UpdateKycStatusCommandHandler : IRequestHandler<UpdateKycSta
             throw new UnauthorizedAccessException("User is not authorized to review KYC submissions.");
         }
 
-        if (effectiveAdminUserId == request.UserId)
+        var trimmedId = request.UserId.Trim();
+        var isGuid = Guid.TryParse(trimmedId, out var parsedGuid);
+
+        var profile = await _dbContext.IndividualProfiles
+            .FirstOrDefaultAsync(p => (isGuid && p.Id == parsedGuid) || p.UserId == trimmedId, cancellationToken)
+            ?? throw new KeyNotFoundException($"Individual profile for user {request.UserId} not found.");
+
+        if (effectiveAdminUserId == profile.UserId)
         {
             throw new InvalidOperationException("Admins cannot review or approve their own KYC status.");
         }
-
-        var profile = await _dbContext.IndividualProfiles
-            .FirstOrDefaultAsync(p => p.UserId == request.UserId, cancellationToken)
-            ?? throw new KeyNotFoundException($"Individual profile for user {request.UserId} not found.");
 
         var oldStatus = profile.KycStatus;
         profile.SetKycStatus(request.NewStatus);
 
         // Update latest KYC documents for this user
         var latestDoc = await _dbContext.KycDocuments
-            .Where(d => d.UserId == request.UserId && d.Status == KycStatus.Pending)
+            .Where(d => d.UserId == profile.UserId && d.Status == KycStatus.Pending)
             .OrderByDescending(d => d.SubmittedAtUtc)
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -132,7 +135,7 @@ public sealed class UpdateKycStatusCommandHandler : IRequestHandler<UpdateKycSta
 
         await _eventPublisher.PublishAsync(
             new KycStatusChangedDomainEvent(
-                request.UserId, oldStatus, profile.KycStatus, request.Reason, DateTime.UtcNow),
+                profile.UserId, oldStatus, profile.KycStatus, request.Reason, DateTime.UtcNow),
             cancellationToken);
 
         return new UpdateKycStatusResponseDto(profile.UserId, profile.KycStatus.ToString(), request.Reason);

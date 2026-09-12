@@ -1,6 +1,9 @@
 using System.Text;
+using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Application.UseCases.Admin.Individuals;
+using CebizPay.Application.UseCases.Individuals.GetKycDocuments;
+using CebizPay.Application.UseCases.Individuals.UpdateKycStatus;
 using CebizPay.Domain.Entities;
 using CebizPay.Domain.Enums;
 using CebizPay.Domain.Finance.Entities;
@@ -224,5 +227,101 @@ public sealed class AdminIndividualsUseCasesTests
         Assert.Contains("Individual ID,Full Name,Email,Phone Number,Professional Status,Company Name,Status,Created At (UTC)", csv);
         Assert.Contains("Johnson Mile", csv);
         Assert.Contains("Mile@gmail.com", csv);
+    }
+
+    [Fact]
+    public async Task UpdateKycStatus_WhenProfileIdPassed_SuccessfullyResolvesAndUpdatesStatus()
+    {
+        await using var db = CreateDbContext();
+
+        var admin = new AdminProfile("admin-user-1", AdminRoleType.SuperAdmin);
+        db.AdminProfiles.Add(admin);
+
+        var prof = new IndividualProfile("user-01", "Mike", "Johnson");
+        db.IndividualProfiles.Add(prof);
+
+        var doc = new KycDocument("user-01", DocumentType.Nimc, "12345678901", "https://storage.cebizpay.com/docs/nin.pdf");
+        db.KycDocuments.Add(doc);
+        await db.SaveChangesAsync();
+
+        var eventPublisher = Substitute.For<IEventPublisher>();
+        var currentUserService = Substitute.For<ICurrentUserService>();
+        currentUserService.UserId.Returns("admin-user-1");
+
+        var handler = new UpdateKycStatusCommandHandler(db, eventPublisher, currentUserService);
+
+        // Pass the profile GUID ID (as frontend does)
+        var command = new UpdateKycStatusCommand(prof.Id.ToString(), KycStatus.Verified, "admin-user-1", "Approved");
+        var response = await handler.Handle(command, CancellationToken.None);
+
+        Assert.NotNull(response);
+        Assert.Equal("user-01", response.UserId);
+        Assert.Equal("Verified", response.KycStatus);
+
+        var reloadedProfile = await db.IndividualProfiles.FirstAsync(p => p.Id == prof.Id);
+        Assert.Equal(KycStatus.Verified, reloadedProfile.KycStatus);
+
+        var reloadedDoc = await db.KycDocuments.FirstAsync(d => d.Id == doc.Id);
+        Assert.Equal(KycStatus.Verified, reloadedDoc.Status);
+    }
+
+    [Fact]
+    public async Task UpdateKycStatus_WhenUserIdPassed_SuccessfullyResolvesAndUpdatesStatus()
+    {
+        await using var db = CreateDbContext();
+
+        var admin = new AdminProfile("admin-user-1", AdminRoleType.SuperAdmin);
+        db.AdminProfiles.Add(admin);
+
+        var prof = new IndividualProfile("user-02", "Jane", "Doe");
+        db.IndividualProfiles.Add(prof);
+        await db.SaveChangesAsync();
+
+        var eventPublisher = Substitute.For<IEventPublisher>();
+        var currentUserService = Substitute.For<ICurrentUserService>();
+        currentUserService.UserId.Returns("admin-user-1");
+
+        var handler = new UpdateKycStatusCommandHandler(db, eventPublisher, currentUserService);
+
+        // Pass the Identity User ID string
+        var command = new UpdateKycStatusCommand("user-02", KycStatus.Verified, "admin-user-1", "Approved");
+        var response = await handler.Handle(command, CancellationToken.None);
+
+        Assert.NotNull(response);
+        Assert.Equal("user-02", response.UserId);
+        Assert.Equal("Verified", response.KycStatus);
+
+        var reloadedProfile = await db.IndividualProfiles.FirstAsync(p => p.Id == prof.Id);
+        Assert.Equal(KycStatus.Verified, reloadedProfile.KycStatus);
+    }
+
+    [Fact]
+    public async Task GetKycDocuments_WhenProfileIdPassed_SuccessfullyResolvesAndReturnsDocuments()
+    {
+        await using var db = CreateDbContext();
+
+        var admin = new AdminProfile("admin-user-1", AdminRoleType.SuperAdmin);
+        db.AdminProfiles.Add(admin);
+
+        var prof = new IndividualProfile("user-01", "Mike", "Johnson");
+        db.IndividualProfiles.Add(prof);
+
+        var doc = new KycDocument("user-01", DocumentType.Nimc, "12345678901", "https://storage.cebizpay.com/docs/nin.pdf");
+        db.KycDocuments.Add(doc);
+        await db.SaveChangesAsync();
+
+        var currentUserService = Substitute.For<ICurrentUserService>();
+        currentUserService.UserId.Returns("admin-user-1");
+
+        var handler = new GetKycDocumentsQueryHandler(db, currentUserService);
+
+        // Query using Profile GUID
+        var query = new GetKycDocumentsQuery(prof.Id.ToString());
+        var docs = (await handler.Handle(query, CancellationToken.None)).ToList();
+
+        Assert.Single(docs);
+        Assert.Equal(doc.Id, docs[0].Id);
+        Assert.Equal("user-01", docs[0].UserId);
+        Assert.Equal("Nimc", docs[0].DocumentType);
     }
 }

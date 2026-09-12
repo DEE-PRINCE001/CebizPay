@@ -52,8 +52,16 @@ public sealed class GetKycDocumentsQueryHandler : IRequestHandler<GetKycDocument
             throw new UnauthorizedAccessException("User authentication context is required.");
         }
 
+        var trimmedId = request.UserId.Trim();
+        var isGuid = Guid.TryParse(trimmedId, out var parsedGuid);
+
+        var profile = await _dbContext.IndividualProfiles
+            .FirstOrDefaultAsync(p => (isGuid && p.Id == parsedGuid) || p.UserId == trimmedId, cancellationToken);
+
+        var targetUserId = profile?.UserId ?? trimmedId;
+
         // Ordinary users can only access their own KYC documents
-        if (!string.Equals(callerId, request.UserId, StringComparison.Ordinal))
+        if (!string.Equals(callerId, targetUserId, StringComparison.Ordinal))
         {
             var admin = await _dbContext.AdminProfiles
                 .FirstOrDefaultAsync(a => a.UserId == callerId && a.IsActive && !a.IsDeleted, cancellationToken);
@@ -68,7 +76,7 @@ public sealed class GetKycDocumentsQueryHandler : IRequestHandler<GetKycDocument
         }
 
         var documents = await _dbContext.KycDocuments
-            .Where(d => d.UserId == request.UserId)
+            .Where(d => d.UserId == targetUserId)
             .OrderByDescending(d => d.SubmittedAtUtc)
             .Select(d => new KycDocumentDto(
                 d.Id,

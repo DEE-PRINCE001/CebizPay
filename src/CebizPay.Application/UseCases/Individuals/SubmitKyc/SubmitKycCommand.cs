@@ -71,8 +71,16 @@ public sealed class SubmitKycCommandHandler : IRequestHandler<SubmitKycCommand, 
             throw new UnauthorizedAccessException("User authentication context is required.");
         }
 
+        var trimmedId = request.UserId.Trim();
+        var isGuid = Guid.TryParse(trimmedId, out var parsedGuid);
+
+        var profile = await _dbContext.IndividualProfiles
+            .FirstOrDefaultAsync(p => (isGuid && p.Id == parsedGuid) || p.UserId == trimmedId, cancellationToken);
+
+        var targetUserId = profile?.UserId ?? trimmedId;
+
         // Ordinary users can only submit KYC documents for their own profile
-        if (!string.Equals(callerId, request.UserId, StringComparison.Ordinal))
+        if (!string.Equals(callerId, targetUserId, StringComparison.Ordinal))
         {
             var admin = await _dbContext.AdminProfiles
                 .FirstOrDefaultAsync(a => a.UserId == callerId && a.IsActive && !a.IsDeleted, cancellationToken);
@@ -85,7 +93,7 @@ public sealed class SubmitKycCommandHandler : IRequestHandler<SubmitKycCommand, 
             }
         }
 
-        var doc = new KycDocument(request.UserId, request.DocumentType, request.DocumentNumber, request.DocumentUrl);
+        var doc = new KycDocument(targetUserId, request.DocumentType, request.DocumentNumber, request.DocumentUrl);
         _dbContext.KycDocuments.Add(doc);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
