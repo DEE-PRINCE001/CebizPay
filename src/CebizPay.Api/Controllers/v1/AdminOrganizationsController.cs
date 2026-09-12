@@ -154,4 +154,128 @@ public sealed class AdminOrganizationsController : ControllerBase
             });
         }
     }
+
+    /// <summary>
+    /// Retrieves specific corporate organization wallet metrics including ledger balance, cumulative salary disbursement, and total corporate loan funds.
+    /// </summary>
+    [HttpGet("{id:guid}/wallet")]
+    [ProducesResponseType(typeof(AdminOrganizationWalletDetailsDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetOrganizationWallet(
+        [FromRoute] Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        var query = new GetAdminOrganizationWalletQuery(id);
+        var result = await _sender.Send(query, cancellationToken);
+
+        if (result == null)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Organization Not Found",
+                Detail = $"Organization with ID '{id}' was not found."
+            });
+        }
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// Retrieves a paginated list of salary disbursement line items executed by the corporate entity.
+    /// </summary>
+    [HttpGet("{id:guid}/salaries")]
+    [ProducesResponseType(typeof(PagedResult<AdminOrganizationSalaryItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetOrganizationSalaries(
+        [FromRoute] Guid id,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? search = null,
+        [FromQuery] string? month = null,
+        [FromQuery] string? status = null,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var query = new GetAdminOrganizationSalariesQuery(id, pageNumber, pageSize, search, month, status);
+            var result = await _sender.Send(query, cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Organization Not Found",
+                Detail = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Exports the salary disbursements of a specific corporate entity directly to a downloadable CSV stream.
+    /// </summary>
+    [HttpGet("{id:guid}/salaries/export")]
+    [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ExportOrganizationSalaries(
+        [FromRoute] Guid id,
+        [FromQuery] string? search = null,
+        [FromQuery] string? month = null,
+        [FromQuery] string? status = null,
+        [FromQuery] string format = "csv",
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var query = new ExportAdminOrganizationSalariesQuery(id, search, month, status, format);
+            var result = await _sender.Send(query, cancellationToken);
+            return File(result.Content, result.ContentType, result.FileName);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Organization Not Found",
+                Detail = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Retrieves active target and fixed saving plans configured for an organization.
+    /// </summary>
+    [HttpGet("{id:guid}/savings")]
+    [ProducesResponseType(typeof(AdminOrganizationSavingsListDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetOrganizationSavings(
+        [FromRoute] Guid id,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var query = new GetAdminOrganizationSavingsQuery(id);
+            var result = await _sender.Send(query, cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Organization Not Found",
+                Detail = ex.Message
+            });
+        }
+    }
 }
