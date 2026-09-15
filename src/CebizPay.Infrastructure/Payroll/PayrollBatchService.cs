@@ -1,6 +1,7 @@
 using System.Text.Json;
 using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Payroll;
+using CebizPay.Application.Common.Models;
 using CebizPay.Domain.Auditing;
 using CebizPay.Domain.Entities;
 using CebizPay.Domain.Enums;
@@ -495,6 +496,63 @@ public sealed partial class PayrollBatchService : IPayrollBatchService
             TotalDisbursedInternationalNgn: totalIntNgn,
             TotalDisbursedUsdt: totalUsdt,
             LastPayrollExecutedAtUtc: lastExecution);
+    }
+
+    /// <inheritdoc/>
+    public async Task<PagedResult<PayrollBatchDto>> GetBatchesAsync(
+        Guid organizationId,
+        int pageNumber = 1,
+        int pageSize = 20,
+        PayrollBatchStatus? status = null,
+        DateTime? periodStart = null,
+        DateTime? periodEnd = null,
+        CancellationToken cancellationToken = default)
+    {
+        pageNumber = Math.Max(1, pageNumber);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var query = _dbContext.PayrollBatches
+            .AsNoTracking()
+            .Where(b => b.OrganizationId == organizationId);
+
+        if (status.HasValue)
+        {
+            query = query.Where(b => b.Status == status.Value);
+        }
+
+        if (periodStart.HasValue)
+        {
+            query = query.Where(b => b.PeriodStart >= periodStart.Value);
+        }
+
+        if (periodEnd.HasValue)
+        {
+            query = query.Where(b => b.PeriodEnd <= periodEnd.Value);
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
+
+        var batches = await query
+            .OrderByDescending(b => b.CreatedAtUtc)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .Select(b => new PayrollBatchDto(
+                b.Id,
+                b.BatchReference,
+                b.OrganizationId,
+                b.Currency,
+                b.Status,
+                b.TotalEmployees,
+                b.TotalGrossAmount,
+                b.TotalDeductionsAmount,
+                b.TotalNetAmount,
+                b.PeriodStart,
+                b.PeriodEnd,
+                b.CreatedAtUtc))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return new PagedResult<PayrollBatchDto>(batches, totalCount, pageNumber, pageSize);
     }
 
     private static PaymentVoucherDto MapToVoucherDto(PaymentVoucher voucher) => new(

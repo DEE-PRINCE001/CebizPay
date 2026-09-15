@@ -180,3 +180,19 @@ internal sealed record PaystackRefundData(
     [property: JsonPropertyName("status")] string? Status,
     [property: JsonPropertyName("transaction_reference")] string? TransactionReference,
     [property: JsonPropertyName("amount")] decimal? Amount);
+
+// --- Bank Directory ---
+
+internal sealed record PaystackBankListResponse(
+    [property: JsonPropertyName("status")] bool Status,
+    [property: JsonPropertyName("message")] string? Message,
+    [property: JsonPropertyName("data")] IReadOnlyList<PaystackBankItem>? Data);
+
+internal sealed record PaystackBankItem(
+    [property: JsonPropertyName("name")] string Name,
+    [property: JsonPropertyName("code")] string Code,
+    [property: JsonPropertyName("slug")] string? Slug,
+    [property: JsonPropertyName("longcode")] string? LongCode,
+    [property: JsonPropertyName("gateway")] string? Gateway,
+    [property: JsonPropertyName("active")] bool? Active);
+

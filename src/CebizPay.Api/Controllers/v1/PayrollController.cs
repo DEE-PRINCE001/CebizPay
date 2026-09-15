@@ -1,7 +1,9 @@
 using Asp.Versioning;
 using CebizPay.Application.Common.Interfaces.Payroll;
 using CebizPay.Application.Common.Interfaces.Security;
+using CebizPay.Application.Common.Models;
 using CebizPay.Domain.Finance.Enums;
+using CebizPay.Domain.Payroll.Enums;
 using CebizPay.Domain.Permissions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -93,6 +95,58 @@ public sealed class PayrollController : ControllerBase
 
         return AcceptedAtAction(nameof(GetProgress), new { version = "1.0", batchId = batchDto.BatchId }, batchDto);
     }
+
+    /// <summary>
+    /// Retrieves a paginated list of payroll batches for the organization.
+    /// </summary>
+    [HttpGet("batches")]
+    [ProducesResponseType(typeof(PagedResult<PayrollBatchDto>), StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetBatches(
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] PayrollBatchStatus? status = null,
+        [FromQuery] DateTime? periodStart = null,
+        [FromQuery] DateTime? periodEnd = null,
+        CancellationToken cancellationToken = default)
+    {
+        var orgId = _orgContext.CurrentOrganizationId;
+        if (!orgId.HasValue || orgId.Value == Guid.Empty)
+        {
+            return BadRequest(new { code = "ORGANIZATION_CONTEXT_REQUIRED", message = "Active organization context is required." });
+        }
+
+        var hasPermission = await _orgContext.HasPermissionAsync(orgId.Value, Permissions.PayrollView, cancellationToken).ConfigureAwait(false);
+        if (!hasPermission)
+        {
+            return Forbid();
+        }
+
+        var result = await _batchService.GetBatchesAsync(
+            orgId.Value,
+            pageNumber,
+            pageSize,
+            status,
+            periodStart,
+            periodEnd,
+            cancellationToken).ConfigureAwait(false);
+
+        return Ok(new
+        {
+            success = true,
+            data = result
+        });
+    }
+
+    /// <summary>
+    /// Alias to retrieve aggregate progress statistics and paged line-item details for a payroll batch run by route /batches/{batchId}.
+    /// </summary>
+    [HttpGet("batches/{batchId:guid}")]
+    public Task<IActionResult> GetBatchProgressAlias(
+        [FromRoute] Guid batchId,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 50,
+        CancellationToken cancellationToken = default)
+        => GetProgress(batchId, pageNumber, pageSize, cancellationToken);
 
     /// <summary>
     /// Retrieves aggregate progress statistics and paged line-item details for a payroll batch run.

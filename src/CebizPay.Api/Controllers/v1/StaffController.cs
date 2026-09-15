@@ -103,6 +103,62 @@ public sealed class StaffController : ControllerBase
     }
 
     /// <summary>
+    /// Retrieves historical salary payment records for a staff member.
+    /// </summary>
+    [HttpGet("{id:guid}/salaries")]
+    [ProducesResponseType(typeof(PagedResult<StaffSalaryItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetStaffSalaries(
+        [FromRoute] Guid id,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffView, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var query = new GetStaffSalariesQuery(orgId, id, pageNumber, pageSize);
+        var result = await _sender.Send(query, cancellationToken);
+        return Ok(new
+        {
+            success = true,
+            data = result
+        });
+    }
+
+    /// <summary>
+    /// Retrieves savings accounts and plans for a staff member.
+    /// </summary>
+    [HttpGet("{id:guid}/savings")]
+    [ProducesResponseType(typeof(PagedResult<StaffSavingsAccountItemDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetStaffSavings(
+        [FromRoute] Guid id,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.StaffView, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var query = new GetStaffSavingsQuery(orgId, id, pageNumber, pageSize);
+        var result = await _sender.Send(query, cancellationToken);
+        return Ok(new
+        {
+            success = true,
+            data = result
+        });
+    }
+
+    /// <summary>
     /// Directly onboards/creates a staff member in the organization without an invitation.
     /// </summary>
     [HttpPost("create")]
