@@ -207,6 +207,7 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.ICardPaymentProvider, CebizPay.Infrastructure.Payments.Paystack.PaystackPaymentProvider>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IPaymentProviderFactory, CebizPay.Infrastructure.Payments.Common.PaymentProviderFactory>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IBankAccountResolver, CebizPay.Infrastructure.Payments.Common.PaymentProviderBankAccountResolver>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IBankDirectoryService, CebizPay.Infrastructure.Payments.Common.BankDirectoryService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Finance.IBankTransferExecutor, CebizPay.Infrastructure.Payments.Common.PaymentProviderBankTransferExecutor>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IWebhookSignatureVerifier, CebizPay.Infrastructure.Payments.Common.WebhookSignatureVerifier>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Payments.IWebhookProcessor, CebizPay.Infrastructure.Payments.Common.WebhookProcessor>();

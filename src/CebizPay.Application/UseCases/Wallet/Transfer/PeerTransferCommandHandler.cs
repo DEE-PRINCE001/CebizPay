@@ -151,6 +151,16 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
             recipientUser = await _userLookup.FindByPhoneAsync(request.RecipientIdentifier, cancellationToken);
         }
 
+        if (recipientUser == null && Guid.TryParse(request.RecipientIdentifier.Trim(), out var parsedWalletId))
+        {
+            var directRecipientWallet = await _dbContext.Wallets
+                .FirstOrDefaultAsync(w => w.Id == parsedWalletId && w.Currency == currency, cancellationToken);
+            if (directRecipientWallet != null && !string.IsNullOrWhiteSpace(directRecipientWallet.IndividualId))
+            {
+                recipientUser = new UserSummary(directRecipientWallet.IndividualId, null, null);
+            }
+        }
+
         if (recipientUser == null)
             throw new KeyNotFoundException($"Recipient '{request.RecipientIdentifier}' was not found on CebizPay.");
 

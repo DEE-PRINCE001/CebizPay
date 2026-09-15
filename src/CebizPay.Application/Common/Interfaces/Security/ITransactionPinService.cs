@@ -7,7 +7,7 @@ namespace CebizPay.Application.Common.Interfaces.Security;
 public interface ITransactionPinService
 {
     /// <summary>
-    /// Sets or updates a 4-digit transaction PIN for a user.
+    /// Sets a 4-digit transaction PIN for a user.
     /// </summary>
     Task<(bool Succeeded, string? Error)> SetPinAsync(string userId, string pin, CancellationToken cancellationToken = default);
 
@@ -16,4 +16,14 @@ public interface ITransactionPinService
     /// Tracks failed attempts. Lockout occurs after 3 consecutive failed attempts for 15 minutes.
     /// </summary>
     Task<(bool Succeeded, bool IsLocked, string? Error)> VerifyPinAsync(string userId, string pin, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Checks whether the user has already configured a transaction PIN.
+    /// </summary>
+    Task<bool> HasPinAsync(string userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Changes an existing transaction PIN after verifying the current PIN.
+    /// </summary>
+    Task<(bool Succeeded, bool IsLocked, string? Error)> ChangePinAsync(string userId, string currentPin, string newPin, CancellationToken cancellationToken = default);
 }

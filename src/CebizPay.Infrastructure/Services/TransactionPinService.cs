@@ -143,4 +143,28 @@ public sealed class TransactionPinService : ITransactionPinService
 
         return (true, false, null);
     }
+
+    /// <inheritdoc/>
+    public async Task<bool> HasPinAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var user = await _dbContext.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
+        return user != null && !string.IsNullOrEmpty(user.TransactionPinHash);
+    }
+
+    /// <inheritdoc/>
+    public async Task<(bool Succeeded, bool IsLocked, string? Error)> ChangePinAsync(
+        string userId,
+        string currentPin,
+        string newPin,
+        CancellationToken cancellationToken = default)
+    {
+        var (verified, isLocked, error) = await VerifyPinAsync(userId, currentPin, cancellationToken);
+        if (!verified)
+        {
+            return (false, isLocked, error ?? "Current transaction PIN is invalid.");
+        }
+
+        var (setSucceeded, setError) = await SetPinAsync(userId, newPin, cancellationToken);
+        return (setSucceeded, false, setError);
+    }
 }

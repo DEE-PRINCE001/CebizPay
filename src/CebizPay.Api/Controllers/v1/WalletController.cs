@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Asp.Versioning;
+using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Application.UseCases.Wallet.Transfer;
 using CebizPay.Domain.Finance.Enums;
 using MediatR;
@@ -267,6 +268,140 @@ public sealed class WalletController : ControllerBase
 
         return Ok(result);
     }
+
+    /// <summary>
+    /// Validates and resolves destination wallet holder details using phone number, email, or wallet GUID.
+    /// </summary>
+    [HttpGet("transfer/resolve-wallet/{walletId}")]
+    public async Task<IActionResult> ResolveWallet(
+        [FromRoute] string walletId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(walletId))
+        {
+            return BadRequest(new { code = "INVALID_REQUEST", message = "walletId parameter is required." });
+        }
+
+        var query = new ResolveWalletQuery(walletId);
+        var result = await _sender.Send(query, cancellationToken);
+        if (result == null)
+        {
+            return NotFound(new { code = "WALLET_NOT_FOUND", message = $"Destination wallet or user '{walletId}' not found." });
+        }
+
+        return Ok(new
+        {
+            success = true,
+            data = result
+        });
+    }
+
+    /// <summary>
+    /// Sets up a new 4-digit transaction PIN for the authenticated user (first-time only).
+    /// </summary>
+    [HttpPost("pin/setup")]
+    public async Task<IActionResult> SetupPin(
+        [FromBody] SetupPinRequest request,
+        [FromServices] ITransactionPinService pinService,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.Pin) || request.Pin.Length != 4 || !request.Pin.All(char.IsDigit))
+        {
+            return BadRequest(new { code = "INVALID_PIN", message = "PIN must be exactly 4 numeric digits." });
+        }
+
+        if (!string.Equals(request.Pin, request.ConfirmPin, StringComparison.Ordinal))
+        {
+            return BadRequest(new { code = "PIN_MISMATCH", message = "PIN and ConfirmPin do not match." });
+        }
+
+        var hasPin = await pinService.HasPinAsync(userId, cancellationToken);
+        if (hasPin)
+        {
+            return BadRequest(new { code = "PIN_ALREADY_SET", message = "Transaction PIN has already been set. Use the change-pin endpoint to update your PIN." });
+        }
+
+        var (succeeded, error) = await pinService.SetPinAsync(userId, request.Pin, cancellationToken);
+        if (!succeeded)
+        {
+            return BadRequest(new { code = "PIN_SETUP_FAILED", message = error ?? "Failed to set transaction PIN." });
+        }
+
+        return Ok(new { success = true, message = "Transaction PIN set successfully." });
+    }
+
+    /// <summary>
+    /// Verifies the authenticated user's 4-digit transaction PIN.
+    /// </summary>
+    [HttpPost("pin/verify")]
+    public async Task<IActionResult> VerifyPin(
+        [FromBody] VerifyPinRequest request,
+        [FromServices] ITransactionPinService pinService,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.Pin))
+        {
+            return BadRequest(new { code = "INVALID_PIN", message = "PIN is required." });
+        }
+
+        var (succeeded, isLocked, error) = await pinService.VerifyPinAsync(userId, request.Pin, cancellationToken);
+        if (isLocked)
+        {
+            return StatusCode(StatusCodes.Status423Locked, new { code = "PIN_LOCKED", message = error });
+        }
+
+        if (!succeeded)
+        {
+            return BadRequest(new { code = "PIN_VERIFICATION_FAILED", message = error ?? "Invalid PIN." });
+        }
+
+        return Ok(new { success = true, message = "PIN verified successfully." });
+    }
+
+    /// <summary>
+    /// Updates an existing 4-digit transaction PIN after validating the current PIN.
+    /// </summary>
+    [HttpPost("pin/change")]
+    public async Task<IActionResult> ChangePin(
+        [FromBody] ChangePinRequest request,
+        [FromServices] ITransactionPinService pinService,
+        CancellationToken cancellationToken)
+    {
+        var userId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+        if (string.IsNullOrWhiteSpace(userId))
+            return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.NewPin) || request.NewPin.Length != 4 || !request.NewPin.All(char.IsDigit))
+        {
+            return BadRequest(new { code = "INVALID_PIN", message = "New PIN must be exactly 4 numeric digits." });
+        }
+
+        if (!string.Equals(request.NewPin, request.ConfirmNewPin, StringComparison.Ordinal))
+        {
+            return BadRequest(new { code = "PIN_MISMATCH", message = "New PIN and ConfirmNewPin do not match." });
+        }
+
+        var (succeeded, isLocked, error) = await pinService.ChangePinAsync(userId, request.CurrentPin, request.NewPin, cancellationToken);
+        if (isLocked)
+        {
+            return StatusCode(StatusCodes.Status423Locked, new { code = "PIN_LOCKED", message = error });
+        }
+
+        if (!succeeded)
+        {
+            return BadRequest(new { code = "PIN_CHANGE_FAILED", message = error ?? "Failed to change transaction PIN." });
+        }
+
+        return Ok(new { success = true, message = "Transaction PIN updated successfully." });
+    }
 }
 
 /// <summary>
@@ -307,4 +442,26 @@ public sealed record BankTransferRequest(
     string TransactionPin,
     string? IdempotencyKey = null,
     Guid? OrganizationContext = null);
+
+/// <summary>
+/// Request body DTO for setting up a transaction PIN.
+/// </summary>
+public sealed record SetupPinRequest(
+    string Pin,
+    string ConfirmPin);
+
+/// <summary>
+/// Request body DTO for verifying a transaction PIN.
+/// </summary>
+public sealed record VerifyPinRequest(
+    string Pin);
+
+/// <summary>
+/// Request body DTO for changing a transaction PIN.
+/// </summary>
+public sealed record ChangePinRequest(
+    string CurrentPin,
+    string NewPin,
+    string ConfirmNewPin);
+
 

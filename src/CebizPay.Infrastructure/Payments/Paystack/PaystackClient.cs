@@ -726,6 +726,35 @@ public sealed partial class PaystackClient
         }
     }
 
+    /// <summary>
+    /// Fetches the list of commercial and digital banks in Nigeria supported by Paystack.
+    /// </summary>
+    public async Task<IReadOnlyList<BankDto>> GetBanksAsync(CancellationToken cancellationToken = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, "bank?country=nigeria&use_cursor=false&perPage=100");
+        ApplyAuthentication(request);
+
+        try
+        {
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadFromJsonAsync<PaystackBankListResponse>(JsonOptions, cancellationToken).ConfigureAwait(false);
+                if (result != null && result.Status && result.Data != null)
+                {
+                    return result.Data.Select(b => new BankDto(b.Name, b.Code, b.Slug, b.LongCode, b.Gateway, b.Active)).ToList();
+                }
+            }
+
+            return Array.Empty<BankDto>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve bank list from Paystack.");
+            return Array.Empty<BankDto>();
+        }
+    }
+
     private static T? TryDeserialize<T>(string json) where T : class
     {
         try

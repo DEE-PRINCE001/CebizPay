@@ -1,4 +1,6 @@
+using CebizPay.Application.Common.Models;
 using CebizPay.Domain.Finance.Enums;
+using CebizPay.Domain.Payroll.Enums;
 
 namespace CebizPay.Application.Common.Interfaces.Payroll;
 
@@ -71,5 +73,17 @@ public interface IPayrollBatchService
     /// </summary>
     Task<PayrollAnalyticsDto> GetOrganizationPayrollAnalyticsAsync(
         Guid organizationId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves a paginated list of payroll batches for the specified organization.
+    /// </summary>
+    Task<PagedResult<PayrollBatchDto>> GetBatchesAsync(
+        Guid organizationId,
+        int pageNumber = 1,
+        int pageSize = 20,
+        PayrollBatchStatus? status = null,
+        DateTime? periodStart = null,
+        DateTime? periodEnd = null,
         CancellationToken cancellationToken = default);
 }
