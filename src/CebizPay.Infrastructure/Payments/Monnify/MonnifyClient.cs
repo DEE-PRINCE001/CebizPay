@@ -449,7 +449,7 @@ public sealed partial class MonnifyClient : IMonnifyClient, IDisposable
         {
             var cleanBankCode = bankCode.Trim();
             var cleanAccountNumber = accountNumber.Trim();
-            var uri = $"/api/v1/disbursements/account/validate?accountNumber={Uri.EscapeDataString(cleanAccountNumber)}&bankCode={Uri.EscapeDataString(cleanBankCode)}";
+            var uri = $"/api/v2/disbursements/account/validate?accountNumber={Uri.EscapeDataString(cleanAccountNumber)}&bankCode={Uri.EscapeDataString(cleanBankCode)}";
 
             using var httpRequest = new HttpRequestMessage(HttpMethod.Get, uri);
             httpRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);

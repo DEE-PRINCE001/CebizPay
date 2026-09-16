@@ -12,7 +12,6 @@ public sealed record BankAccountResolutionResult(
 
 /// <summary>
 /// Application abstraction boundary for resolving destination bank account names.
-/// (Concrete provider integrations belong to Phase 3).
 /// </summary>
 public interface IBankAccountResolver
 {
