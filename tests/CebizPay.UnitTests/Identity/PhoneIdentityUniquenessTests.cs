@@ -1,5 +1,6 @@
 using System.Text.Json;
 using CebizPay.Application.Common.Interfaces.Caching;
+using CebizPay.Application.Common.Interfaces.Finance;
 using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Application.Common.Utils;
@@ -228,12 +229,14 @@ public sealed class PhoneIdentityUniquenessTests : IDisposable
             .Returns(true);
 
         var eventPublisher = Substitute.For<IEventPublisher>();
+        var walletService = Substitute.For<IWalletService>();
 
         var handler = new VerifyOtpCommandHandler(
             otpService,
             _identityService,
             _dbContext,
-            eventPublisher);
+            eventPublisher,
+            walletService);
 
         // Act: Another user enters OTP for +2348011112222
         var command = new VerifyOtpCommand(
@@ -262,12 +265,14 @@ public sealed class PhoneIdentityUniquenessTests : IDisposable
 
         var redisOtp = new RedisOtpService(cacheService);
         var eventPublisher = Substitute.For<IEventPublisher>();
+        var walletService = Substitute.For<IWalletService>();
 
         var handler = new VerifyOtpCommandHandler(
             redisOtp,
             _identityService,
             _dbContext,
-            eventPublisher);
+            eventPublisher,
+            walletService);
 
         // Act: User verifies with local "08099990000" while cache had "+2348099990000"
         var command = new VerifyOtpCommand(

@@ -1,9 +1,11 @@
+using CebizPay.Application.Common.Interfaces.Finance;
 using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Application.Common.Utils;
 using CebizPay.Domain.Entities;
 using CebizPay.Domain.Events;
+using CebizPay.Domain.Finance.Enums;
 using MediatR;
 
 namespace CebizPay.Application.UseCases.Auth.VerifyOtp;
@@ -19,6 +21,7 @@ public sealed class VerifyOtpCommandHandler : IRequestHandler<VerifyOtpCommand, 
     private readonly IIdentityService _identityService;
     private readonly IApplicationDbContext _dbContext;
     private readonly IEventPublisher _eventPublisher;
+    private readonly IWalletService _walletService;
 
     /// <summary>
     /// Initializes a new instance of <see cref="VerifyOtpCommandHandler"/>.
@@ -27,12 +30,14 @@ public sealed class VerifyOtpCommandHandler : IRequestHandler<VerifyOtpCommand, 
         IOtpService otpService,
         IIdentityService identityService,
         IApplicationDbContext dbContext,
-        IEventPublisher eventPublisher)
+        IEventPublisher eventPublisher,
+        IWalletService walletService)
     {
         _otpService = otpService;
         _identityService = identityService;
         _dbContext = dbContext;
         _eventPublisher = eventPublisher;
+        _walletService = walletService;
     }
 
     /// <inheritdoc/>
@@ -56,6 +61,9 @@ public sealed class VerifyOtpCommandHandler : IRequestHandler<VerifyOtpCommand, 
         var profile = new IndividualProfile(regResult.UserId, request.FirstName, request.LastName);
         _dbContext.IndividualProfiles.Add(profile);
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await _walletService.GetOrCreateIndividualWalletAsync(
+            regResult.UserId, Currency.NGN, cancellationToken);
 
         await _eventPublisher.PublishAsync(
             new UserRegisteredDomainEvent(regResult.UserId, request.Email, canonicalPhone, DateTime.UtcNow),

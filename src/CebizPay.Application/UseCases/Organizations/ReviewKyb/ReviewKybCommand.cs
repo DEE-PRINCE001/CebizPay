@@ -1,8 +1,10 @@
+using CebizPay.Application.Common.Interfaces.Finance;
 using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Domain.Entities;
 using CebizPay.Domain.Enums;
 using CebizPay.Domain.Events;
+using CebizPay.Domain.Finance.Enums;
 using FluentValidation;
 using MediatR;
 
@@ -55,6 +57,7 @@ public sealed class ReviewKybCommandHandler : IRequestHandler<ReviewKybCommand, 
     private readonly IApplicationDbContext _dbContext;
     private readonly IEventPublisher _eventPublisher;
     private readonly CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? _currentUserService;
+    private readonly IWalletService? _walletService;
 
     /// <summary>
     /// Initializes a new instance of <see cref="ReviewKybCommandHandler"/>.
@@ -62,11 +65,13 @@ public sealed class ReviewKybCommandHandler : IRequestHandler<ReviewKybCommand, 
     public ReviewKybCommandHandler(
         IApplicationDbContext dbContext,
         IEventPublisher eventPublisher,
-        CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? currentUserService = null)
+        CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? currentUserService = null,
+        IWalletService? walletService = null)
     {
         _dbContext = dbContext;
         _eventPublisher = eventPublisher;
         _currentUserService = currentUserService;
+        _walletService = walletService;
     }
 
     /// <inheritdoc/>
@@ -109,6 +114,11 @@ public sealed class ReviewKybCommandHandler : IRequestHandler<ReviewKybCommand, 
             org.SetKybStatus(KybStatus.Verified);
             org.TransitionStatus(OrganizationStatus.Verified);
             kybDetail?.Verify(effectiveAdminUserId, DateTime.UtcNow);
+
+            if (_walletService != null)
+            {
+                await _walletService.GetOrCreateOrganizationWalletAsync(org.Id, Currency.NGN, cancellationToken);
+            }
         }
         else if (request.NewStatus == KybStatus.Rejected)
         {

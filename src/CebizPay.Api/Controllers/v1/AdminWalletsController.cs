@@ -1,6 +1,7 @@
 using Asp.Versioning;
 using CebizPay.Application.Common.Models;
 using CebizPay.Application.UseCases.Admin.Wallets;
+using CebizPay.Domain.Finance.Enums;
 using MediatR;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
@@ -100,5 +101,24 @@ public sealed class AdminWalletsController : ControllerBase
         var query = new ExportAdminIndividualWalletsQuery(search, status, format);
         var result = await _sender.Send(query, cancellationToken);
         return File(result.Content, result.ContentType, result.FileName);
+    }
+
+    /// <summary>
+    /// Scans the platform and automatically provisions missing wallets for registered individuals and organizations.
+    /// </summary>
+    /// <param name="currency">Currency to backfill (defaults to NGN).</param>
+    /// <param name="cancellationToken">Cancellation token.</param>
+    [HttpPost("backfill")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    [ProducesResponseType(typeof(BackfillMissingWalletsResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> BackfillWallets(
+        [FromQuery] Currency currency = Currency.NGN,
+        CancellationToken cancellationToken = default)
+    {
+        var command = new BackfillMissingWalletsCommand(currency);
+        var result = await _sender.Send(command, cancellationToken);
+        return Ok(result);
     }
 }

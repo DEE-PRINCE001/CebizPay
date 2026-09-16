@@ -1,8 +1,10 @@
+using CebizPay.Application.Common.Interfaces.Finance;
 using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Domain.Entities;
 using CebizPay.Domain.Enums;
 using CebizPay.Domain.Events;
+using CebizPay.Domain.Finance.Enums;
 using MediatR;
 
 namespace CebizPay.Application.UseCases.Organizations.RegisterStep1;
@@ -14,14 +16,19 @@ public sealed class RegisterStep1CommandHandler : IRequestHandler<RegisterStep1C
 {
     private readonly IApplicationDbContext _dbContext;
     private readonly IEventPublisher _eventPublisher;
+    private readonly IWalletService _walletService;
 
     /// <summary>
     /// Initializes a new instance of <see cref="RegisterStep1CommandHandler"/>.
     /// </summary>
-    public RegisterStep1CommandHandler(IApplicationDbContext dbContext, IEventPublisher eventPublisher)
+    public RegisterStep1CommandHandler(
+        IApplicationDbContext dbContext,
+        IEventPublisher eventPublisher,
+        IWalletService walletService)
     {
         _dbContext = dbContext;
         _eventPublisher = eventPublisher;
+        _walletService = walletService;
     }
 
     /// <inheritdoc/>
@@ -59,6 +66,8 @@ public sealed class RegisterStep1CommandHandler : IRequestHandler<RegisterStep1C
         _dbContext.KybDetails.Add(kybDetail);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
+
+        await _walletService.GetOrCreateOrganizationWalletAsync(org.Id, Currency.NGN, cancellationToken);
 
         await _eventPublisher.PublishAsync(
             new OrganizationRegisteredDomainEvent(org.Id, org.CompanyName, org.Email, DateTime.UtcNow),
