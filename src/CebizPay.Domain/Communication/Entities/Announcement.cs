@@ -53,6 +53,9 @@ public class Announcement
     /// <summary>User ID of the actor who archived the announcement.</summary>
     public string? ArchivedByUserId { get; private set; }
 
+    /// <summary>Optional promotional or informative banner graphic URI.</summary>
+    public string? BannerUrl { get; private set; }
+
     private Announcement() { } // EF Core
 
     /// <summary>
@@ -62,7 +65,8 @@ public class Announcement
     public static Announcement CreatePlatform(
         string title,
         string description,
-        string createdByUserId)
+        string createdByUserId,
+        string? bannerUrl = null)
     {
         ValidateCommonFields(title, description, createdByUserId);
 
@@ -72,6 +76,7 @@ public class Announcement
             OrganizationId = null,
             Title = title.Trim(),
             Description = description.Trim(),
+            BannerUrl = bannerUrl?.Trim(),
             Scope = AnnouncementScope.Platform,
             Status = AnnouncementStatus.Draft,
             CreatedAtUtc = DateTime.UtcNow,
@@ -87,7 +92,8 @@ public class Announcement
         Guid organizationId,
         string title,
         string description,
-        string createdByUserId)
+        string createdByUserId,
+        string? bannerUrl = null)
     {
         if (organizationId == Guid.Empty)
         {
@@ -102,6 +108,7 @@ public class Announcement
             OrganizationId = organizationId,
             Title = title.Trim(),
             Description = description.Trim(),
+            BannerUrl = bannerUrl?.Trim(),
             Scope = AnnouncementScope.Workplace,
             Status = AnnouncementStatus.Draft,
             CreatedAtUtc = DateTime.UtcNow,
@@ -161,7 +168,7 @@ public class Announcement
     /// <summary>
     /// Updates announcement title and description prior to archiving.
     /// </summary>
-    public void Update(string title, string description, string updatedByUserId, DateTime now)
+    public void Update(string title, string description, string updatedByUserId, DateTime now, string? bannerUrl = null)
     {
         if (Status == AnnouncementStatus.Archived)
         {
@@ -172,6 +179,7 @@ public class Announcement
 
         Title = title.Trim();
         Description = description.Trim();
+        BannerUrl = bannerUrl?.Trim();
         UpdatedAtUtc = now;
         UpdatedByUserId = updatedByUserId.Trim();
     }

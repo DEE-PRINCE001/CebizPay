@@ -46,7 +46,8 @@ public sealed class AnnouncementsController : ControllerBase
             request.Scope,
             request.Title,
             request.Description,
-            request.PublishImmediately);
+            request.PublishImmediately,
+            request.BannerUrl);
 
         var result = await _sender.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetAnnouncementById), new { id = result.Id }, result);

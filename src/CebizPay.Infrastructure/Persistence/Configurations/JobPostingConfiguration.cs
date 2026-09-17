@@ -38,6 +38,15 @@ public sealed class JobPostingConfiguration : IEntityTypeConfiguration<JobPostin
         builder.Property(x => x.Responsibilities)
             .HasMaxLength(4000);
 
+        builder.Property(x => x.BannerUrl)
+            .HasMaxLength(500);
+
+        builder.Property(x => x.ApplicationProcess)
+            .HasMaxLength(50);
+
+        builder.Property(x => x.ApplicationEmail)
+            .HasMaxLength(256);
+
         builder.Property(x => x.Status)
             .HasConversion<int>()
             .IsRequired();

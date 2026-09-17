@@ -158,6 +158,7 @@ public sealed class PublishAnnouncementCommandHandler : IRequestHandler<PublishA
             announcement.UpdatedAtUtc,
             announcement.UpdatedByUserId,
             announcement.ArchivedAtUtc,
-            announcement.ArchivedByUserId);
+            announcement.ArchivedByUserId,
+            announcement.BannerUrl);
     }
 }

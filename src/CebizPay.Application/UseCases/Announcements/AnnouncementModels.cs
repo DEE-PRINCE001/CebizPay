@@ -20,7 +20,8 @@ public sealed record AnnouncementDto(
     DateTime? UpdatedAtUtc,
     string? UpdatedByUserId,
     DateTime? ArchivedAtUtc,
-    string? ArchivedByUserId);
+    string? ArchivedByUserId,
+    string? BannerUrl = null);
 
 /// <summary>
 /// Request payload for creating a new announcement.
@@ -29,4 +30,5 @@ public sealed record CreateAnnouncementRequest(
     AnnouncementScope Scope,
     string Title,
     string Description,
-    bool PublishImmediately = false);
+    bool PublishImmediately = false,
+    string? BannerUrl = null);

@@ -85,6 +85,60 @@ public sealed class RecruitmentEntitiesTests
     }
 
     [Fact]
+    public void JobPosting_CreationAndUpdating_WithBannerAndApplicationDetails_ShouldStoreFields()
+    {
+        var orgId = Guid.NewGuid();
+        var banner = "https://cdn.example.com/banner.jpg";
+        var process = "Email";
+        var email = "jobs@example.com";
+
+        var job = new JobPosting(
+            orgId,
+            "Product Designer",
+            "Figma & UX design",
+            "usr_admin",
+            EmploymentType.FullTime,
+            null,
+            null,
+            null,
+            "Remote",
+            "Portfolio required",
+            "Design system",
+            null,
+            banner,
+            process,
+            email);
+
+        Assert.Equal(banner, job.BannerUrl);
+        Assert.Equal(process, job.ApplicationProcess);
+        Assert.Equal(email, job.ApplicationEmail);
+
+        // Update them
+        var updatedBanner = "https://cdn.example.com/new-banner.jpg";
+        var updatedProcess = "ExternalPortal";
+        var updatedEmail = "hr@example.com";
+
+        job.Update(
+            "Senior Product Designer",
+            "Updated UX",
+            EmploymentType.FullTime,
+            null,
+            null,
+            null,
+            "Remote",
+            "Portfolio required",
+            "Design system",
+            null,
+            updatedBanner,
+            updatedProcess,
+            updatedEmail);
+
+        Assert.Equal(updatedBanner, job.BannerUrl);
+        Assert.Equal(updatedProcess, job.ApplicationProcess);
+        Assert.Equal(updatedEmail, job.ApplicationEmail);
+    }
+
+    [Fact]
     public void JobPosting_Publish_DraftToPublished_Succeeds()
     {
         var job = new JobPosting(Guid.NewGuid(), "Frontend Engineer", "React/TypeScript", "usr_1");

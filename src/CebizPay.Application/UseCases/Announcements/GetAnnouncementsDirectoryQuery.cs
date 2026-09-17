@@ -156,7 +156,8 @@ public sealed class GetAnnouncementsDirectoryQueryHandler : IRequestHandler<GetA
                 a.UpdatedAtUtc,
                 a.UpdatedByUserId,
                 a.ArchivedAtUtc,
-                a.ArchivedByUserId);
+                a.ArchivedByUserId,
+                a.BannerUrl);
         }).ToList();
 
         return new PagedResult<AnnouncementDto>(dtos, totalCount, request.PageNumber, request.PageSize);

@@ -125,6 +125,7 @@ public sealed class GetAnnouncementByIdQueryHandler : IRequestHandler<GetAnnounc
             announcement.UpdatedAtUtc,
             announcement.UpdatedByUserId,
             announcement.ArchivedAtUtc,
-            announcement.ArchivedByUserId);
+            announcement.ArchivedByUserId,
+            announcement.BannerUrl);
     }
 }

@@ -61,6 +61,15 @@ public sealed class JobPosting
     /// <summary>Last update timestamp in UTC.</summary>
     public DateTime? UpdatedAtUtc { get; private set; }
 
+    /// <summary>Optional promotional banner image URI for job advertisement.</summary>
+    public string? BannerUrl { get; private set; }
+
+    /// <summary>Candidate application process routing mode (e.g. Email or PlatformForm).</summary>
+    public string? ApplicationProcess { get; private set; }
+
+    /// <summary>Target application email address when application process is Email.</summary>
+    public string? ApplicationEmail { get; private set; }
+
     /// <summary>Collection of candidate applications submitted for this job opening.</summary>
     public ICollection<RecruitmentApplication> Applications { get; private set; } = new List<RecruitmentApplication>();
 
@@ -82,7 +91,10 @@ public sealed class JobPosting
         string? location = null,
         string? requirements = null,
         string? responsibilities = null,
-        DateTime? applicationDeadline = null)
+        DateTime? applicationDeadline = null,
+        string? bannerUrl = null,
+        string? applicationProcess = null,
+        string? applicationEmail = null)
     {
         if (organizationId == Guid.Empty)
             throw new ArgumentException("OrganizationId is required.", nameof(organizationId));
@@ -106,6 +118,9 @@ public sealed class JobPosting
         Requirements = requirements?.Trim();
         Responsibilities = responsibilities?.Trim();
         ApplicationDeadline = applicationDeadline;
+        BannerUrl = bannerUrl?.Trim();
+        ApplicationProcess = applicationProcess?.Trim();
+        ApplicationEmail = applicationEmail?.Trim();
         Status = JobPostingStatus.Draft;
         CreatedAtUtc = DateTime.UtcNow;
     }
@@ -123,7 +138,10 @@ public sealed class JobPosting
         string? location,
         string? requirements,
         string? responsibilities,
-        DateTime? applicationDeadline)
+        DateTime? applicationDeadline,
+        string? bannerUrl = null,
+        string? applicationProcess = null,
+        string? applicationEmail = null)
     {
         if (Status is JobPostingStatus.Closed or JobPostingStatus.Cancelled)
         {
@@ -145,6 +163,9 @@ public sealed class JobPosting
         Requirements = requirements?.Trim();
         Responsibilities = responsibilities?.Trim();
         ApplicationDeadline = applicationDeadline;
+        BannerUrl = bannerUrl?.Trim();
+        ApplicationProcess = applicationProcess?.Trim();
+        ApplicationEmail = applicationEmail?.Trim();
         UpdatedAtUtc = DateTime.UtcNow;
     }
 

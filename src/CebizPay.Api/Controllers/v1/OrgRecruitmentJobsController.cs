@@ -108,7 +108,10 @@ public sealed class OrgRecruitmentJobsController : ControllerBase
             request.Location,
             request.Requirements,
             request.Responsibilities,
-            request.ApplicationDeadline);
+            request.ApplicationDeadline,
+            request.BannerUrl,
+            request.ApplicationProcess,
+            request.ApplicationEmail);
 
         var id = await _sender.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetJobPostingById), new { version = "1.0", id }, new { id });
@@ -139,7 +142,10 @@ public sealed class OrgRecruitmentJobsController : ControllerBase
             request.Location,
             request.Requirements,
             request.Responsibilities,
-            request.ApplicationDeadline);
+            request.ApplicationDeadline,
+            request.BannerUrl,
+            request.ApplicationProcess,
+            request.ApplicationEmail);
 
         var resultId = await _sender.Send(command, cancellationToken);
         return Ok(new { id = resultId });

@@ -29,7 +29,10 @@ public sealed record JobPostingDto(
     string CreatedByUserId,
     DateTime CreatedAtUtc,
     DateTime? UpdatedAtUtc,
-    int ApplicationCount = 0);
+    int ApplicationCount = 0,
+    string? BannerUrl = null,
+    string? ApplicationProcess = null,
+    string? ApplicationEmail = null);
 
 /// <summary>
 /// Safe DTO representing a published job posting for public candidates.
@@ -47,7 +50,10 @@ public sealed record PublicJobPostingDto(
     string? Requirements,
     string? Responsibilities,
     DateTime? ApplicationDeadline,
-    DateTime? PublishedAtUtc);
+    DateTime? PublishedAtUtc,
+    string? BannerUrl = null,
+    string? ApplicationProcess = null,
+    string? ApplicationEmail = null);
 
 /// <summary>
 /// DTO representing a candidate employment application.
@@ -83,7 +89,10 @@ public sealed record CreateJobPostingApiRequest(
     string? Location = null,
     string? Requirements = null,
     string? Responsibilities = null,
-    DateTime? ApplicationDeadline = null);
+    DateTime? ApplicationDeadline = null,
+    string? BannerUrl = null,
+    string? ApplicationProcess = null,
+    string? ApplicationEmail = null);
 
 /// <summary>
 /// API request payload for updating a job posting.
@@ -98,7 +107,10 @@ public sealed record UpdateJobPostingApiRequest(
     string? Location = null,
     string? Requirements = null,
     string? Responsibilities = null,
-    DateTime? ApplicationDeadline = null);
+    DateTime? ApplicationDeadline = null,
+    string? BannerUrl = null,
+    string? ApplicationProcess = null,
+    string? ApplicationEmail = null);
 
 /// <summary>
 /// API request payload for candidate job application submission.

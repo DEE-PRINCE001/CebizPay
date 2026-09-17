@@ -24,7 +24,10 @@ public sealed record CreateJobPostingCommand(
     string? Location = null,
     string? Requirements = null,
     string? Responsibilities = null,
-    DateTime? ApplicationDeadline = null) : IRequest<Guid>;
+    DateTime? ApplicationDeadline = null,
+    string? BannerUrl = null,
+    string? ApplicationProcess = null,
+    string? ApplicationEmail = null) : IRequest<Guid>;
 
 /// <summary>
 /// Validator for CreateJobPostingCommand.
@@ -45,6 +48,9 @@ public sealed class CreateJobPostingCommandValidator : AbstractValidator<CreateJ
         RuleFor(x => x.ApplicationDeadline)
             .Must(d => !d.HasValue || d.Value > DateTime.UtcNow)
             .WithMessage("Application deadline must be in the future.");
+        RuleFor(x => x.BannerUrl).MaximumLength(500);
+        RuleFor(x => x.ApplicationProcess).MaximumLength(50);
+        RuleFor(x => x.ApplicationEmail).MaximumLength(256).EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.ApplicationEmail));
     }
 }
 
@@ -138,7 +144,10 @@ public sealed class CreateJobPostingCommandHandler : IRequestHandler<CreateJobPo
             request.Location,
             request.Requirements,
             request.Responsibilities,
-            request.ApplicationDeadline);
+            request.ApplicationDeadline,
+            request.BannerUrl,
+            request.ApplicationProcess,
+            request.ApplicationEmail);
 
         _dbContext.JobPostings.Add(jobPosting);
 

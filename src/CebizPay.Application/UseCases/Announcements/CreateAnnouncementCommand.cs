@@ -22,7 +22,8 @@ public sealed record CreateAnnouncementCommand(
     AnnouncementScope Scope,
     string Title,
     string Description,
-    bool PublishImmediately = false) : IRequest<AnnouncementDto>;
+    bool PublishImmediately = false,
+    string? BannerUrl = null) : IRequest<AnnouncementDto>;
 
 /// <summary>
 /// Validator for CreateAnnouncementCommand.
@@ -44,6 +45,9 @@ public sealed class CreateAnnouncementCommandValidator : AbstractValidator<Creat
         RuleFor(x => x.Description)
             .NotEmpty().WithMessage("Announcement description is required.")
             .MaximumLength(4000).WithMessage("Description cannot exceed 4000 characters.");
+
+        RuleFor(x => x.BannerUrl)
+            .MaximumLength(500);
     }
 }
 
@@ -95,7 +99,7 @@ public sealed class CreateAnnouncementCommandHandler : IRequestHandler<CreateAnn
                 throw new UnauthorizedAccessException("Only active Super Admins can publish platform announcements.");
             }
 
-            announcement = Announcement.CreatePlatform(request.Title, request.Description, callerUserId);
+            announcement = Announcement.CreatePlatform(request.Title, request.Description, callerUserId, request.BannerUrl);
         }
         else if (request.Scope == AnnouncementScope.Workplace)
         {
@@ -132,7 +136,7 @@ public sealed class CreateAnnouncementCommandHandler : IRequestHandler<CreateAnn
                 throw new UnauthorizedAccessException("Insufficient permissions to publish workplace announcements for this organization.");
             }
 
-            announcement = Announcement.CreateWorkplace(orgId, request.Title, request.Description, callerUserId);
+            announcement = Announcement.CreateWorkplace(orgId, request.Title, request.Description, callerUserId, request.BannerUrl);
         }
         else
         {
@@ -196,6 +200,7 @@ public sealed class CreateAnnouncementCommandHandler : IRequestHandler<CreateAnn
             announcement.UpdatedAtUtc,
             announcement.UpdatedByUserId,
             announcement.ArchivedAtUtc,
-            announcement.ArchivedByUserId);
+            announcement.ArchivedByUserId,
+            announcement.BannerUrl);
     }
 }

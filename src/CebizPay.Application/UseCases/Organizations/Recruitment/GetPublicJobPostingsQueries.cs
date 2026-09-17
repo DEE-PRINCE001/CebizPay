@@ -120,7 +120,10 @@ public sealed class GetPublicJobPostingsQueryHandler : IRequestHandler<GetPublic
                 j.Requirements,
                 j.Responsibilities,
                 j.ApplicationDeadline,
-                j.PublishedAtUtc);
+                j.PublishedAtUtc,
+                j.BannerUrl,
+                j.ApplicationProcess,
+                j.ApplicationEmail);
         }).ToList();
 
         return new PagedResult<PublicJobPostingDto>(dtos, totalCount, request.PageNumber, request.PageSize);
@@ -191,6 +194,9 @@ public sealed class GetPublicJobPostingByIdQueryHandler : IRequestHandler<GetPub
             job.Requirements,
             job.Responsibilities,
             job.ApplicationDeadline,
-            job.PublishedAtUtc);
+            job.PublishedAtUtc,
+            job.BannerUrl,
+            job.ApplicationProcess,
+            job.ApplicationEmail);
     }
 }

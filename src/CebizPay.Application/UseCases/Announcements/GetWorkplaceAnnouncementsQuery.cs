@@ -109,7 +109,8 @@ public sealed class GetWorkplaceAnnouncementsQueryHandler : IRequestHandler<GetW
             a.UpdatedAtUtc,
             a.UpdatedByUserId,
             a.ArchivedAtUtc,
-            a.ArchivedByUserId)).ToList();
+            a.ArchivedByUserId,
+            a.BannerUrl)).ToList();
 
         return new PagedResult<AnnouncementDto>(dtos, totalCount, request.PageNumber, request.PageSize);
     }

@@ -156,7 +156,10 @@ public sealed class GetOrgJobPostingsQueryHandler : IRequestHandler<GetOrgJobPos
                 j.CreatedByUserId,
                 j.CreatedAtUtc,
                 j.UpdatedAtUtc,
-                appCounts.TryGetValue(j.Id, out var count) ? count : 0);
+                appCounts.TryGetValue(j.Id, out var count) ? count : 0,
+                j.BannerUrl,
+                j.ApplicationProcess,
+                j.ApplicationEmail);
         }).ToList();
 
         return new PagedResult<JobPostingDto>(dtos, totalCount, request.PageNumber, request.PageSize);
@@ -267,6 +270,9 @@ public sealed class GetOrgJobPostingByIdQueryHandler : IRequestHandler<GetOrgJob
             job.CreatedByUserId,
             job.CreatedAtUtc,
             job.UpdatedAtUtc,
-            appCount);
+            appCount,
+            job.BannerUrl,
+            job.ApplicationProcess,
+            job.ApplicationEmail);
     }
 }

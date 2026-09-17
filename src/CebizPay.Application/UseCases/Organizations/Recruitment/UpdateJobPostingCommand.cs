@@ -25,7 +25,10 @@ public sealed record UpdateJobPostingCommand(
     string? Location = null,
     string? Requirements = null,
     string? Responsibilities = null,
-    DateTime? ApplicationDeadline = null) : IRequest<Guid>;
+    DateTime? ApplicationDeadline = null,
+    string? BannerUrl = null,
+    string? ApplicationProcess = null,
+    string? ApplicationEmail = null) : IRequest<Guid>;
 
 /// <summary>
 /// Validator for UpdateJobPostingCommand.
@@ -44,6 +47,9 @@ public sealed class UpdateJobPostingCommandValidator : AbstractValidator<UpdateJ
         RuleFor(x => x.Location).MaximumLength(150);
         RuleFor(x => x.Requirements).MaximumLength(4000);
         RuleFor(x => x.Responsibilities).MaximumLength(4000);
+        RuleFor(x => x.BannerUrl).MaximumLength(500);
+        RuleFor(x => x.ApplicationProcess).MaximumLength(50);
+        RuleFor(x => x.ApplicationEmail).MaximumLength(256).EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.ApplicationEmail));
     }
 }
 
@@ -154,7 +160,10 @@ public sealed class UpdateJobPostingCommandHandler : IRequestHandler<UpdateJobPo
             request.Location,
             request.Requirements,
             request.Responsibilities,
-            request.ApplicationDeadline);
+            request.ApplicationDeadline,
+            request.BannerUrl,
+            request.ApplicationProcess,
+            request.ApplicationEmail);
 
         var afterJson = System.Text.Json.JsonSerializer.Serialize(new
         {

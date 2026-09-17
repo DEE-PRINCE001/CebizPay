@@ -155,6 +155,36 @@ public sealed class AnnouncementTests
     }
 
     [Fact]
+    public void CreatePlatform_WithBannerUrl_ShouldStoreBannerUrl()
+    {
+        var banner = "https://cdn.example.com/banners/notice.png";
+        var announcement = Announcement.CreatePlatform("Title", "Desc", "user-1", banner);
+
+        Assert.Equal(banner, announcement.BannerUrl);
+    }
+
+    [Fact]
+    public void CreateWorkplace_WithBannerUrl_ShouldStoreBannerUrl()
+    {
+        var orgId = Guid.NewGuid();
+        var banner = "https://cdn.example.com/banners/workplace.png";
+        var announcement = Announcement.CreateWorkplace(orgId, "Title", "Desc", "user-1", banner);
+
+        Assert.Equal(banner, announcement.BannerUrl);
+    }
+
+    [Fact]
+    public void Update_WithBannerUrl_ShouldUpdateBannerUrl()
+    {
+        var announcement = Announcement.CreatePlatform("Old Title", "Old Desc", "user-1", "https://old.com/banner.png");
+        var now = DateTime.UtcNow;
+
+        announcement.Update("New Title", "New Desc", "editor-user", now, "https://new.com/banner.png");
+
+        Assert.Equal("https://new.com/banner.png", announcement.BannerUrl);
+    }
+
+    [Fact]
     public void Update_WhenArchived_ShouldThrowInvalidOperationException()
     {
         var announcement = Announcement.CreatePlatform("Title", "Desc", "user-1");

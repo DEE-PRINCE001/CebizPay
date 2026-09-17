@@ -29,6 +29,9 @@ public sealed class AnnouncementConfiguration : IEntityTypeConfiguration<Announc
             .IsRequired()
             .HasMaxLength(4000);
 
+        builder.Property(x => x.BannerUrl)
+            .HasMaxLength(500);
+
         builder.Property(x => x.Scope)
             .HasConversion<int>()
             .IsRequired();
