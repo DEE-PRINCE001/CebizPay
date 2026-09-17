@@ -82,6 +82,21 @@ public class SavingsAccount
     /// <summary>Accrued interest forfeited upon early withdrawal.</summary>
     public decimal ForfeitedInterestAmount { get; private set; }
 
+    /// <summary>External savings/BaaS provider identifier (e.g., "Cowrywise", "Anchor", "Mock").</summary>
+    public string? ProviderName { get; private set; }
+
+    /// <summary>Customer reference ID assigned by the external provider.</summary>
+    public string? ExternalCustomerId { get; private set; }
+
+    /// <summary>External savings plan or sub-account ID at the external provider.</summary>
+    public string? ExternalPlanId { get; private set; }
+
+    /// <summary>Current lifecycle status as reported by the external provider.</summary>
+    public string? ExternalStatus { get; private set; }
+
+    /// <summary>Timestamp of the most recent balance and yield synchronization with the provider.</summary>
+    public DateTime? LastYieldSyncAtUtc { get; private set; }
+
     /// <summary>Creation timestamp.</summary>
     public DateTime CreatedAtUtc { get; private set; }
 
@@ -289,5 +304,45 @@ public class SavingsAccount
         AccruedInterest = 0m;
         PrincipalBalance = 0m;
         UpdatedAtUtc = asOfUtc;
+    }
+
+    /// <summary>
+    /// Links the savings account to an external provider's customer and plan representation.
+    /// </summary>
+    public void LinkExternalProvider(string providerName, string? externalCustomerId, string externalPlanId, string externalStatus)
+    {
+        if (string.IsNullOrWhiteSpace(providerName))
+            throw new ArgumentException("ProviderName is required.", nameof(providerName));
+        if (string.IsNullOrWhiteSpace(externalPlanId))
+            throw new ArgumentException("ExternalPlanId is required.", nameof(externalPlanId));
+
+        ProviderName = providerName;
+        ExternalCustomerId = externalCustomerId;
+        ExternalPlanId = externalPlanId;
+        ExternalStatus = externalStatus;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Synchronizes the live position, accrued interest, and maturity state reported by the external provider.
+    /// </summary>
+    public void SyncExternalYield(decimal externalAccruedInterest, decimal externalPrincipalBalance, bool isMatured, string externalStatus, DateTime syncTimeUtc)
+    {
+        if (externalAccruedInterest < 0)
+            throw new ArgumentException("Accrued interest cannot be negative.", nameof(externalAccruedInterest));
+        if (externalPrincipalBalance < 0)
+            throw new ArgumentException("Principal balance cannot be negative.", nameof(externalPrincipalBalance));
+
+        AccruedInterest = externalAccruedInterest;
+        PrincipalBalance = externalPrincipalBalance;
+        ExternalStatus = externalStatus;
+        LastYieldSyncAtUtc = syncTimeUtc;
+        UpdatedAtUtc = syncTimeUtc;
+
+        if (isMatured && Status == SavingsAccountStatus.Active)
+        {
+            Status = SavingsAccountStatus.Matured;
+            MaturedAtUtc = syncTimeUtc;
+        }
     }
 }

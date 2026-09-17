@@ -106,7 +106,11 @@ public record SavingsAccountDto(
     DateTime MaturityDateUtc,
     DateTime? MaturedAtUtc,
     DateTime? WithdrawnAtUtc,
-    DateTime CreatedAtUtc);
+    DateTime CreatedAtUtc,
+    string? ProviderName = null,
+    string? ExternalPlanId = null,
+    string? ExternalStatus = null,
+    DateTime? LastYieldSyncAtUtc = null);
 
 /// <summary>
 /// Request to contribute funds to an active savings account.

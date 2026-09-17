@@ -1,3 +1,4 @@
+#pragma warning disable CA1848, CS1591
 using CebizPay.Application.Common.Interfaces.Finance;
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Interfaces.Savings;
@@ -6,6 +7,7 @@ using CebizPay.Domain.Entities;
 using CebizPay.Domain.Savings.Entities;
 using CebizPay.Domain.Savings.Enums;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace CebizPay.Infrastructure.Savings;
 
@@ -17,6 +19,8 @@ public class SavingsService : ISavingsService
     private readonly IApplicationDbContext _dbContext;
     private readonly ILedgerPostingService _ledgerPostingService;
     private readonly ISavingsInterestPolicyService _policyService;
+    private readonly ISavingsProviderFactory _providerFactory;
+    private readonly ILogger<SavingsService> _logger;
 
     /// <summary>
     /// Initializes a new instance of SavingsService.
@@ -24,12 +28,23 @@ public class SavingsService : ISavingsService
     public SavingsService(
         IApplicationDbContext dbContext,
         ILedgerPostingService ledgerPostingService,
-        ISavingsInterestPolicyService policyService)
+        ISavingsInterestPolicyService policyService,
+        ISavingsProviderFactory? providerFactory = null,
+        ILogger<SavingsService>? logger = null)
     {
-        _dbContext = dbContext;
-        _ledgerPostingService = ledgerPostingService;
-        _policyService = policyService;
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _ledgerPostingService = ledgerPostingService ?? throw new ArgumentNullException(nameof(ledgerPostingService));
+        _policyService = policyService ?? throw new ArgumentNullException(nameof(policyService));
+        _providerFactory = providerFactory ?? new Providers.SavingsProviderFactory(
+            [new Providers.Mock.MockSavingsProvider()],
+            Microsoft.Extensions.Options.Options.Create(new Options.SavingsOptions()));
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<SavingsService>.Instance;
     }
+
+    private ISavingsProvider ResolveActiveProvider() => _providerFactory.GetActiveProvider();
+
+    private ISavingsProvider ResolveProvider(string? providerName) =>
+        string.IsNullOrWhiteSpace(providerName) ? ResolveActiveProvider() : _providerFactory.GetProvider(providerName);
 
     /// <inheritdoc/>
     public async Task<SavingsPreviewResult> PreviewSavingsAsync(SavingsPreviewRequest request, CancellationToken cancellationToken = default)
@@ -209,6 +224,40 @@ public class SavingsService : ISavingsService
                 nowUtc.AddDays(request.DurationDays));
         }
 
+        // Onboard customer and create external plan via active provider
+        var provider = ResolveActiveProvider();
+        var profile = await _dbContext.IndividualProfiles.FirstOrDefaultAsync(p => p.UserId == ownerUserId, cancellationToken);
+        var appDb = _dbContext as Persistence.ApplicationDbContext;
+        var user = appDb != null ? await appDb.Users.FirstOrDefaultAsync(u => u.Id == ownerUserId, cancellationToken) : null;
+
+        var firstName = !string.IsNullOrWhiteSpace(profile?.FirstName) ? profile.FirstName : "Saver";
+        var lastName = !string.IsNullOrWhiteSpace(profile?.LastName) ? profile.LastName : "Customer";
+        var email = user?.Email ?? $"{ownerUserId}@cebizpay.local";
+        var phone = user?.PhoneNumber ?? "+2348000000000";
+
+        var customerResult = await provider.EnsureCustomerAsync(new ExternalCustomerRequest(
+            ownerUserId,
+            firstName,
+            lastName,
+            email,
+            phone), cancellationToken);
+
+        var planReq = new ExternalCreatePlanRequest(
+            customerResult.ExternalCustomerId,
+            plan.Name,
+            plan.PlanType,
+            plan.Currency,
+            request.InitialDepositAmount,
+            request.DurationDays,
+            account.MaturityDateUtc,
+            account.TargetAmount,
+            account.ContributionAmount,
+            account.ContributionFrequency,
+            idempotencyKey ?? $"SD-{account.Id:N}");
+
+        var externalPlan = await provider.CreatePlanAsync(planReq, cancellationToken);
+        account.LinkExternalProvider(provider.ProviderName, customerResult.ExternalCustomerId, externalPlan.ExternalPlanId, externalPlan.Status);
+
         _dbContext.SavingsAccounts.Add(account);
         await _dbContext.SaveChangesAsync(cancellationToken);
 
@@ -226,13 +275,22 @@ public class SavingsService : ISavingsService
         var contribution = account.RecordContribution(request.InitialDepositAmount, ledgerTx.Id, idempotencyKey ?? reference);
         _dbContext.SavingsContributions.Add(contribution);
 
+        // Fund external plan at provider
+        await provider.FundPlanAsync(new ExternalFundingRequest(
+            externalPlan.ExternalPlanId,
+            customerResult.ExternalCustomerId,
+            request.InitialDepositAmount,
+            plan.Currency,
+            reference,
+            $"Initial deposit for savings account {account.Id}"), cancellationToken);
+
         var audit = AuditLog.Create(
             actorId: ownerUserId,
             action: AuditActions.SavingsAccountCreated,
             resourceType: AuditResourceTypes.SavingsAccount,
             resourceId: account.Id.ToString(),
             organizationId: account.OrganizationId,
-            afterJson: $"{{\"initialDeposit\":{request.InitialDepositAmount},\"currency\":\"{plan.Currency}\",\"planType\":\"{account.PlanType}\"}}");
+            afterJson: $"{{\"initialDeposit\":{request.InitialDepositAmount},\"currency\":\"{plan.Currency}\",\"planType\":\"{account.PlanType}\",\"provider\":\"{provider.ProviderName}\"}}");
         _dbContext.AuditLogs.Add(audit);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
@@ -307,6 +365,18 @@ public class SavingsService : ISavingsService
         var contribution = account.RecordContribution(amount, ledgerTx.Id, idempotencyKey ?? reference);
         _dbContext.SavingsContributions.Add(contribution);
 
+        if (!string.IsNullOrWhiteSpace(account.ExternalPlanId))
+        {
+            var provider = ResolveProvider(account.ProviderName);
+            await provider.FundPlanAsync(new ExternalFundingRequest(
+                account.ExternalPlanId,
+                account.ExternalCustomerId ?? ownerUserId,
+                amount,
+                account.Currency,
+                reference,
+                $"Contribution to savings account {account.Id}"), cancellationToken);
+        }
+
         var audit = AuditLog.Create(
             actorId: ownerUserId,
             action: AuditActions.SavingsContributionMade,
@@ -329,6 +399,29 @@ public class SavingsService : ISavingsService
 
         if (account.OwnerUserId != ownerUserId)
             throw new UnauthorizedAccessException("You can only view withdrawal terms for your own savings account.");
+
+        // Refresh live valuation if backed by an external provider
+        if (!string.IsNullOrWhiteSpace(account.ExternalPlanId))
+        {
+            try
+            {
+                var provider = ResolveProvider(account.ProviderName);
+                var position = await provider.GetPositionAsync(account.ExternalPlanId, cancellationToken);
+                if (position != null)
+                {
+                    account.SyncExternalYield(
+                        position.AccruedInterest,
+                        position.PrincipalBalance > 0 ? position.PrincipalBalance : account.PrincipalBalance,
+                        position.IsMatured,
+                        position.ExternalStatus,
+                        DateTime.UtcNow);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to refresh live valuation for account {AccountId}.", accountId);
+            }
+        }
 
         var terms = account.CalculateWithdrawalTerms(DateTime.UtcNow);
         var durationDays = (int)(DateTime.UtcNow - account.StartDateUtc).TotalDays;
@@ -362,37 +455,65 @@ public class SavingsService : ISavingsService
             ?? throw new InvalidOperationException($"User wallet not found for currency '{account.Currency}'.");
 
         var nowUtc = DateTime.UtcNow;
-        var terms = account.CalculateWithdrawalTerms(nowUtc);
+        decimal payoutAmount;
+        decimal penaltyAmount;
+        decimal forfeitedInterest;
+        bool isEarly;
+
+        if (!string.IsNullOrWhiteSpace(account.ExternalPlanId))
+        {
+            var isEarlyExit = account.Status != SavingsAccountStatus.Matured && nowUtc < account.MaturityDateUtc && account.PlanType == SavingsPlanType.FixedLock;
+            var provider = ResolveProvider(account.ProviderName);
+            var liqResult = await provider.LiquidatePlanAsync(new ExternalLiquidationRequest(
+                account.ExternalPlanId,
+                account.ExternalCustomerId ?? ownerUserId,
+                account.PrincipalBalance,
+                isEarlyExit,
+                $"SW-{Guid.NewGuid():N}"[..32]), cancellationToken);
+
+            payoutAmount = liqResult.NetSettledAmount;
+            penaltyAmount = liqResult.PenaltyAmount;
+            forfeitedInterest = liqResult.ForfeitedInterest;
+            isEarly = isEarlyExit;
+        }
+        else
+        {
+            var terms = account.CalculateWithdrawalTerms(nowUtc);
+            payoutAmount = terms.PayoutAmount;
+            penaltyAmount = terms.PenaltyAmount;
+            forfeitedInterest = terms.ForfeitedInterest;
+            isEarly = terms.IsEarly;
+        }
 
         var reference = $"SW-{Guid.NewGuid():N}"[..32];
         var ledgerTx = await _ledgerPostingService.PostSavingsWithdrawalCoreAsync(
             userWallet.Id,
-            terms.PayoutAmount,
+            payoutAmount,
             account.Currency,
             reference,
             $"Withdrawal liquidation for savings account {account.Id}",
             cancellationToken);
 
-        account.ExecuteWithdrawal(terms.PayoutAmount, terms.PenaltyAmount, terms.ForfeitedInterest, ledgerTx.Id, nowUtc);
+        account.ExecuteWithdrawal(payoutAmount, penaltyAmount, forfeitedInterest, ledgerTx.Id, nowUtc);
 
-        var auditAction = terms.IsEarly ? AuditActions.SavingsEarlyWithdrawal : AuditActions.SavingsWithdrawal;
+        var auditAction = isEarly ? AuditActions.SavingsEarlyWithdrawal : AuditActions.SavingsWithdrawal;
         var audit = AuditLog.Create(
             actorId: ownerUserId,
             action: auditAction,
             resourceType: AuditResourceTypes.SavingsAccount,
             resourceId: account.Id.ToString(),
             organizationId: account.OrganizationId,
-            afterJson: $"{{\"payout\":{terms.PayoutAmount},\"penalty\":{terms.PenaltyAmount},\"forfeitedInterest\":{terms.ForfeitedInterest},\"isEarly\":{terms.IsEarly}}}");
+            afterJson: $"{{\"payout\":{payoutAmount},\"penalty\":{penaltyAmount},\"forfeitedInterest\":{forfeitedInterest},\"isEarly\":{isEarly}}}");
         _dbContext.AuditLogs.Add(audit);
 
         await _dbContext.SaveChangesAsync(cancellationToken);
 
         return new SavingsWithdrawalResultDto(
             account.Id,
-            terms.PayoutAmount,
-            terms.PenaltyAmount,
-            terms.ForfeitedInterest,
-            terms.IsEarly,
+            payoutAmount,
+            penaltyAmount,
+            forfeitedInterest,
+            isEarly,
             ledgerTx.Id,
             nowUtc);
     }
@@ -410,7 +531,42 @@ public class SavingsService : ISavingsService
 
         foreach (var account in activeAccounts)
         {
-            // Repeat-safe idempotency check: already accrued for this date?
+            // If account has an external provider, synchronize external position and yield
+            if (!string.IsNullOrWhiteSpace(account.ExternalPlanId))
+            {
+                try
+                {
+                    var provider = ResolveProvider(account.ProviderName);
+                    var position = await provider.GetPositionAsync(account.ExternalPlanId, cancellationToken);
+                    if (position != null)
+                    {
+                        var incrementalInterest = position.AccruedInterest - account.AccruedInterest;
+                        if (incrementalInterest > 0)
+                        {
+                            var accrual = account.AccrueDailyInterest(incrementalInterest, dateOnly);
+                            if (accrual != null)
+                            {
+                                _dbContext.SavingsInterestAccruals.Add(accrual);
+                                count++;
+                            }
+                        }
+
+                        account.SyncExternalYield(
+                            position.AccruedInterest,
+                            position.PrincipalBalance > 0 ? position.PrincipalBalance : account.PrincipalBalance,
+                            position.IsMatured,
+                            position.ExternalStatus,
+                            DateTime.UtcNow);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to sync external yield for account {AccountId}.", account.Id);
+                }
+                continue;
+            }
+
+            // Fallback for legacy accounts without external provider mapping
             var alreadyAccrued = account.InterestAccruals.Any(i => i.AccrualDate == dateOnly);
             if (alreadyAccrued)
                 continue;
@@ -429,7 +585,6 @@ public class SavingsService : ISavingsService
                 }
             }
 
-            // Check if maturity reached
             account.CheckMaturity(DateTime.UtcNow);
         }
 
@@ -485,5 +640,9 @@ public class SavingsService : ISavingsService
             account.MaturityDateUtc,
             account.MaturedAtUtc,
             account.WithdrawnAtUtc,
-            account.CreatedAtUtc);
+            account.CreatedAtUtc,
+            account.ProviderName,
+            account.ExternalPlanId,
+            account.ExternalStatus,
+            account.LastYieldSyncAtUtc);
 }

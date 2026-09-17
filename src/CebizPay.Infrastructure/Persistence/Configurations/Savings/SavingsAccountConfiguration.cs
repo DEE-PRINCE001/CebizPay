@@ -81,6 +81,20 @@ public class SavingsAccountConfiguration : IEntityTypeConfiguration<SavingsAccou
         builder.Property(e => e.CreatedAtUtc)
             .IsRequired();
 
+        builder.Property(e => e.ProviderName)
+            .HasMaxLength(50);
+
+        builder.Property(e => e.ExternalCustomerId)
+            .HasMaxLength(128);
+
+        builder.Property(e => e.ExternalPlanId)
+            .HasMaxLength(128);
+
+        builder.Property(e => e.ExternalStatus)
+            .HasMaxLength(50);
+
+        builder.Property(e => e.LastYieldSyncAtUtc);
+
         builder.HasMany(e => e.Contributions)
             .WithOne()
             .HasForeignKey(c => c.SavingsAccountId)
@@ -101,5 +115,6 @@ public class SavingsAccountConfiguration : IEntityTypeConfiguration<SavingsAccou
         builder.HasIndex(e => e.OwnerUserId);
         builder.HasIndex(e => e.OrganizationId);
         builder.HasIndex(e => e.Status);
+        builder.HasIndex(e => e.ExternalPlanId);
     }
 }

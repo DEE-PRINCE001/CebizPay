@@ -184,10 +184,25 @@ public static class DependencyInjection
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        services.AddOptions<SavingsOptions>()
+            .Bind(configuration.GetSection(SavingsOptions.SectionName));
+
+        services.AddOptions<CowrywiseOptions>()
+            .Bind(configuration.GetSection(CowrywiseOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
+        services.AddOptions<AnchorOptions>()
+            .Bind(configuration.GetSection(AnchorOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         services.AddHttpClient<CebizPay.Infrastructure.Payments.Flutterwave.FlutterwaveClient>();
         services.AddHttpClient<CebizPay.Infrastructure.Payments.Paystack.PaystackClient>();
         services.AddHttpClient<CebizPay.Infrastructure.Payments.Monnify.IMonnifyClient, CebizPay.Infrastructure.Payments.Monnify.MonnifyClient>();
         services.AddHttpClient<CebizPay.Infrastructure.Vas.VtuGate.VtuGateClient>();
+        services.AddHttpClient<CebizPay.Infrastructure.Savings.Providers.Cowrywise.ICowrywiseClient, CebizPay.Infrastructure.Savings.Providers.Cowrywise.CowrywiseClient>();
+        services.AddHttpClient<CebizPay.Infrastructure.Savings.Providers.Anchor.IAnchorClient, CebizPay.Infrastructure.Savings.Providers.Anchor.AnchorClient>();
 
         // Configure VAS Services
         services.AddScoped<CebizPay.Application.Common.Interfaces.Vas.IVasProvider, CebizPay.Infrastructure.Vas.VtuGate.VtuGateVasProvider>();
@@ -306,9 +321,13 @@ public static class DependencyInjection
         services.AddScoped<CebizPay.Application.Common.Interfaces.Loans.ILoanApplicationService, CebizPay.Infrastructure.Loans.LoanApplicationService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Loans.ILoanContractService, CebizPay.Infrastructure.Loans.LoanContractService>();
 
-        // Configure Savings services
+        // Configure Savings services & External Providers
         services.AddScoped<CebizPay.Application.Common.Interfaces.Savings.ISavingsInterestPolicyService, CebizPay.Infrastructure.Savings.SavingsInterestPolicyService>();
         services.AddScoped<CebizPay.Application.Common.Interfaces.Savings.ISavingsService, CebizPay.Infrastructure.Savings.SavingsService>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Savings.ISavingsProvider, CebizPay.Infrastructure.Savings.Providers.Cowrywise.CowrywiseSavingsProvider>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Savings.ISavingsProvider, CebizPay.Infrastructure.Savings.Providers.Anchor.AnchorSavingsProvider>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Savings.ISavingsProvider, CebizPay.Infrastructure.Savings.Providers.Mock.MockSavingsProvider>();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Savings.ISavingsProviderFactory, CebizPay.Infrastructure.Savings.Providers.SavingsProviderFactory>();
 
         // Configure Thrift / Ajo / Esusu services
         services.AddScoped<CebizPay.Application.Common.Interfaces.Thrift.IThriftGroupService, CebizPay.Infrastructure.Thrift.ThriftGroupService>();

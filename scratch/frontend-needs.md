@@ -1,223 +1,153 @@
-# Backend Endpoints Needed for Wallet Management Module
+# Backend API Requirements: Organization Wallet & Settings Modules
 
-This document tracks the administrative endpoints required by the frontend application for the **Wallet Management** module (covering Organization Wallets, Organization Wallet Details, and Individual Wallets) that are **currently not available (returning 404 Not Found)** on the live backend (`https://cebizpay.onrender.com`).
+This document outlines the API updates required by the frontend application for the **Organization Tenant Portal** (`/org/wallet` and `/org/settings`).
 
-> **Note on Existing Verified Endpoints**:
-> - `GET /api/v1/admin/organizations` is available (returns basic organization list).
-> - `GET /api/v1/admin/organizations/{id}` is available (returns single organization info).
-> - `GET /api/v1/admin/organizations/{id}/payroll-analytics` is available (returns aggregated payroll analytics).
-> - `GET /api/v1/admin/individuals` is available (returns basic individual list).
-> - `GET /api/v1/admin/individuals/{id}/wallets` is available (returns single individual wallet).
-> - The endpoints below are **missing** and required for the wallet screens.
+All routes are based on the live backend (`https://cebizpay.onrender.com/api/v1`).
 
 ---
 
-## 1. Platform Organization Wallets Directory
-Retrieves a paginated list of all corporate organization wallets with their current ledger balances, cumulative salary disbursements, and total loan disbursements across the platform.
+## 1. Endpoints Requiring Schema Extensions
 
-- **Method**: `GET`
-- **Route**: `/api/v1/admin/wallets/organizations`
-- **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
-- **Query Parameters**:
-  - `pageNumber` (`integer`, optional, default: `1`): The 1-based page number.
-  - `pageSize` (`integer`, optional, default: `10`): Number of records per page.
-  - `search` (`string`, optional): Search query matching organization name or registration number.
-  - `status` (`string`, optional): Filter by lifecycle or wallet status (`Active`, `Suspended`, `Verified`).
-- **Success Response (`200 OK`)**:
+### 1.1 `GET /api/v1/org/wallet` — Cumulative Dashboard Metrics
+* **Current Behavior**: Returns only `availableBalance` and `ledgerBalance` within `OrgWalletOverviewDto`.
+* **Frontend Requirement**: The Organization Wallet dashboard (`WalletPage.png`) displays 4 primary summary cards:
+  1. `Current Balance` (available via `availableBalance`)
+  2. `Total Salary Paid`
+  3. `Total Loan Fund`
+  4. `Total Saving Money`
+* **Requested Extension**: Add cumulative disbursement/fund totals to `OrgWalletOverviewDto` (similar to what is currently returned by `GET /api/v1/admin/organizations/{id}/wallet`).
+
+#### Preferred Response Structure (`200 OK`)
 ```json
 {
-  "items": [
-    {
-      "id": "0789e8fe-c8d9-43c9-aef0-598c92a27704",
-      "name": "Cebis Tech",
-      "logoUrl": "https://storage.cebizpay.com/logos/cebis.png",
-      "currentBalance": 238000909.00,
-      "totalSalaryPaid": 238000909.00,
-      "totalLoanPaid": 238000909.00,
-      "currency": "NGN",
-      "status": "Active"
-    }
-  ],
-  "pageNumber": 1,
-  "pageSize": 10,
-  "totalCount": 45,
-  "totalPages": 5,
-  "hasNextPage": true,
-  "hasPreviousPage": false
-}
-```
-
----
-
-## 2. Export Organization Wallets Directory
-Exports the organization wallets directory list to a downloadable CSV stream.
-
-- **Method**: `GET`
-- **Route**: `/api/v1/admin/wallets/organizations/export`
-- **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
-- **Query Parameters**:
-  - `search` (`string`, optional): Search query filter.
-  - `status` (`string`, optional): Status filter.
-- **Success Response (`200 OK`)**:
-  - Content-Type: `text/csv; charset=utf-8`
-  - Body: Binary CSV stream.
-
----
-
-## 3. Organization Wallet Overview by ID
-Retrieves specific corporate wallet metrics including current ledger balance, cumulative salary disbursement, and total corporate loan funds.
-
-- **Method**: `GET`
-- **Route**: `/api/v1/admin/organizations/{id}/wallet`
-- **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
-- **Path Parameters**:
-  - `id` (`uuid` or `string`, required): Organization unique identifier.
-- **Success Response (`200 OK`)**:
-```json
-{
-  "organizationId": "0789e8fe-c8d9-43c9-aef0-598c92a27704",
-  "walletId": "WAL-ORG-0789E8FE",
+  "walletId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "organizationId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "availableBalance": 238000909.00,
+  "ledgerBalance": 238000909.00,
   "currency": "NGN",
-  "currentBalance": 238000909.00,
+  "status": "Active",
+  "accountNumber": "0123456789",
+  "accountName": "Cebis Tech",
+  "bankName": "Wema Bank / CebizPay",
+  "bankCode": "035",
+
+  // --- NEW FIELDS NEEDED ---
   "totalSalaryPaid": 238000909.00,
   "totalLoanFund": 238000909.00,
-  "virtualAccountNumber": "0123456789",
-  "bankName": "Wema Bank / CebizPay",
-  "status": "Active"
+  "totalSavingMoney": 238000909.00
 }
 ```
 
 ---
 
-## 4. Organization Salaries / Payroll Disbursements (Admin View)
-Retrieves a paginated list of salary disbursement line items executed by the corporate entity.
+### 1.2 `POST /api/v1/org/recruitment/jobs` & `JobPostingDto` — Banner & Application Process
+* **Current Behavior**: `CreateJobPostingApiRequest` accepts text metadata (`title`, `description`, `employmentType`, `departmentId`, `workforceRoleId`, `salaryLevelId`, `location`, `requirements`, `responsibilities`, `applicationDeadline`).
+* **Frontend Requirement**: The job creation UI (`CreateJobOffer.png`) includes:
+  1. A promotional banner dropzone (JPEG/PNG image upload).
+  2. An application method selector: **Send to mail** vs **Application form**.
+* **Requested Extension**:
+  * Add `bannerUrl` (`string`, optional, URI).
+  * Add `applicationProcess` (`string`, optional, e.g., `"Email"` | `"PlatformForm"`).
+  * Add `applicationEmail` (`string`, optional, email address when process is `"Email"`).
+  * Reflect these fields in the returned `JobPostingDto`.
 
-- **Method**: `GET`
-- **Route**: `/api/v1/admin/organizations/{id}/salaries`
-- **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
-- **Path Parameters**:
-  - `id` (`uuid` or `string`, required): Organization unique identifier.
-- **Query Parameters**:
-  - `pageNumber` (`integer`, optional, default: `1`): The 1-based page number.
-  - `pageSize` (`integer`, optional, default: `10`): Number of records per page.
-  - `search` (`string`, optional): Search by transaction ID, employee name, or wallet ID.
-  - `month` (`string`, optional): Filter by payroll month (e.g., `January`, `May`).
-  - `status` (`string`, optional): Filter by status (`Successfull`, `Pending`, `Failed`).
-- **Success Response (`200 OK`)**:
+#### Preferred Request Body Extension (`CreateJobPostingApiRequest`)
 ```json
 {
-  "items": [
-    {
-      "id": "sal-1029384756",
-      "amount": 34000.00,
-      "transactionId": "2619861816688",
-      "method": "Wallet ID",
-      "accountOrWalletId": "156191667631",
-      "month": "January",
-      "dateTime": "2021-05-27T16:18:00Z",
-      "status": "Successfull"
-    }
-  ],
-  "pageNumber": 1,
-  "pageSize": 10,
-  "totalCount": 130,
-  "totalPages": 13,
-  "hasNextPage": true,
-  "hasPreviousPage": false
+  "title": "Senior Frontend Engineer",
+  "description": "Lead web platform frontend engineering...",
+  "employmentType": "FullTime",
+  "location": "Lagos, Nigeria (Hybrid)",
+  "requirements": "5+ years React experience...",
+  "responsibilities": "Ship scalable interfaces...",
+  "applicationDeadline": "2026-10-31T23:59:59Z",
+  "departmentId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "workforceRoleId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "salaryLevelId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+
+  // --- NEW FIELDS NEEDED ---
+  "bannerUrl": "https://res.cloudinary.com/cebizpay/image/upload/v1/banners/job-101.png",
+  "applicationProcess": "Email",
+  "applicationEmail": "careers@cebistech.com"
 }
 ```
 
 ---
 
-## 5. Export Organization Salaries List
-Exports the salary disbursements of a specific organization to a downloadable CSV stream.
+### 1.3 `POST /api/v1/announcements` & `AnnouncementDto` — Banner Image Support
+* **Current Behavior**: `CreateAnnouncementRequest` accepts `scope`, `title`, `description`, `publishImmediately`.
+* **Frontend Requirement**: The announcement creation UI (`createAnnouncement.png`) includes an image dropzone for banner graphics.
+* **Requested Extension**:
+  * Add `bannerUrl` (`string`, optional, URI) to `CreateAnnouncementRequest`.
+  * Return `bannerUrl` (`string`, nullable) in `AnnouncementDto`.
 
-- **Method**: `GET`
-- **Route**: `/api/v1/admin/organizations/{id}/salaries/export`
-- **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
-- **Path Parameters**:
-  - `id` (`uuid` or `string`, required): Organization unique identifier.
-- **Success Response (`200 OK`)**:
-  - Content-Type: `text/csv; charset=utf-8`
-  - Body: Binary CSV stream.
-
----
-
-## 6. Organization Savings Plans (Admin View)
-Retrieves active target and fixed saving plans configured for an organization.
-
-- **Method**: `GET`
-- **Route**: `/api/v1/admin/organizations/{id}/savings`
-- **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
-- **Path Parameters**:
-  - `id` (`uuid` or `string`, required): Organization unique identifier.
-- **Success Response (`200 OK`)**:
+#### Preferred Request Body Extension (`CreateAnnouncementRequest`)
 ```json
 {
-  "items": [
-    {
-      "id": "sav-org-001",
-      "name": "Corporate Reserve Fund",
-      "targetAmount": 10000000.00,
-      "currentAmount": 4500000.00,
-      "frequency": "Monthly",
-      "interestRate": 12.0,
-      "startDate": "2025-01-01T00:00:00Z",
-      "maturityDate": "2026-01-01T00:00:00Z",
-      "status": "Active"
-    }
-  ],
-  "totalCount": 1
+  "scope": "Workplace",
+  "title": "Annual Company Retreat 2026",
+  "description": "Details regarding accommodation and itinerary...",
+  "publishImmediately": true,
+
+  // --- NEW FIELD NEEDED ---
+  "bannerUrl": "https://res.cloudinary.com/cebizpay/image/upload/v1/announcements/retreat.png"
 }
 ```
 
 ---
 
-## 7. Platform Individual Wallets Directory
-Retrieves a paginated list of all individual user wallets with current available balances and total outstanding repayable loan amounts.
+## 2. Endpoints That Need to Be Created
 
-- **Method**: `GET`
-- **Route**: `/api/v1/admin/wallets/individuals`
-- **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
-- **Query Parameters**:
-  - `pageNumber` (`integer`, optional, default: `1`): The 1-based page number.
-  - `pageSize` (`integer`, optional, default: `10`): Number of records per page.
-  - `search` (`string`, optional): Search query matching individual's full name, email, or wallet ID.
-  - `status` (`string`, optional): Filter by status (`Active`, `Suspended`, `Pending`).
-- **Success Response (`200 OK`)**:
+### 2.1 `GET /api/v1/org/profile` — Tenant Corporate Profile & KYB Documents
+* **Problem**: Currently, full corporate details (`email`, `phoneNumber`, `logoUrl`, and CAC registration document URLs) are only accessible via Platform Admin routes (`GET /api/v1/admin/organizations/{id}`). Tenant admins calling `/auth/me` only receive basic membership data (`companyName`, `role`, `status`) without contact details or verification documents needed for `SettingPage.png`.
+* **Method**: `GET`
+* **Route**: `/api/v1/org/profile`
+* **Security**: Bearer JWT (Roles: `OrganizationAdmin`, `OrganizationOwner`)
+* **Tenant Isolation**: Resolves the active organization from the caller's JWT token or `X-Organization-Id` header.
+
+#### Preferred Success Response (`200 OK`)
 ```json
 {
-  "items": [
-    {
-      "id": "4ae02dbe-3a60-4854-b69d-bcf61ac6323b",
-      "name": "Adejumo micheal",
-      "avatarUrl": "https://api.dicebear.com/7.x/initials/svg?seed=AM",
-      "currentBalance": 238000909.00,
-      "loanRepayable": 238000909.00,
-      "currency": "NGN",
-      "status": "Active"
-    }
-  ],
-  "pageNumber": 1,
-  "pageSize": 10,
-  "totalCount": 130,
-  "totalPages": 13,
-  "hasNextPage": true,
-  "hasPreviousPage": false
+  "organizationId": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "name": "Cebis Technologies",
+  "email": "support@cebistech.com",
+  "phoneNumber": "+234 801 234 5678",
+  "address": "Victoria Island, Lagos, Nigeria",
+  "category": "Technology",
+  "status": "Active",
+  "logoUrl": "https://res.cloudinary.com/cebizpay/image/upload/v1/logos/cebis.png",
+  "cacNumber": "RC1234567",
+  "cacCertificateUrl": "https://res.cloudinary.com/cebizpay/raw/upload/v1/kyb/CAC-RC1234567-Certificate.pdf",
+  "registeredAtUtc": "2026-01-15T10:00:00Z"
 }
 ```
 
 ---
 
-## 8. Export Individual Wallets Directory
-Exports the individual wallets list to a downloadable CSV stream.
+### 2.2 `GET /api/v1/org/wallet/transactions/export` — Export Wallet Transactions to CSV
+* **Problem**: The transaction history ledger on the Wallet page (`WalletPage.png`) includes an **Export CSV** action. While the platform admin has export endpoints, the tenant organization wallet currently does not have an export route.
+* **Method**: `GET`
+* **Route**: `/api/v1/org/wallet/transactions/export`
+* **Security**: Bearer JWT (Roles: `OrganizationAdmin`, `OrganizationOwner`, `OrganizationFinance`)
+* **Query Parameters**:
+  * `search` (`string`, optional): Search query filtering reference, counterparty, or description.
+  * `status` (`string`, optional): Filter by status (`Successfull`, `Pending`, `Failed`).
+  * `type` (`string`, optional): Filter by transaction type (`Transfer`, `Funding`, `Payroll`).
+  * `fromUtc` (`date-time`, optional): Start boundary.
+  * `toUtc` (`date-time`, optional): End boundary.
+* **Success Response (`200 OK`)**:
+  * `Content-Type`: `text/csv; charset=utf-8`
+  * `Content-Disposition`: `attachment; filename="org-wallet-transactions.csv"`
+  * Body: Binary or text CSV stream.
 
-- **Method**: `GET`
-- **Route**: `/api/v1/admin/wallets/individuals/export`
-- **Security**: Bearer JWT (Roles: `Admin`, `SuperAdmin`, `Auditor`)
-- **Query Parameters**:
-  - `search` (`string`, optional): Search query filter.
-  - `status` (`string`, optional): Status filter.
-- **Success Response (`200 OK`)**:
-  - Content-Type: `text/csv; charset=utf-8`
-  - Body: Binary CSV stream.
+---
+
+## Summary Matrix for Backend Team
+
+| Target Endpoint | Action Required | Priority | Impact on Frontend UI |
+| :--- | :---: | :---: | :--- |
+| `GET /api/v1/org/wallet` | **Extend DTO** | **High** | Provides live totals for `Total Salary Paid`, `Total Loan Fund`, and `Total Saving Money` cards. |
+| `GET /api/v1/org/profile` | **Create Route** | **High** | Supplies corporate contact email, phone, logo, and clickable CAC document URL for `/org/settings`. |
+| `POST /api/v1/org/recruitment/jobs` | **Extend Request/DTO** | **Medium** | Enables persisting job banner URL and application delivery method (*Send to mail* vs *Application form*). |
+| `POST /api/v1/announcements` | **Extend Request/DTO** | **Medium** | Enables persisting announcement graphic banner URL. |
+| `GET /api/v1/org/wallet/transactions/export` | **Create Route** | **Low** | Streams server-generated CSV transaction export. *(Can fallback to client-side CSV parsing if needed).* |
