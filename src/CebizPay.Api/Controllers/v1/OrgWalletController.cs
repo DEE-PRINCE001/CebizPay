@@ -104,6 +104,33 @@ public sealed class OrgWalletController : ControllerBase
     }
 
     /// <summary>
+    /// Exports corporate organization wallet transactions directly to a downloadable CSV stream.
+    /// </summary>
+    [HttpGet("transactions/export")]
+    [ProducesResponseType(typeof(FileResult), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ExportTransactions(
+        [FromQuery] string? search = null,
+        [FromQuery] string? type = null,
+        [FromQuery] string? status = null,
+        [FromQuery] DateTime? fromUtc = null,
+        [FromQuery] DateTime? toUtc = null,
+        CancellationToken cancellationToken = default)
+    {
+        var orgId = GetOrganizationId();
+
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.WalletView, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var query = new ExportOrgWalletTransactionsQuery(orgId, search, type, status, fromUtc, toUtc);
+        var result = await _sender.Send(query, cancellationToken);
+
+        return File(result.Content, result.ContentType, result.FileName);
+    }
+
+    /// <summary>
     /// Retrieves all dedicated virtual accounts allocated to the organization for wallet funding.
     /// </summary>
     [HttpGet("virtual-accounts")]
