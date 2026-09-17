@@ -1,6 +1,10 @@
+using CebizPay.Application.Common.Extensions;
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Domain.Finance.Enums;
+using CebizPay.Domain.Loans.Enums;
+using CebizPay.Domain.Payroll.Enums;
+using CebizPay.Domain.Savings.Enums;
 using FluentValidation;
 using MediatR;
 
@@ -88,6 +92,26 @@ public sealed class GetOrgWalletOverviewQueryHandler : IRequestHandler<GetOrgWal
         var bankName = externalFundingAccount?.BankName ?? virtualAccount?.BankName ?? "Wema Bank / CebizPay";
         var bankCode = externalFundingAccount?.BankCode ?? virtualAccount?.BankCode ?? "035";
 
+        var completedSalaryItems = await _dbContext.PayrollItems
+            .Where(p => p.OrganizationId == request.OrganizationId && p.Status == PayrollItemStatus.Completed && p.Currency == Currency.NGN)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var totalSalaryPaid = completedSalaryItems.Sum(p => p.NetPay);
+
+        var activeLoans = await _dbContext.LoanContracts
+            .Where(l => l.OrganizationId == request.OrganizationId && l.Status != LoanContractStatus.Cancelled)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var totalLoanFund = activeLoans.Sum(l => l.OriginalPrincipal);
+
+        var activeSavings = await _dbContext.SavingsAccounts
+            .Where(s => s.OrganizationId == request.OrganizationId &&
+                       (s.Status == SavingsAccountStatus.Active || s.Status == SavingsAccountStatus.Matured) &&
+                       s.Currency == Currency.NGN)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        var totalSavingMoney = activeSavings.Sum(s => s.PrincipalBalance);
+
         return new OrgWalletOverviewDto(
             WalletId: wallet.Id,
             OrganizationId: request.OrganizationId,
@@ -98,6 +122,9 @@ public sealed class GetOrgWalletOverviewQueryHandler : IRequestHandler<GetOrgWal
             AccountNumber: accountNumber,
             AccountName: accountName,
             BankName: bankName,
-            BankCode: bankCode);
+            BankCode: bankCode,
+            TotalSalaryPaid: totalSalaryPaid,
+            TotalLoanFund: totalLoanFund,
+            TotalSavingMoney: totalSavingMoney);
     }
 }

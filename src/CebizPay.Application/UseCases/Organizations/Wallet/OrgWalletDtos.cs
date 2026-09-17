@@ -13,7 +13,10 @@ public sealed record OrgWalletOverviewDto(
     string? AccountNumber,
     string? AccountName,
     string? BankName,
-    string? BankCode);
+    string? BankCode,
+    decimal TotalSalaryPaid = 0m,
+    decimal TotalLoanFund = 0m,
+    decimal TotalSavingMoney = 0m);
 
 /// <summary>
 /// Data transfer object representing a transaction entry on the organization wallet.
