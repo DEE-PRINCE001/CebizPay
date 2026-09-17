@@ -100,7 +100,22 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             _ => string.Empty
         };
 
-        if (!_signatureVerifier.VerifySignature(provider, rawPayload, headers, secret))
+        var signatureValid = _signatureVerifier.VerifySignature(provider, rawPayload, headers, secret);
+
+        if (!signatureValid && provider == PaymentProvider.Monnify &&
+            string.Equals(_monnifyOptions.Environment, "Sandbox", StringComparison.OrdinalIgnoreCase))
+        {
+            var hasSignatureHeader = headers != null &&
+                headers.Keys.Any(k => string.Equals(k, "monnify-signature", StringComparison.OrdinalIgnoreCase));
+
+            if (!hasSignatureHeader)
+            {
+                LogWebhookSandboxBypass(_logger, providerName);
+                signatureValid = true;
+            }
+        }
+
+        if (!signatureValid)
         {
             LogWebhookSignatureFailed(_logger, providerName);
             RecordAudit(AuditActions.WebhookRejected, AuditResourceTypes.WebhookEvent, providerName,
@@ -1138,4 +1153,7 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
 
     [LoggerMessage(EventId = 13, Level = LogLevel.Error, Message = "Failed to apply card funding credit for {Ref}")]
     private static partial void LogCardFundingException(ILogger logger, string @ref, Exception exception);
+
+    [LoggerMessage(EventId = 14, Level = LogLevel.Information, Message = "Monnify signature omitted in Sandbox environment for provider {Provider}. Permitting delivery for test mode.")]
+    private static partial void LogWebhookSandboxBypass(ILogger logger, string provider);
 }

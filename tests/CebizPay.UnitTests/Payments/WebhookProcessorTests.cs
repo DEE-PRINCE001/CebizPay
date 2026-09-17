@@ -60,7 +60,7 @@ public sealed class WebhookProcessorTests
         return new ApplicationDbContext(options);
     }
 
-    private WebhookProcessor CreateProcessor(ApplicationDbContext dbContext)
+    private WebhookProcessor CreateProcessor(ApplicationDbContext dbContext, IOptions<MonnifyOptions>? monnifyOptions = null)
     {
         return new WebhookProcessor(
             _signatureVerifier,
@@ -70,7 +70,7 @@ public sealed class WebhookProcessorTests
             _outbox,
             _flwOptions,
             _pstkOptions,
-            _monnifyOptions,
+            monnifyOptions ?? _monnifyOptions,
             NullLogger<WebhookProcessor>.Instance);
     }
 
@@ -284,5 +284,89 @@ public sealed class WebhookProcessorTests
         var unaffectedAttempt = await dbContext.PaymentAttempts.FindAsync(attempt.Id);
         Assert.NotNull(unaffectedAttempt);
         Assert.Equal(PaymentAttemptStatus.Processing, unaffectedAttempt.Status); // Untouched
+    }
+
+    [Fact]
+    public async Task ProcessWebhook_MonnifySandboxWithoutSignatureHeader_ShouldAllowAndProcess()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var sandboxOptions = Options.Create(new MonnifyOptions
+        {
+            WebhookSecret = "mnfy_secret_123",
+            SecretKey = "mnfy_secret_123",
+            Environment = "Sandbox",
+            Enabled = true
+        });
+        var processor = CreateProcessor(dbContext, sandboxOptions);
+
+        _signatureVerifier
+            .VerifySignature(PaymentProvider.Monnify, Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<string>())
+            .Returns(false); // Verifier returns false because header is absent
+
+        const string rawPayload = """{"eventType":"SUCCESSFUL_TRANSACTION","eventData":{"transactionReference":"MNFY-SB-1","amountPaid":1000}}""";
+        var headers = new Dictionary<string, string>(); // No monnify-signature header
+
+        // Act
+        var result = await processor.ProcessWebhookAsync(PaymentProvider.Monnify, rawPayload, headers);
+
+        // Assert: Permitted in Sandbox
+        Assert.NotEqual(WebhookProcessingStatus.InvalidSignature, result.Status);
+    }
+
+    [Fact]
+    public async Task ProcessWebhook_MonnifySandboxWithInvalidSignatureHeader_ShouldReject()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var sandboxOptions = Options.Create(new MonnifyOptions
+        {
+            WebhookSecret = "mnfy_secret_123",
+            SecretKey = "mnfy_secret_123",
+            Environment = "Sandbox",
+            Enabled = true
+        });
+        var processor = CreateProcessor(dbContext, sandboxOptions);
+
+        _signatureVerifier
+            .VerifySignature(PaymentProvider.Monnify, Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<string>())
+            .Returns(false);
+
+        const string rawPayload = """{"eventType":"SUCCESSFUL_TRANSACTION","eventData":{"transactionReference":"MNFY-SB-2","amountPaid":1000}}""";
+        var headers = new Dictionary<string, string> { { "monnify-signature", "invalid-hash" } };
+
+        // Act
+        var result = await processor.ProcessWebhookAsync(PaymentProvider.Monnify, rawPayload, headers);
+
+        // Assert: Rejected because invalid header was provided
+        Assert.Equal(WebhookProcessingStatus.InvalidSignature, result.Status);
+    }
+
+    [Fact]
+    public async Task ProcessWebhook_MonnifyLiveWithoutSignatureHeader_ShouldReject()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var liveOptions = Options.Create(new MonnifyOptions
+        {
+            WebhookSecret = "mnfy_secret_123",
+            SecretKey = "mnfy_secret_123",
+            Environment = "Live",
+            Enabled = true
+        });
+        var processor = CreateProcessor(dbContext, liveOptions);
+
+        _signatureVerifier
+            .VerifySignature(PaymentProvider.Monnify, Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<string>())
+            .Returns(false);
+
+        const string rawPayload = """{"eventType":"SUCCESSFUL_TRANSACTION","eventData":{"transactionReference":"MNFY-LIVE-1","amountPaid":1000}}""";
+        var headers = new Dictionary<string, string>(); // No header in Live mode
+
+        // Act
+        var result = await processor.ProcessWebhookAsync(PaymentProvider.Monnify, rawPayload, headers);
+
+        // Assert: Strictly rejected in Live environment
+        Assert.Equal(WebhookProcessingStatus.InvalidSignature, result.Status);
     }
 }
