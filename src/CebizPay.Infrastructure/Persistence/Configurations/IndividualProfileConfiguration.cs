@@ -44,6 +44,18 @@ public sealed class IndividualProfileConfiguration : IEntityTypeConfiguration<In
             .HasConversion<int>()
             .IsRequired();
 
+        builder.Property(x => x.IsSuspended)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.HasIndex(x => x.IsSuspended);
+
+        builder.Property(x => x.SuspensionReason)
+            .HasMaxLength(500);
+
+        builder.Property(x => x.SuspendedAtUtc)
+            .HasColumnType("timestamp with time zone");
+
         builder.Property(x => x.CreatedAtUtc)
             .HasColumnType("timestamp with time zone");
 

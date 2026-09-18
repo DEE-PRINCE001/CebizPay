@@ -24,6 +24,12 @@ public class IndividualProfile
     public KycStatus KycStatus { get; private set; } = KycStatus.Pending;
     /// <summary>Professional staff status.</summary>
     public ProfessionalStatus ProfessionalStatus { get; private set; } = ProfessionalStatus.NotAStaff;
+    /// <summary>Indicates whether the profile is administratively suspended.</summary>
+    public bool IsSuspended { get; private set; }
+    /// <summary>Timestamp when the profile was suspended.</summary>
+    public DateTime? SuspendedAtUtc { get; private set; }
+    /// <summary>Regulatory or administrative reason for suspension.</summary>
+    public string? SuspensionReason { get; private set; }
     /// <summary>Created timestamp.</summary>
     public DateTime CreatedAtUtc { get; private set; }
     /// <summary>Updated timestamp.</summary>
@@ -97,4 +103,39 @@ public class IndividualProfile
     /// Returns true if eligible to accept staff invitation.
     /// </summary>
     public bool CanAcceptStaffInvitation() => KycStatus == KycStatus.Verified;
+
+    /// <summary>
+    /// Administratively suspends the individual profile.
+    /// </summary>
+    public void Suspend(string reason)
+    {
+        if (IsSuspended)
+            throw new InvalidOperationException("Individual profile is already suspended.");
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new ArgumentException("Suspension reason is required.", nameof(reason));
+
+        IsSuspended = true;
+        SuspensionReason = reason.Trim();
+        SuspendedAtUtc = DateTime.UtcNow;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Administratively reactivates a suspended individual profile.
+    /// </summary>
+    public void Reactivate()
+    {
+        if (!IsSuspended)
+            throw new InvalidOperationException("Individual profile is not suspended.");
+
+        IsSuspended = false;
+        SuspensionReason = null;
+        SuspendedAtUtc = null;
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Returns true if allowed to perform outbound financial transactions.
+    /// </summary>
+    public bool CanTransactOutbound() => !IsSuspended;
 }

@@ -36,6 +36,7 @@ This document defines the mandatory engineering standards, communication protoco
 
 - **Structured Implementation Plans**: Break down non-trivial projects into well-defined, logical phases.
 - **Phase-by-Phase Execution**: Execute one phase at a time.
+- **Phase Commit Protocol**: When implementing a phased plan, after each phase is completed and verified by the user and approval is given to proceed to the next phase, first commit the concluded phase with a simple, specific, and AI-buzzword/emoji-free commit message before beginning the next phase.
 - **Comprehensive Reporting**: Upon completing each phase, provide a comprehensive report detailing:
   1. Architectural decisions and component diagrams.
   2. Implemented modules and files modified/created.

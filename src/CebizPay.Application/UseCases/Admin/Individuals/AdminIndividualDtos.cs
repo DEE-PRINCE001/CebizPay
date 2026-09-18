@@ -96,3 +96,15 @@ public sealed record ExportAdminIndividualsResult(
     byte[] Content,
     string ContentType,
     string FileName);
+
+/// <summary>
+/// DTO representing the result of an administrative individual status update.
+/// </summary>
+public sealed record AdminIndividualStatusResultDto(
+    Guid ProfileId,
+    string UserId,
+    string Status,
+    bool IsSuspended,
+    DateTime? SuspendedAtUtc,
+    string? SuspensionReason);
+

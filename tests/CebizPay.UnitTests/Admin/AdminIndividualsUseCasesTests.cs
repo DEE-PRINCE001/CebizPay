@@ -6,6 +6,7 @@ using CebizPay.Application.UseCases.Individuals.GetKycDocuments;
 using CebizPay.Application.UseCases.Individuals.UpdateKycStatus;
 using CebizPay.Domain.Entities;
 using CebizPay.Domain.Enums;
+using CebizPay.Domain.Events;
 using CebizPay.Domain.Finance.Entities;
 using CebizPay.Domain.Finance.Enums;
 using CebizPay.Domain.Payments.Entities;
@@ -323,5 +324,150 @@ public sealed class AdminIndividualsUseCasesTests
         Assert.Equal(doc.Id, docs[0].Id);
         Assert.Equal("user-01", docs[0].UserId);
         Assert.Equal("Nimc", docs[0].DocumentType);
+    }
+
+    [Fact]
+    public async Task SuspendIndividual_AsSuperAdmin_ShouldSuspendProfile_AndPublishEvent()
+    {
+        await using var db = CreateDbContext();
+
+        var admin = new AdminProfile("admin-user-1", AdminRoleType.SuperAdmin);
+        db.AdminProfiles.Add(admin);
+
+        var prof = new IndividualProfile("user-01", "Mike", "Johnson");
+        db.IndividualProfiles.Add(prof);
+        await db.SaveChangesAsync();
+
+        var eventPublisher = Substitute.For<IEventPublisher>();
+        var currentUserService = Substitute.For<ICurrentUserService>();
+        currentUserService.UserId.Returns("admin-user-1");
+
+        var handler = new SuspendIndividualCommandHandler(db, eventPublisher, currentUserService);
+        var command = new SuspendIndividualCommand(prof.Id.ToString(), "Suspicious transactional activity", "admin-user-1");
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.True(result.IsSuspended);
+        Assert.Equal("Suspended", result.Status);
+        Assert.Equal("Suspicious transactional activity", result.SuspensionReason);
+        Assert.NotNull(result.SuspendedAtUtc);
+
+        var reloaded = await db.IndividualProfiles.FirstAsync(p => p.Id == prof.Id);
+        Assert.True(reloaded.IsSuspended);
+        Assert.Equal("Suspicious transactional activity", reloaded.SuspensionReason);
+
+        await eventPublisher.Received(1).PublishAsync(
+            Arg.Is<IndividualSuspendedDomainEvent>(e =>
+                e.ProfileId == prof.Id &&
+                e.UserId == "user-01" &&
+                e.Reason == "Suspicious transactional activity" &&
+                e.AdminUserId == "admin-user-1"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SuspendIndividual_SelfSuspension_ShouldThrowInvalidOperationException()
+    {
+        await using var db = CreateDbContext();
+
+        var admin = new AdminProfile("same-user-id", AdminRoleType.SuperAdmin);
+        db.AdminProfiles.Add(admin);
+
+        var prof = new IndividualProfile("same-user-id", "Admin", "Person");
+        db.IndividualProfiles.Add(prof);
+        await db.SaveChangesAsync();
+
+        var eventPublisher = Substitute.For<IEventPublisher>();
+        var currentUserService = Substitute.For<ICurrentUserService>();
+        currentUserService.UserId.Returns("same-user-id");
+
+        var handler = new SuspendIndividualCommandHandler(db, eventPublisher, currentUserService);
+        var command = new SuspendIndividualCommand(prof.Id.ToString(), "Self suspension attempt", "same-user-id");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(command, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task SuspendIndividual_NonAdmin_ShouldThrowUnauthorizedAccessException()
+    {
+        await using var db = CreateDbContext();
+
+        var prof = new IndividualProfile("user-01", "Mike", "Johnson");
+        db.IndividualProfiles.Add(prof);
+        await db.SaveChangesAsync();
+
+        var eventPublisher = Substitute.For<IEventPublisher>();
+        var currentUserService = Substitute.For<ICurrentUserService>();
+        currentUserService.UserId.Returns("regular-user");
+
+        var handler = new SuspendIndividualCommandHandler(db, eventPublisher, currentUserService);
+        var command = new SuspendIndividualCommand(prof.Id.ToString(), "Unauthorized suspension", "regular-user");
+
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => handler.Handle(command, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task ReactivateIndividual_WhenSuspended_ShouldReactivateProfile_AndPublishEvent()
+    {
+        await using var db = CreateDbContext();
+
+        var admin = new AdminProfile("admin-user-1", AdminRoleType.Admin);
+        db.AdminProfiles.Add(admin);
+
+        var prof = new IndividualProfile("user-01", "Mike", "Johnson");
+        prof.SetKycStatus(KycStatus.Verified);
+        prof.Suspend("Pending regulatory check");
+        db.IndividualProfiles.Add(prof);
+        await db.SaveChangesAsync();
+
+        var eventPublisher = Substitute.For<IEventPublisher>();
+        var currentUserService = Substitute.For<ICurrentUserService>();
+        currentUserService.UserId.Returns("admin-user-1");
+
+        var handler = new ReactivateIndividualCommandHandler(db, eventPublisher, currentUserService);
+        var command = new ReactivateIndividualCommand(prof.Id.ToString(), "Regulatory check cleared", "admin-user-1");
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.False(result.IsSuspended);
+        Assert.Equal("Active", result.Status);
+        Assert.Null(result.SuspensionReason);
+        Assert.Null(result.SuspendedAtUtc);
+
+        var reloaded = await db.IndividualProfiles.FirstAsync(p => p.Id == prof.Id);
+        Assert.False(reloaded.IsSuspended);
+        Assert.Null(reloaded.SuspensionReason);
+
+        await eventPublisher.Received(1).PublishAsync(
+            Arg.Is<IndividualReactivatedDomainEvent>(e =>
+                e.ProfileId == prof.Id &&
+                e.UserId == "user-01" &&
+                e.Reason == "Regulatory check cleared" &&
+                e.AdminUserId == "admin-user-1"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ReactivateIndividual_WhenNotSuspended_ShouldThrowInvalidOperationException()
+    {
+        await using var db = CreateDbContext();
+
+        var admin = new AdminProfile("admin-user-1", AdminRoleType.Admin);
+        db.AdminProfiles.Add(admin);
+
+        var prof = new IndividualProfile("user-01", "Mike", "Johnson");
+        db.IndividualProfiles.Add(prof);
+        await db.SaveChangesAsync();
+
+        var eventPublisher = Substitute.For<IEventPublisher>();
+        var currentUserService = Substitute.For<ICurrentUserService>();
+        currentUserService.UserId.Returns("admin-user-1");
+
+        var handler = new ReactivateIndividualCommandHandler(db, eventPublisher, currentUserService);
+        var command = new ReactivateIndividualCommand(prof.Id.ToString(), "Reactivate unsuspended", "admin-user-1");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(command, CancellationToken.None));
     }
 }

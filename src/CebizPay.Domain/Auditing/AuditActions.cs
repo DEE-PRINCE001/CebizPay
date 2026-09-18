@@ -28,6 +28,10 @@ public static class AuditActions
     public const string KycVerified = "KYC_VERIFIED";
     /// <summary>Audit action when individual KYC is rejected.</summary>
     public const string KycRejected = "KYC_REJECTED";
+    /// <summary>Audit action when an individual profile is suspended.</summary>
+    public const string IndividualSuspended = "INDIVIDUAL_SUSPENDED";
+    /// <summary>Audit action when an individual profile is reactivated.</summary>
+    public const string IndividualReactivated = "INDIVIDUAL_REACTIVATED";
 
     // KYB / Organization Compliance
     /// <summary>Audit action when organization KYB is submitted.</summary>

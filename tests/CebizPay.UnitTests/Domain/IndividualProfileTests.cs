@@ -47,4 +47,73 @@ public sealed class IndividualProfileTests
         // Act & Assert
         Assert.Throws<InvalidOperationException>(() => profile.SetKycStatus(KycStatus.Pending));
     }
+
+    [Fact]
+    public void Suspend_WhenActive_ShouldSetIsSuspendedAndReason()
+    {
+        // Arrange
+        var profile = new IndividualProfile("user-123", "John", "Doe");
+
+        // Act
+        profile.Suspend("Compliance investigation under CBN CDD regulations");
+
+        // Assert
+        Assert.True(profile.IsSuspended);
+        Assert.Equal("Compliance investigation under CBN CDD regulations", profile.SuspensionReason);
+        Assert.NotNull(profile.SuspendedAtUtc);
+        Assert.False(profile.CanTransactOutbound());
+    }
+
+    [Fact]
+    public void Suspend_WhenAlreadySuspended_ShouldThrowInvalidOperationException()
+    {
+        // Arrange
+        var profile = new IndividualProfile("user-123", "John", "Doe");
+        profile.Suspend("Initial reason");
+
+        // Act & Assert
+        var ex = Assert.Throws<InvalidOperationException>(() => profile.Suspend("Second reason"));
+        Assert.Equal("Individual profile is already suspended.", ex.Message);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Suspend_WithInvalidReason_ShouldThrowArgumentException(string? invalidReason)
+    {
+        // Arrange
+        var profile = new IndividualProfile("user-123", "John", "Doe");
+
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() => profile.Suspend(invalidReason!));
+    }
+
+    [Fact]
+    public void Reactivate_WhenSuspended_ShouldClearSuspensionState()
+    {
+        // Arrange
+        var profile = new IndividualProfile("user-123", "John", "Doe");
+        profile.Suspend("Temporary regulatory review");
+
+        // Act
+        profile.Reactivate();
+
+        // Assert
+        Assert.False(profile.IsSuspended);
+        Assert.Null(profile.SuspensionReason);
+        Assert.Null(profile.SuspendedAtUtc);
+        Assert.True(profile.CanTransactOutbound());
+    }
+
+    [Fact]
+    public void Reactivate_WhenNotSuspended_ShouldThrowInvalidOperationException()
+    {
+        // Arrange
+        var profile = new IndividualProfile("user-123", "John", "Doe");
+
+        // Act & Assert
+        var ex = Assert.Throws<InvalidOperationException>(() => profile.Reactivate());
+        Assert.Equal("Individual profile is not suspended.", ex.Message);
+    }
 }
