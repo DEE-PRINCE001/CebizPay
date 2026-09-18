@@ -111,3 +111,13 @@ public sealed record AdminIndividualStatusResultDto(
     DateTime? SuspendedAtUtc,
     string? SuspensionReason);
 
+/// <summary>
+/// Request payload to administratively suspend an individual profile.
+/// </summary>
+public sealed record SuspendIndividualRequest(string Reason);
+
+/// <summary>
+/// Request payload to administratively reactivate an individual profile.
+/// </summary>
+public sealed record ReactivateIndividualRequest(string Reason);
+

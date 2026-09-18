@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Asp.Versioning;
 using CebizPay.Application.Common.Models;
 using CebizPay.Application.UseCases.Admin.Individuals;
@@ -181,6 +182,96 @@ public sealed class AdminIndividualsController : ControllerBase
             {
                 Status = StatusCodes.Status404NotFound,
                 Title = "Individual Not Found",
+                Detail = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Administratively suspends an individual user profile, blocking outbound debit transfers.
+    /// </summary>
+    [HttpPatch("{id}/suspend")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    [ProducesResponseType(typeof(AdminIndividualStatusResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> SuspendIndividual(
+        [FromRoute] string id,
+        [FromBody] SuspendIndividualRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var adminUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+            ?? User.FindFirst("sub")?.Value 
+            ?? string.Empty;
+
+        try
+        {
+            var command = new SuspendIndividualCommand(id, request.Reason, adminUserId);
+            var result = await _sender.Send(command, cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Individual Not Found",
+                Detail = ex.Message
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Invalid Operation",
+                Detail = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Administratively reactivates a suspended individual user profile, restoring outbound debit transfers.
+    /// </summary>
+    [HttpPatch("{id}/reactivate")]
+    [Authorize(Roles = "SuperAdmin,Admin")]
+    [ProducesResponseType(typeof(AdminIndividualStatusResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ReactivateIndividual(
+        [FromRoute] string id,
+        [FromBody] ReactivateIndividualRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var adminUserId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value 
+            ?? User.FindFirst("sub")?.Value 
+            ?? string.Empty;
+
+        try
+        {
+            var command = new ReactivateIndividualCommand(id, request.Reason, adminUserId);
+            var result = await _sender.Send(command, cancellationToken);
+            return Ok(result);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return NotFound(new ProblemDetails
+            {
+                Status = StatusCodes.Status404NotFound,
+                Title = "Individual Not Found",
+                Detail = ex.Message
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Invalid Operation",
                 Detail = ex.Message
             });
         }

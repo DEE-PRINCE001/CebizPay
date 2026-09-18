@@ -239,6 +239,161 @@ public sealed class AdminIndividualsApiTests
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         }
     }
+
+    [Fact]
+    public async Task SuspendIndividual_AsSuperAdmin_Returns200Ok()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var profileId = Guid.NewGuid();
+        var statusResult = new AdminIndividualStatusResultDto(
+            profileId, "user-01", "Suspended", true, DateTime.UtcNow, "Suspicious activity");
+
+        mediator.Send(Arg.Any<SuspendIndividualCommand>(), Arg.Any<CancellationToken>())
+            .Returns(statusResult);
+
+        var (host, client) = await CreateTestServer(mediator, "SuperAdmin");
+        using (host)
+        using (client)
+        {
+            var response = await client.PatchAsJsonAsync(
+                $"/api/v1/admin/individuals/{profileId}/suspend",
+                new SuspendIndividualRequest("Suspicious activity"));
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            var body = await response.Content.ReadFromJsonAsync<AdminIndividualStatusResultDto>();
+            Assert.NotNull(body);
+            Assert.True(body.IsSuspended);
+            Assert.Equal("Suspended", body.Status);
+            Assert.Equal("Suspicious activity", body.SuspensionReason);
+        }
+    }
+
+    [Fact]
+    public async Task SuspendIndividual_AsAdmin_Returns200Ok()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var profileId = Guid.NewGuid();
+        var statusResult = new AdminIndividualStatusResultDto(
+            profileId, "user-01", "Suspended", true, DateTime.UtcNow, "Risk mitigation");
+
+        mediator.Send(Arg.Any<SuspendIndividualCommand>(), Arg.Any<CancellationToken>())
+            .Returns(statusResult);
+
+        var (host, client) = await CreateTestServer(mediator, "Admin");
+        using (host)
+        using (client)
+        {
+            var response = await client.PatchAsJsonAsync(
+                $"/api/v1/admin/individuals/{profileId}/suspend",
+                new SuspendIndividualRequest("Risk mitigation"));
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            var body = await response.Content.ReadFromJsonAsync<AdminIndividualStatusResultDto>();
+            Assert.NotNull(body);
+            Assert.True(body.IsSuspended);
+            Assert.Equal("Suspended", body.Status);
+        }
+    }
+
+    [Fact]
+    public async Task SuspendIndividual_AsAuditor_Returns403Forbidden()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var (host, client) = await CreateTestServer(mediator, "Auditor");
+        using (host)
+        using (client)
+        {
+            var response = await client.PatchAsJsonAsync(
+                $"/api/v1/admin/individuals/{Guid.NewGuid()}/suspend",
+                new SuspendIndividualRequest("Auditor trying to suspend"));
+
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task SuspendIndividual_WhenNotFound_Returns404NotFound()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<SuspendIndividualCommand>(), Arg.Any<CancellationToken>())
+            .Returns<AdminIndividualStatusResultDto>(_ => throw new KeyNotFoundException("Individual profile not found."));
+
+        var (host, client) = await CreateTestServer(mediator, "Admin");
+        using (host)
+        using (client)
+        {
+            var response = await client.PatchAsJsonAsync(
+                $"/api/v1/admin/individuals/{Guid.NewGuid()}/suspend",
+                new SuspendIndividualRequest("Suspicious activity"));
+
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task ReactivateIndividual_AsAdmin_Returns200Ok()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var profileId = Guid.NewGuid();
+        var statusResult = new AdminIndividualStatusResultDto(
+            profileId, "user-01", "Active", false, null, null);
+
+        mediator.Send(Arg.Any<ReactivateIndividualCommand>(), Arg.Any<CancellationToken>())
+            .Returns(statusResult);
+
+        var (host, client) = await CreateTestServer(mediator, "Admin");
+        using (host)
+        using (client)
+        {
+            var response = await client.PatchAsJsonAsync(
+                $"/api/v1/admin/individuals/{profileId}/reactivate",
+                new ReactivateIndividualRequest("Review cleared"));
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+            var body = await response.Content.ReadFromJsonAsync<AdminIndividualStatusResultDto>();
+            Assert.NotNull(body);
+            Assert.False(body.IsSuspended);
+            Assert.Equal("Active", body.Status);
+        }
+    }
+
+    [Fact]
+    public async Task ReactivateIndividual_AsAuditor_Returns403Forbidden()
+    {
+        var mediator = Substitute.For<IMediator>();
+        var (host, client) = await CreateTestServer(mediator, "Auditor");
+        using (host)
+        using (client)
+        {
+            var response = await client.PatchAsJsonAsync(
+                $"/api/v1/admin/individuals/{Guid.NewGuid()}/reactivate",
+                new ReactivateIndividualRequest("Auditor reactivating"));
+
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+    }
+
+    [Fact]
+    public async Task ReactivateIndividual_WhenNotFound_Returns404NotFound()
+    {
+        var mediator = Substitute.For<IMediator>();
+        mediator.Send(Arg.Any<ReactivateIndividualCommand>(), Arg.Any<CancellationToken>())
+            .Returns<AdminIndividualStatusResultDto>(_ => throw new KeyNotFoundException("Individual profile not found."));
+
+        var (host, client) = await CreateTestServer(mediator, "SuperAdmin");
+        using (host)
+        using (client)
+        {
+            var response = await client.PatchAsJsonAsync(
+                $"/api/v1/admin/individuals/{Guid.NewGuid()}/reactivate",
+                new ReactivateIndividualRequest("Review cleared"));
+
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        }
+    }
 }
 
 public sealed record TestAdminIndivRole(string Role);
