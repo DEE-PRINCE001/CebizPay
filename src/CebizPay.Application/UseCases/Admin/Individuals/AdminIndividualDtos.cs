@@ -38,7 +38,10 @@ public sealed record AdminIndividualDetailsDto(
     string CompanyName,
     string? PhotoUrl,
     DateTime RegisteredAt,
-    IReadOnlyList<AdminIndividualCredentialDto> Credentials);
+    IReadOnlyList<AdminIndividualCredentialDto> Credentials,
+    bool IsSuspended = false,
+    DateTime? SuspendedAtUtc = null,
+    string? SuspensionReason = null);
 
 /// <summary>
 /// DTO representing a single transaction item in the administrative view for an individual.

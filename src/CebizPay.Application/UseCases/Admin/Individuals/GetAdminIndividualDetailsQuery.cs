@@ -84,7 +84,7 @@ public sealed class GetAdminIndividualDetailsQueryHandler : IRequestHandler<GetA
             doc.DocumentUrl,
             doc.SubmittedAtUtc)).ToList();
 
-        var isSuspended = identityDetails.IsLockedOut;
+        var isSuspended = profile.IsSuspended || identityDetails.IsLockedOut;
         var displayStatus = isSuspended ? "Suspended" : (profile.KycStatus == KycStatus.Verified ? "Active" : profile.KycStatus.ToString());
         var professionalStatusStr = profile.ProfessionalStatus == ProfessionalStatus.Staff ? "Staff" : "Not-a-Staff";
         var fullName = $"{profile.FirstName} {profile.LastName}".Trim();
@@ -99,7 +99,10 @@ public sealed class GetAdminIndividualDetailsQueryHandler : IRequestHandler<GetA
             companyName,
             profile.AvatarUrl,
             profile.CreatedAtUtc,
-            credentials);
+            credentials,
+            profile.IsSuspended,
+            profile.SuspendedAtUtc,
+            profile.SuspensionReason);
     }
 
     private static string GetDocumentTitle(DocumentType type) => type switch

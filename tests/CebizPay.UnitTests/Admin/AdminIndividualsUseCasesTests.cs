@@ -131,6 +131,104 @@ public sealed class AdminIndividualsUseCasesTests
     }
 
     [Fact]
+    public async Task GetIndividualDetails_WhenProfileIsSuspended_ShouldReturnSuspensionFieldsAndStatus()
+    {
+        await using var db = CreateDbContext();
+
+        var prof = new IndividualProfile("user-susp", "Sarah", "Connor");
+        prof.SetKycStatus(KycStatus.Verified);
+        prof.Suspend("Suspicious transactions flagged");
+        db.IndividualProfiles.Add(prof);
+        await db.SaveChangesAsync();
+
+        var identityService = Substitute.For<IIdentityService>();
+        identityService.GetUserDetailsWithLockoutByIdsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, (string Email, string? PhoneNumber, bool IsLockedOut)>
+            {
+                ["user-susp"] = ("sarah@example.com", "08123456789", false)
+            });
+
+        var handler = new GetAdminIndividualDetailsQueryHandler(db, identityService);
+        var query = new GetAdminIndividualDetailsQuery(prof.Id.ToString());
+
+        var result = await handler.Handle(query, CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("Suspended", result.Status);
+        Assert.True(result.IsSuspended);
+        Assert.Equal("Suspicious transactions flagged", result.SuspensionReason);
+        Assert.NotNull(result.SuspendedAtUtc);
+    }
+
+    [Fact]
+    public async Task GetIndividualsDirectory_WhenFilteringBySuspendedStatus_ShouldReturnOnlySuspendedProfiles()
+    {
+        await using var db = CreateDbContext();
+
+        var activeProf = new IndividualProfile("user-act", "Active", "User");
+        activeProf.SetKycStatus(KycStatus.Verified);
+
+        var suspendedProf = new IndividualProfile("user-susp", "Suspended", "User");
+        suspendedProf.SetKycStatus(KycStatus.Verified);
+        suspendedProf.Suspend("Violation of terms");
+
+        db.IndividualProfiles.AddRange(activeProf, suspendedProf);
+        await db.SaveChangesAsync();
+
+        var identityService = Substitute.For<IIdentityService>();
+        identityService.GetUserDetailsWithLockoutByIdsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, (string Email, string? PhoneNumber, bool IsLockedOut)>
+            {
+                ["user-act"] = ("active@example.com", "08111111111", false),
+                ["user-susp"] = ("susp@example.com", "08222222222", false)
+            });
+
+        var handler = new GetAdminIndividualsDirectoryQueryHandler(db, identityService);
+        var query = new GetAdminIndividualsDirectoryQuery(1, 10, Status: "Suspended");
+
+        var result = await handler.Handle(query, CancellationToken.None);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Single(result.Items);
+        Assert.Equal(suspendedProf.Id, result.Items[0].Id);
+        Assert.Equal("Suspended", result.Items[0].Status);
+    }
+
+    [Fact]
+    public async Task ExportAdminIndividuals_WhenFilteringBySuspendedStatus_ShouldExportOnlySuspendedProfiles()
+    {
+        await using var db = CreateDbContext();
+
+        var activeProf = new IndividualProfile("user-act-exp", "Active", "ExportUser");
+        activeProf.SetKycStatus(KycStatus.Verified);
+
+        var suspendedProf = new IndividualProfile("user-susp-exp", "Suspended", "ExportUser");
+        suspendedProf.SetKycStatus(KycStatus.Verified);
+        suspendedProf.Suspend("Export suspension test");
+
+        db.IndividualProfiles.AddRange(activeProf, suspendedProf);
+        await db.SaveChangesAsync();
+
+        var identityService = Substitute.For<IIdentityService>();
+        identityService.GetUserDetailsWithLockoutByIdsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, (string Email, string? PhoneNumber, bool IsLockedOut)>
+            {
+                ["user-act-exp"] = ("actexp@example.com", "08111111111", false),
+                ["user-susp-exp"] = ("suspexp@example.com", "08222222222", false)
+            });
+
+        var handler = new ExportAdminIndividualsQueryHandler(db, identityService);
+        var query = new ExportAdminIndividualsQuery(Status: "Suspended");
+
+        var result = await handler.Handle(query, CancellationToken.None);
+
+        Assert.NotNull(result);
+        var csv = Encoding.UTF8.GetString(result.Content);
+        Assert.Contains("Suspended ExportUser", csv);
+        Assert.DoesNotContain("Active ExportUser", csv);
+    }
+
+    [Fact]
     public async Task GetIndividualWallet_ShouldReturnWalletAndVirtualAccountOverview()
     {
         await using var db = CreateDbContext();

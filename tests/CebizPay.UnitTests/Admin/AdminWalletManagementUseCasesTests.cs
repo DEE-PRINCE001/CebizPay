@@ -408,4 +408,78 @@ public sealed class AdminWalletManagementUseCasesTests
         Assert.Contains("Sarah Connor", csvContent);
         Assert.Contains("95000.00", csvContent);
     }
+
+    [Fact]
+    public async Task GetAdminIndividualWalletsDirectory_WhenFilteringBySuspendedStatus_ShouldReturnOnlySuspendedProfiles()
+    {
+        await using var db = CreateDbContext();
+
+        var activeProfile = new IndividualProfile("user-act-w", "Active", "User");
+        activeProfile.SetKycStatus(KycStatus.Verified);
+
+        var suspendedProfile = new IndividualProfile("user-susp-w", "Suspended", "User");
+        suspendedProfile.SetKycStatus(KycStatus.Verified);
+        suspendedProfile.Suspend("Risk review");
+
+        db.IndividualProfiles.AddRange(activeProfile, suspendedProfile);
+
+        var activeWallet = Wallet.CreateIndividualWallet("user-act-w", Currency.NGN);
+        var suspendedWallet = Wallet.CreateIndividualWallet("user-susp-w", Currency.NGN);
+        db.Wallets.AddRange(activeWallet, suspendedWallet);
+
+        await db.SaveChangesAsync();
+
+        var identityService = Substitute.For<IIdentityService>();
+        identityService.GetUserDetailsWithLockoutByIdsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, (string Email, string? PhoneNumber, bool IsLockedOut)>
+            {
+                ["user-act-w"] = ("active@example.com", "+2348011112222", false),
+                ["user-susp-w"] = ("suspended@example.com", "+2348033334444", false)
+            });
+
+        var handler = new GetAdminIndividualWalletsDirectoryQueryHandler(db, identityService);
+        var result = await handler.Handle(new GetAdminIndividualWalletsDirectoryQuery(1, 10, Status: "Suspended"), CancellationToken.None);
+
+        Assert.Equal(1, result.TotalCount);
+        Assert.Single(result.Items);
+        Assert.Equal(suspendedProfile.Id, result.Items[0].Id);
+        Assert.Equal("Suspended", result.Items[0].Status);
+    }
+
+    [Fact]
+    public async Task ExportAdminIndividualWallets_WhenFilteringBySuspendedStatus_ShouldExportOnlySuspendedProfiles()
+    {
+        await using var db = CreateDbContext();
+
+        var activeProfile = new IndividualProfile("user-act-expw", "Active", "WalletUser");
+        activeProfile.SetKycStatus(KycStatus.Verified);
+
+        var suspendedProfile = new IndividualProfile("user-susp-expw", "Suspended", "WalletUser");
+        suspendedProfile.SetKycStatus(KycStatus.Verified);
+        suspendedProfile.Suspend("Risk review");
+
+        db.IndividualProfiles.AddRange(activeProfile, suspendedProfile);
+
+        var activeWallet = Wallet.CreateIndividualWallet("user-act-expw", Currency.NGN);
+        var suspendedWallet = Wallet.CreateIndividualWallet("user-susp-expw", Currency.NGN);
+        db.Wallets.AddRange(activeWallet, suspendedWallet);
+
+        await db.SaveChangesAsync();
+
+        var identityService = Substitute.For<IIdentityService>();
+        identityService.GetUserDetailsWithLockoutByIdsAsync(Arg.Any<IEnumerable<string>>(), Arg.Any<CancellationToken>())
+            .Returns(new Dictionary<string, (string Email, string? PhoneNumber, bool IsLockedOut)>
+            {
+                ["user-act-expw"] = ("active@example.com", "+2348011112222", false),
+                ["user-susp-expw"] = ("suspended@example.com", "+2348033334444", false)
+            });
+
+        var handler = new ExportAdminIndividualWalletsQueryHandler(db, identityService);
+        var result = await handler.Handle(new ExportAdminIndividualWalletsQuery(Status: "Suspended"), CancellationToken.None);
+
+        Assert.NotNull(result);
+        var csvContent = Encoding.UTF8.GetString(result.Content);
+        Assert.Contains("Suspended WalletUser", csvContent);
+        Assert.DoesNotContain("Active WalletUser", csvContent);
+    }
 }

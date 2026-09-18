@@ -68,10 +68,17 @@ public sealed class ExportAdminIndividualWalletsQueryHandler : IRequestHandler<E
         }
 
         // 2. Status filter
-        var parsedStatus = GetAdminIndividualWalletsDirectoryQueryHandler.ParseStatus(request.Status);
-        if (parsedStatus.HasValue)
+        if (string.Equals(request.Status?.Trim(), "Suspended", StringComparison.OrdinalIgnoreCase))
         {
-            query = query.Where(p => p.KycStatus == parsedStatus.Value);
+            query = query.Where(p => p.IsSuspended);
+        }
+        else
+        {
+            var parsedStatus = GetAdminIndividualWalletsDirectoryQueryHandler.ParseStatus(request.Status);
+            if (parsedStatus.HasValue)
+            {
+                query = query.Where(p => !p.IsSuspended && p.KycStatus == parsedStatus.Value);
+            }
         }
 
         var profiles = await query
@@ -107,7 +114,7 @@ public sealed class ExportAdminIndividualWalletsQueryHandler : IRequestHandler<E
         {
             userDetailsMap.TryGetValue(profile.UserId, out var details);
 
-            var isSuspended = details.IsLockedOut;
+            var isSuspended = profile.IsSuspended || details.IsLockedOut;
             var displayStatus = isSuspended ? "Suspended" : (profile.KycStatus == KycStatus.Verified ? "Active" : profile.KycStatus.ToString());
             var fullName = $"{profile.FirstName} {profile.LastName}".Trim();
             var currentBalance = balanceMap.GetValueOrDefault(profile.UserId, 0m);

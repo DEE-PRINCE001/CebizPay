@@ -58,10 +58,17 @@ public sealed class ExportAdminIndividualsQueryHandler : IRequestHandler<ExportA
         }
 
         // 2. Filter by Status
-        var parsedStatus = GetAdminIndividualsDirectoryQueryHandler.ParseStatus(request.Status);
-        if (parsedStatus.HasValue)
+        if (!string.IsNullOrWhiteSpace(request.Status) && request.Status.Trim().Equals("Suspended", StringComparison.OrdinalIgnoreCase))
         {
-            query = query.Where(p => p.KycStatus == parsedStatus.Value);
+            query = query.Where(p => p.IsSuspended);
+        }
+        else
+        {
+            var parsedStatus = GetAdminIndividualsDirectoryQueryHandler.ParseStatus(request.Status);
+            if (parsedStatus.HasValue)
+            {
+                query = query.Where(p => !p.IsSuspended && p.KycStatus == parsedStatus.Value);
+            }
         }
 
         var profiles = await query
@@ -97,7 +104,7 @@ public sealed class ExportAdminIndividualsQueryHandler : IRequestHandler<ExportA
         {
             userDetailsMap.TryGetValue(profile.UserId, out var details);
 
-            var isSuspended = details.IsLockedOut;
+            var isSuspended = profile.IsSuspended || details.IsLockedOut;
             var displayStatus = isSuspended ? "Suspended" : profile.KycStatus.ToString();
             var companyName = userCompanyMap.GetValueOrDefault(profile.UserId, "None");
             var professionalStatusStr = profile.ProfessionalStatus == ProfessionalStatus.Staff ? "Staff" : "Not-a-Staff";
