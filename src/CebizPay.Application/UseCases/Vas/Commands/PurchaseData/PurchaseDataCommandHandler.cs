@@ -114,6 +114,12 @@ public sealed class PurchaseDataCommandHandler : IRequestHandler<PurchaseDataCom
                 .FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken)
                 ?? throw new TransferNotAuthorizedException("Individual profile not found for authenticated user.");
 
+            if (profile.IsSuspended)
+            {
+                throw new ComplianceRestrictedException(
+                    "Your account has been suspended. Value-added service purchases are blocked. Please contact support.");
+            }
+
             sourceWallet = await _dbContext.Wallets
                 .FirstOrDefaultAsync(w => w.IndividualId == userId && w.Currency == Currency.NGN, cancellationToken)
                 ?? throw new TransferNotAuthorizedException("No NGN wallet found for the authenticated user.");

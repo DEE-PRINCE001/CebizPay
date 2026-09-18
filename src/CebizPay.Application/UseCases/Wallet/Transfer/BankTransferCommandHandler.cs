@@ -133,6 +133,12 @@ public sealed class BankTransferCommandHandler : IRequestHandler<BankTransferCom
                 .FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken)
                 ?? throw new TransferNotAuthorizedException("Individual profile not found for authenticated user.");
 
+            if (profile.IsSuspended)
+            {
+                throw new ComplianceRestrictedException(
+                    "Your account has been suspended. Outbound bank transfers are blocked. Please contact support.");
+            }
+
             // Unverified individual accounts are capped at < ₦50,000
             if (profile.KycStatus != KycStatus.Verified && request.Amount >= 50000m)
             {

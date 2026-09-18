@@ -159,5 +159,27 @@ public sealed class BankTransferCommandHandlerTests
         // Act & Assert
         await Assert.ThrowsAsync<InsufficientFundsException>(() => _handler.Handle(command, CancellationToken.None));
     }
+
+    [Fact]
+    public async Task Handle_SuspendedIndividual_ShouldThrowComplianceRestrictedException()
+    {
+        // Arrange
+        var userId = "user-suspended";
+        _currentUserService.UserId.Returns(userId);
+
+        var suspendedProfile = new IndividualProfile(userId, "John", "Doe");
+        suspendedProfile.SetKycStatus(KycStatus.Verified);
+        suspendedProfile.Suspend("Regulatory compliance investigation");
+
+        var profileSet = new InMemoryEntitySet<IndividualProfile>(new List<IndividualProfile> { suspendedProfile });
+        _dbContext.IndividualProfiles.Returns(profileSet);
+
+        var command = new BankTransferCommand("058", "0123456789", 1000m, "NGN", "1234", "key-1");
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<ComplianceRestrictedException>(() => _handler.Handle(command, CancellationToken.None));
+        Assert.Equal("Your account has been suspended. Outbound bank transfers are blocked. Please contact support.", ex.Message);
+    }
 }
+
 

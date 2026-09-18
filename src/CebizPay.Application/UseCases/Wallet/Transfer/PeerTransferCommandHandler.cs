@@ -129,6 +129,15 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
         else
         {
             // Individual context: resolve from the user's individual wallet
+            var senderProfile = await _dbContext.IndividualProfiles
+                .FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken);
+
+            if (senderProfile?.IsSuspended == true)
+            {
+                throw new ComplianceRestrictedException(
+                    "Your account has been suspended. Outbound financial transfers are blocked. Please contact support.");
+            }
+
             sourceWallet = await _dbContext.Wallets
                 .FirstOrDefaultAsync(w => w.IndividualId == userId && w.Currency == currency, cancellationToken)
                 ?? throw new TransferNotAuthorizedException(
