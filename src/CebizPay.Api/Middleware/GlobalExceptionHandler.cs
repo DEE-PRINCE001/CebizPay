@@ -42,7 +42,8 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
         {
             Status = statusCode,
             Title = title,
-            Detail = _environment.IsDevelopment() ? exception.ToString() : detail,
+            // Detail = _environment.IsDevelopment() ? exception.ToString() : detail,
+            Detail = detail,
             Instance = httpContext.Request.Path
         };
 
@@ -102,7 +103,7 @@ public sealed partial class GlobalExceptionHandler : IExceptionHandler
                 "Idempotency Conflict",
                 idempEx.Message),
 
-            InvalidOperationException invalidOpEx when invalidOpEx.Message.Contains("Conflict", StringComparison.OrdinalIgnoreCase) => (
+            InvalidOperationException invalidOpEx when invalidOpEx.Message.Contains("Conflict", StringComparison.OrdinalIgnoreCase) || invalidOpEx.Message.Contains("already exist", StringComparison.OrdinalIgnoreCase) => (
                 StatusCodes.Status409Conflict,
                 "Resource Conflict",
                 invalidOpEx.Message),
