@@ -13,17 +13,35 @@ public sealed class ComplianceWebhookSignatureVerifierTests
     private readonly ComplianceWebhookSignatureVerifier _verifier = new(NullLogger<ComplianceWebhookSignatureVerifier>.Instance);
 
     [Fact]
-    public void VerifySignature_DojahValidHmacSha512_ReturnsTrue()
+    public void VerifySignature_DojahValidHmacSha256_ReturnsTrue()
     {
         const string secret = "dojah_wh_secret_xyz";
         const string payload = "{\"event\":\"verification.completed\",\"data\":{\"id\":\"123\"}}";
 
-        using var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(secret));
-        var hash = Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+        var hash = Convert.ToHexString(HMACSHA256.HashData(
+            Encoding.UTF8.GetBytes(secret),
+            Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
 
         var headers = new Dictionary<string, string>
         {
-            { "X-Dojah-Signature", hash }
+            { "x-dojah-signature", hash }
+        };
+
+        var result = _verifier.VerifySignature(VerificationProvider.Dojah, payload, headers, secret);
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void VerifySignature_DojahValidV2Sha256_ReturnsTrue()
+    {
+        const string secret = "dojah_wh_secret_xyz";
+        const string payload = "{\"event\":\"verification.completed\",\"data\":{\"id\":\"123\"}}";
+
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(secret))).ToLowerInvariant();
+
+        var headers = new Dictionary<string, string>
+        {
+            { "x-dojah-signature-v2", hash }
         };
 
         var result = _verifier.VerifySignature(VerificationProvider.Dojah, payload, headers, secret);
@@ -38,7 +56,7 @@ public sealed class ComplianceWebhookSignatureVerifierTests
 
         var headers = new Dictionary<string, string>
         {
-            { "X-Dojah-Signature", "invalid_signature_hex" }
+            { "x-dojah-signature", "invalid_signature_hex" }
         };
 
         var result = _verifier.VerifySignature(VerificationProvider.Dojah, payload, headers, secret);

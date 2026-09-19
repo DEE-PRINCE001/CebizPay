@@ -40,20 +40,31 @@ public sealed class ComplianceWebhookSignatureVerifier : IComplianceWebhookSigna
 
     private bool VerifyDojahSignature(string rawPayload, IReadOnlyDictionary<string, string> headers, string secret)
     {
-        if (!TryGetHeader(headers, "X-Dojah-Signature", out var signature) &&
-            !TryGetHeader(headers, "x-dojah-signature", out signature) &&
+        if (!TryGetHeader(headers, "x-dojah-signature", out var signature) &&
+            !TryGetHeader(headers, "X-Dojah-Signature", out signature) &&
+            !TryGetHeader(headers, "x-dojah-signature-v2", out signature) &&
             !TryGetHeader(headers, "X-Signature", out signature))
         {
             _logger.LogWarning("Dojah webhook signature header missing.");
             return false;
         }
 
-        using var hmac = new HMACSHA512(Encoding.UTF8.GetBytes(secret));
-        var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(rawPayload));
-        var computedHex = Convert.ToHexString(computedHash);
+        // Dojah standard: HMAC-SHA256 hash of raw JSON payload keyed with secret
+        var secretBytes = Encoding.UTF8.GetBytes(secret);
+        var payloadBytes = Encoding.UTF8.GetBytes(rawPayload);
+        var computedSha256 = Convert.ToHexString(HMACSHA256.HashData(secretBytes, payloadBytes)).ToLowerInvariant();
 
+        if (CryptographicOperations.FixedTimeEquals(
+            Encoding.UTF8.GetBytes(computedSha256),
+            Encoding.UTF8.GetBytes(signature.ToLowerInvariant())))
+        {
+            return true;
+        }
+
+        // Optional check for x-dojah-signature-v2 (SHA256 hash of secret)
+        var computedV2 = Convert.ToHexString(SHA256.HashData(secretBytes)).ToLowerInvariant();
         return CryptographicOperations.FixedTimeEquals(
-            Encoding.UTF8.GetBytes(computedHex.ToLowerInvariant()),
+            Encoding.UTF8.GetBytes(computedV2),
             Encoding.UTF8.GetBytes(signature.ToLowerInvariant()));
     }
 
