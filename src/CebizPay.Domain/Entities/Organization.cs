@@ -86,26 +86,33 @@ public class Organization
     }
 
     /// <summary>
-    /// Completes Step 2 of KYB registration.
+    /// Sets or updates the CAC registration number.
     /// </summary>
-    public void CompleteStep2(string cacNumber, string logoUrl, string cacCertificateUrl)
+    public void SetCacNumber(string cacNumber)
     {
         if (string.IsNullOrWhiteSpace(cacNumber))
-        {
-            throw new ArgumentException("CacNumber is required.", nameof(cacNumber));
-        }
-        if (string.IsNullOrWhiteSpace(logoUrl))
-        {
-            throw new ArgumentException("LogoUrl is required.", nameof(logoUrl));
-        }
-        if (string.IsNullOrWhiteSpace(cacCertificateUrl))
-        {
-            throw new ArgumentException("CacCertificateUrl is required.", nameof(cacCertificateUrl));
-        }
-
+            throw new ArgumentException("CAC number is required.", nameof(cacNumber));
         CacNumber = cacNumber.Trim();
-        LogoUrl = logoUrl.Trim();
-        CacCertificateUrl = cacCertificateUrl.Trim();
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Completes Step 2 of KYB registration.
+    /// </summary>
+    public void CompleteStep2(string? cacNumber = null, string? logoUrl = null, string? cacCertificateUrl = null)
+    {
+        if (!string.IsNullOrWhiteSpace(cacNumber))
+            CacNumber = cacNumber.Trim();
+        if (!string.IsNullOrWhiteSpace(logoUrl))
+            LogoUrl = logoUrl.Trim();
+        if (!string.IsNullOrWhiteSpace(cacCertificateUrl))
+            CacCertificateUrl = cacCertificateUrl.Trim();
+
+        if (string.IsNullOrWhiteSpace(CacNumber))
+            throw new InvalidOperationException("CAC registration number is required to complete KYB submission.");
+        if (string.IsNullOrWhiteSpace(CacCertificateUrl))
+            throw new InvalidOperationException("CAC certificate document is required to complete KYB submission.");
+
         KybStatus = KybStatus.Step2Completed;
         UpdatedAtUtc = DateTime.UtcNow;
     }

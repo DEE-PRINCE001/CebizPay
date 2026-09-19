@@ -163,6 +163,21 @@ public sealed class LookupCacCommandHandler : IRequestHandler<LookupCacCommand, 
             }
         }
 
+        if (isMatched)
+        {
+            var org = await _dbContext.Organizations
+                .FirstOrDefaultAsync(o => o.Id == request.OrganizationId, cancellationToken);
+            if (org != null)
+            {
+                org.SetCacNumber(cleanCacNumber);
+                if (!string.IsNullOrWhiteSpace(resolvedAddress) && string.IsNullOrWhiteSpace(org.Address))
+                {
+                    org.UpdateProfileDetails(org.Category, resolvedAddress, org.PhotoUrl);
+                }
+                await _dbContext.SaveChangesAsync(cancellationToken);
+            }
+        }
+
         return new CacLookupResultDto(
             OrganizationId: request.OrganizationId,
             CacNumber: cleanCacNumber,

@@ -40,7 +40,7 @@ public sealed class RegisterStep2CommandHandler : IRequestHandler<RegisterStep2C
 
         var kybStep2 = new KybDetail(
             org.Id, 2, org.CompanyName, org.Email, org.Phone,
-            request.CacNumber, request.LogoUrl, request.CacCertificateUrl);
+            org.CacNumber, org.LogoUrl, org.CacCertificateUrl);
 
         _dbContext.KybDetails.Add(kybStep2);
         await _dbContext.SaveChangesAsync(cancellationToken);

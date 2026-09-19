@@ -16,12 +16,18 @@ public sealed class RegisterStep2CommandValidator : AbstractValidator<RegisterSt
             .NotEmpty().WithMessage("OrganizationId is required.");
 
         RuleFor(x => x.CacNumber)
-            .NotEmpty().WithMessage("CAC Number is required.");
+            .MaximumLength(32)
+            .When(x => !string.IsNullOrWhiteSpace(x.CacNumber))
+            .WithMessage("CAC Number cannot exceed 32 characters.");
 
         RuleFor(x => x.LogoUrl)
-            .NotEmpty().WithMessage("Logo URL is required.");
+            .MaximumLength(2048)
+            .When(x => !string.IsNullOrWhiteSpace(x.LogoUrl))
+            .WithMessage("Logo URL cannot exceed 2048 characters.");
 
         RuleFor(x => x.CacCertificateUrl)
-            .NotEmpty().WithMessage("CAC Certificate URL is required.");
+            .MaximumLength(2048)
+            .When(x => !string.IsNullOrWhiteSpace(x.CacCertificateUrl))
+            .WithMessage("CAC Certificate URL cannot exceed 2048 characters.");
     }
 }
