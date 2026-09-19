@@ -4,10 +4,17 @@ using System.Text;
 using System.Text.Json;
 using CebizPay.Application.Common.Interfaces.Compliance;
 using CebizPay.Application.Common.Interfaces.Messaging;
+using CebizPay.Application.Common.Interfaces.Payments;
 using CebizPay.Application.Common.Interfaces.Persistence;
+using CebizPay.Domain.Auditing;
 using CebizPay.Domain.Compliance.Entities;
 using CebizPay.Domain.Compliance.Enums;
 using CebizPay.Domain.Compliance.Events;
+using CebizPay.Domain.Entities;
+using CebizPay.Domain.Enums;
+using CebizPay.Domain.Events;
+using CebizPay.Domain.Finance.Enums;
+using CebizPay.Domain.Payments.Enums;
 using CebizPay.Infrastructure.Compliance.Dojah;
 using CebizPay.Infrastructure.Compliance.Ninja;
 using CebizPay.Infrastructure.Compliance.SmileId;
@@ -20,18 +27,19 @@ namespace CebizPay.Infrastructure.Compliance.Common;
 /// <summary>
 /// Service responsible for authenticating, deduplicating, and asynchronously processing
 /// inbound compliance webhook callbacks from external verification providers.
+/// Synchronizes verified legal demographics and provisions dedicated Monnify virtual accounts upon KYC match.
 /// </summary>
 public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
 {
     private readonly IApplicationDbContext _dbContext;
     private readonly IComplianceWebhookSignatureVerifier _signatureVerifier;
     private readonly IOutboxService _outboxService;
+    private readonly ICddService? _cddService;
+    private readonly IVirtualAccountService? _virtualAccountService;
     private readonly ILogger<ComplianceWebhookProcessor> _logger;
     private readonly DojahOptions _dojahOptions;
     private readonly SmileIdOptions _smileIdOptions;
     private readonly NinjaOptions _ninjaOptions;
-
-    private static readonly JsonSerializerOptions JsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     public ComplianceWebhookProcessor(
         IApplicationDbContext dbContext,
@@ -40,7 +48,9 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
         IOptions<DojahOptions> dojahOptions,
         IOptions<SmileIdOptions> smileIdOptions,
         IOptions<NinjaOptions> ninjaOptions,
-        ILogger<ComplianceWebhookProcessor> logger)
+        ILogger<ComplianceWebhookProcessor> logger,
+        ICddService? cddService = null,
+        IVirtualAccountService? virtualAccountService = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _signatureVerifier = signatureVerifier ?? throw new ArgumentNullException(nameof(signatureVerifier));
@@ -49,6 +59,8 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
         _smileIdOptions = smileIdOptions?.Value ?? new SmileIdOptions();
         _ninjaOptions = ninjaOptions?.Value ?? new NinjaOptions();
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _cddService = cddService;
+        _virtualAccountService = virtualAccountService;
     }
 
     public async Task<ComplianceWebhookProcessingResult> ProcessWebhookAsync(
@@ -75,18 +87,18 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
         // 2. Compute payload SHA256 hash for deduplication and audit
         var payloadHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawPayload)));
 
-        // 3. Extract event ID and metadata
-        var (providerEventId, eventType, reference, resultStatus, confidenceScore, failureReason) =
-            ParseWebhookPayload(provider, rawPayload);
+        // 3. Extract event ID, metadata and rich demographic data
+        var parsed = ParseWebhookPayload(provider, rawPayload);
 
-        providerEventId ??= $"EVT-{payloadHash[..16]}";
-        eventType ??= "verification.completed";
+        var providerEventId = parsed.EventId ?? $"EVT-{payloadHash[..16]}";
+        var eventType = parsed.EventType ?? "verification.completed";
 
         ComplianceMetrics.RecordWebhook(provider, eventType);
 
         // 4. Deduplicate webhook against database
         var existingEvent = await _dbContext.ComplianceWebhookEvents
-            .FirstOrDefaultAsync(e => e.Provider == provider && (e.ProviderEventId == providerEventId || e.PayloadHash == payloadHash), cancellationToken);
+            .FirstOrDefaultAsync(e => e.Provider == provider && (e.ProviderEventId == providerEventId || e.PayloadHash == payloadHash), cancellationToken)
+            .ConfigureAwait(false);
 
         if (existingEvent != null)
         {
@@ -100,11 +112,22 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
 
         // 5. Correlate with internal VerificationOperation if reference exists
         VerificationOperation? operation = null;
-        if (!string.IsNullOrWhiteSpace(reference))
+        if (!string.IsNullOrWhiteSpace(parsed.Reference))
         {
             operation = await _dbContext.VerificationOperations
                 .Include(o => o.Evidences)
-                .FirstOrDefaultAsync(o => o.Reference == reference || o.Evidences.Any(e => e.ProviderReference == reference), cancellationToken);
+                .FirstOrDefaultAsync(o => o.Reference == parsed.Reference || o.Evidences.Any(e => e.ProviderReference == parsed.Reference), cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (operation == null && !string.IsNullOrWhiteSpace(parsed.UserId))
+        {
+            operation = await _dbContext.VerificationOperations
+                .Include(o => o.Evidences)
+                .Where(o => o.UserId == parsed.UserId && o.PrimaryProvider == provider && o.Status != VerificationStatus.Completed)
+                .OrderByDescending(o => o.CreatedAtUtc)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
         }
 
         if (operation != null && operation.Status is VerificationStatus.Initiated or VerificationStatus.Processing or VerificationStatus.PendingCallback)
@@ -114,32 +137,38 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
                 verificationType: operation.VerificationType,
                 capability: operation.Capability,
                 provider: provider,
-                resultStatus: resultStatus,
+                resultStatus: parsed.Result,
                 userId: operation.UserId,
                 organizationId: operation.OrganizationId,
-                providerReference: reference,
-                confidenceScore: confidenceScore,
+                providerReference: parsed.Reference,
+                confidenceScore: parsed.Confidence,
                 verifiedAtUtc: DateTime.UtcNow,
-                failureReason: failureReason);
+                failureReason: parsed.FailureReason);
 
             operation.AddEvidence(evidence);
             _dbContext.VerificationEvidences.Add(evidence);
 
-            if (resultStatus == VerificationResultStatus.Match)
+            if (parsed.Result == VerificationResultStatus.Match)
             {
                 operation.MarkCompleted();
                 _outboxService.Write(new VerificationCompletedDomainEvent(
-                    operation.Id, operation.Reference, operation.VerificationType, operation.Capability, provider, resultStatus, operation.UserId, operation.OrganizationId, DateTime.UtcNow));
+                    operation.Id, operation.Reference, operation.VerificationType, operation.Capability, provider, parsed.Result, operation.UserId, operation.OrganizationId, DateTime.UtcNow));
+
+                // Individual KYC Automation: Legal Demographic Sync, Promotion, CDD Tier, & Virtual Account Creation
+                if (operation.VerificationType == VerificationType.IndividualKyc && !string.IsNullOrWhiteSpace(operation.UserId))
+                {
+                    await HandleIndividualKycMatchAsync(operation.UserId, parsed, cancellationToken).ConfigureAwait(false);
+                }
             }
-            else if (resultStatus == VerificationResultStatus.ReviewRequired)
+            else if (parsed.Result == VerificationResultStatus.ReviewRequired)
             {
-                operation.MarkReviewRequired(failureReason ?? "Flagged by provider callback.");
+                operation.MarkReviewRequired(parsed.FailureReason ?? "Flagged by provider callback.");
             }
             else
             {
-                operation.MarkFailed(failureReason ?? "Verification rejected by provider callback.");
+                operation.MarkFailed(parsed.FailureReason ?? "Verification rejected by provider callback.");
                 _outboxService.Write(new VerificationFailedDomainEvent(
-                    operation.Id, operation.Reference, operation.VerificationType, operation.Capability, failureReason ?? "Failed", operation.UserId, operation.OrganizationId, DateTime.UtcNow));
+                    operation.Id, operation.Reference, operation.VerificationType, operation.Capability, parsed.FailureReason ?? "Failed", operation.UserId, operation.OrganizationId, DateTime.UtcNow));
             }
 
             webhookEvent.MarkProcessed(operation.Id);
@@ -149,9 +178,111 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
             webhookEvent.MarkProcessed();
         }
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         return ComplianceWebhookProcessingResult.Processed(providerEventId, "Compliance webhook processed successfully.", operation?.Id);
+    }
+
+    private async Task HandleIndividualKycMatchAsync(
+        string userId,
+        ParsedWebhookData parsed,
+        CancellationToken cancellationToken)
+    {
+        var profile = await _dbContext.IndividualProfiles
+            .FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (profile == null)
+            return;
+
+        // 1. Synchronize legal demographics with official registry records (NIBSS/NIMC)
+        if (!string.IsNullOrWhiteSpace(parsed.FirstName) && !string.IsNullOrWhiteSpace(parsed.LastName))
+        {
+            profile.SynchronizeLegalIdentity(parsed.FirstName, parsed.LastName, parsed.MiddleName, parsed.PhotoUrl);
+
+            _dbContext.AuditLogs.Add(AuditLog.Create(
+                actorId: "DojahWebhook",
+                action: AuditActions.KycVerified,
+                resourceType: AuditResourceTypes.User,
+                resourceId: profile.UserId,
+                afterJson: JsonSerializer.Serialize(new
+                {
+                    FirstName = profile.FirstName,
+                    LastName = profile.LastName,
+                    MiddleName = profile.MiddleName,
+                    Source = "Official Registry via Dojah Webhook"
+                })));
+        }
+
+        // 2. Promote KYC status to Verified if not already verified
+        var oldKycStatus = profile.KycStatus;
+        if (profile.KycStatus != KycStatus.Verified)
+        {
+            profile.SetKycStatus(KycStatus.Verified);
+            _outboxService.Write(new KycStatusChangedDomainEvent(
+                profile.UserId,
+                oldKycStatus,
+                KycStatus.Verified,
+                "Verified via automated provider identity match.",
+                DateTime.UtcNow));
+        }
+
+        // 3. Auto-approve pending KYC documents for this user
+        var pendingDocs = await _dbContext.KycDocuments
+            .Where(d => d.UserId == profile.UserId && d.Status == KycStatus.Pending)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var doc in pendingDocs)
+        {
+            doc.Approve("DojahAutomatedSystem", DateTime.UtcNow);
+        }
+
+        // 4. Record verified BVN document if available and not yet recorded
+        if (!string.IsNullOrWhiteSpace(parsed.VerifiedBvn))
+        {
+            var hasBvnDoc = await _dbContext.KycDocuments
+                .AnyAsync(d => d.UserId == profile.UserId && d.DocumentNumber == parsed.VerifiedBvn, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!hasBvnDoc)
+            {
+                var bvnDoc = new KycDocument(profile.UserId, DocumentType.Nimc, parsed.VerifiedBvn, "dojah://verified-bvn");
+                bvnDoc.Approve("DojahAutomatedSystem", DateTime.UtcNow);
+                _dbContext.KycDocuments.Add(bvnDoc);
+            }
+        }
+
+        // 5. Re-evaluate CDD and statutory CBN KYC Tier (Tier 1/2/3)
+        if (_cddService != null)
+        {
+            try
+            {
+                await _cddService.EvaluateCddAsync(RiskSubjectType.Individual, profile.UserId, null, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error evaluating CDD profile for user {UserId} following KYC verification match.", profile.UserId);
+            }
+        }
+
+        // 6. Auto-provision dedicated Monnify NUBAN virtual account with verified legal details and BVN
+        if (_virtualAccountService != null)
+        {
+            try
+            {
+                await _virtualAccountService.ProvisionIndividualVirtualAccountAsync(
+                    profile.UserId,
+                    Currency.NGN,
+                    PaymentProvider.Monnify,
+                    parsed.VerifiedBvn,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error automatically provisioning Monnify virtual account for user {UserId} after KYC verification.", profile.UserId);
+            }
+        }
     }
 
     private string? GetProviderWebhookSecret(VerificationProvider provider) =>
@@ -163,8 +294,22 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
             _ => null
         };
 
-    private static (string? EventId, string? EventType, string? Reference, VerificationResultStatus Result, decimal? Confidence, string? FailureReason)
-        ParseWebhookPayload(VerificationProvider provider, string rawPayload)
+    private sealed record ParsedWebhookData(
+        string? EventId,
+        string? EventType,
+        string? Reference,
+        VerificationResultStatus Result,
+        decimal? Confidence,
+        string? FailureReason,
+        string? VerifiedBvn = null,
+        string? VerifiedNin = null,
+        string? FirstName = null,
+        string? LastName = null,
+        string? MiddleName = null,
+        string? PhotoUrl = null,
+        string? UserId = null);
+
+    private static ParsedWebhookData ParseWebhookPayload(VerificationProvider provider, string rawPayload)
     {
         try
         {
@@ -173,18 +318,98 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
 
             if (provider == VerificationProvider.Dojah)
             {
+                var dataElement = root.TryGetProperty("data", out var dProp) && dProp.ValueKind == JsonValueKind.Object
+                    ? dProp
+                    : root;
+
                 var eventId = root.TryGetProperty("id", out var idProp) ? idProp.GetString() :
-                              root.TryGetProperty("event_id", out var evtIdProp) ? evtIdProp.GetString() : null;
+                              root.TryGetProperty("event_id", out var evtIdProp) ? evtIdProp.GetString() :
+                              dataElement.TryGetProperty("id", out var dIdProp) ? dIdProp.GetString() : null;
+
                 var eventType = root.TryGetProperty("event", out var evtProp) ? evtProp.GetString() : "verification";
+
                 var refId = root.TryGetProperty("reference_id", out var refProp) ? refProp.GetString() :
-                            root.TryGetProperty("reference", out var rProp) ? rProp.GetString() : null;
-                var statusStr = root.TryGetProperty("status", out var stProp) ? stProp.GetString() : null;
+                            root.TryGetProperty("reference", out var rProp) ? rProp.GetString() :
+                            dataElement.TryGetProperty("reference_id", out var dRefProp) ? dRefProp.GetString() :
+                            dataElement.TryGetProperty("reference", out var dRProp) ? dRProp.GetString() : null;
+
+                var statusStr = dataElement.TryGetProperty("status", out var stProp) ? stProp.GetString() :
+                                root.TryGetProperty("status", out var rStProp) ? rStProp.GetString() : null;
 
                 var isSuccess = string.Equals(statusStr, "success", StringComparison.OrdinalIgnoreCase) ||
                                 string.Equals(statusStr, "valid", StringComparison.OrdinalIgnoreCase) ||
                                 string.Equals(statusStr, "approved", StringComparison.OrdinalIgnoreCase);
 
-                return (eventId, eventType, refId, isSuccess ? VerificationResultStatus.Match : VerificationResultStatus.Mismatch, 100m, null);
+                // Extract metadata (userId and internal reference)
+                string? metadataUserId = null;
+                if (dataElement.TryGetProperty("metadata", out var metaProp) || root.TryGetProperty("metadata", out metaProp))
+                {
+                    if (metaProp.TryGetProperty("user_id", out var mUserProp))
+                        metadataUserId = mUserProp.GetString();
+
+                    if (string.IsNullOrWhiteSpace(refId) && metaProp.TryGetProperty("reference", out var mRefProp))
+                        refId = mRefProp.GetString();
+                    else if (string.IsNullOrWhiteSpace(refId) && metaProp.TryGetProperty("reference_id", out var mRefIdProp))
+                        refId = mRefIdProp.GetString();
+                }
+
+                // Extract BVN & NIN
+                string? bvn = null;
+                string? nin = null;
+                if (dataElement.TryGetProperty("bvn", out var bvnProp) && bvnProp.ValueKind == JsonValueKind.String)
+                    bvn = bvnProp.GetString();
+                if (dataElement.TryGetProperty("nin", out var ninProp) && ninProp.ValueKind == JsonValueKind.String)
+                    nin = ninProp.GetString();
+
+                if (dataElement.TryGetProperty("verification", out var vProp) && vProp.ValueKind == JsonValueKind.Object)
+                {
+                    if (string.IsNullOrWhiteSpace(bvn) && vProp.TryGetProperty("bvn", out var vbProp) && vbProp.ValueKind == JsonValueKind.Object)
+                    {
+                        if (vbProp.TryGetProperty("value", out var vbVal))
+                            bvn = vbVal.GetString();
+                    }
+                    if (string.IsNullOrWhiteSpace(nin) && vProp.TryGetProperty("nin", out var vnProp) && vnProp.ValueKind == JsonValueKind.Object)
+                    {
+                        if (vnProp.TryGetProperty("value", out var vnVal))
+                            nin = vnVal.GetString();
+                    }
+                }
+
+                // Extract legal demographics
+                string? firstName = null;
+                string? lastName = null;
+                string? middleName = null;
+                string? photoUrl = null;
+
+                if (dataElement.TryGetProperty("user_data", out var uProp) && uProp.ValueKind == JsonValueKind.Object)
+                {
+                    if (uProp.TryGetProperty("first_name", out var fnProp)) firstName = fnProp.GetString();
+                    if (uProp.TryGetProperty("last_name", out var lnProp)) lastName = lnProp.GetString();
+                    if (uProp.TryGetProperty("middle_name", out var mnProp)) middleName = mnProp.GetString();
+                    if (uProp.TryGetProperty("photo", out var phProp)) photoUrl = phProp.GetString();
+                }
+
+                if (string.IsNullOrWhiteSpace(firstName) && dataElement.TryGetProperty("first_name", out var dfnProp))
+                    firstName = dfnProp.GetString();
+                if (string.IsNullOrWhiteSpace(lastName) && dataElement.TryGetProperty("last_name", out var dlnProp))
+                    lastName = dlnProp.GetString();
+                if (string.IsNullOrWhiteSpace(middleName) && dataElement.TryGetProperty("middle_name", out var dmnProp))
+                    middleName = dmnProp.GetString();
+
+                return new ParsedWebhookData(
+                    EventId: eventId,
+                    EventType: eventType,
+                    Reference: refId,
+                    Result: isSuccess ? VerificationResultStatus.Match : VerificationResultStatus.Mismatch,
+                    Confidence: 100m,
+                    FailureReason: isSuccess ? null : "Verification reported failure status by Dojah.",
+                    VerifiedBvn: bvn,
+                    VerifiedNin: nin,
+                    FirstName: firstName,
+                    LastName: lastName,
+                    MiddleName: middleName,
+                    PhotoUrl: photoUrl,
+                    UserId: metadataUserId);
             }
 
             if (provider == VerificationProvider.SmileId)
@@ -197,10 +422,11 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
                                  root.TryGetProperty("result_text", out var rtProp2) ? rtProp2.GetString() : null;
 
                 string? refId = null;
+                string? userId = null;
                 if (root.TryGetProperty("PartnerParams", out var ppProp))
                 {
-                    refId = ppProp.TryGetProperty("user_id", out var ppUser) ? ppUser.GetString() :
-                            ppProp.TryGetProperty("job_id", out var ppJob) ? ppJob.GetString() : null;
+                    userId = ppProp.TryGetProperty("user_id", out var ppUser) ? ppUser.GetString() : null;
+                    refId = ppProp.TryGetProperty("job_id", out var ppJob) ? ppJob.GetString() : userId;
                 }
                 refId ??= jobId;
 
@@ -223,7 +449,14 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
                     _ => VerificationResultStatus.Mismatch
                 };
 
-                return (jobId, "job.completed", refId, resultStatus, confidence, resultText);
+                return new ParsedWebhookData(
+                    EventId: jobId,
+                    EventType: "job.completed",
+                    Reference: refId,
+                    Result: resultStatus,
+                    Confidence: confidence,
+                    FailureReason: resultText,
+                    UserId: userId);
             }
 
             if (provider == VerificationProvider.Ninja)
@@ -233,7 +466,13 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
                 var eventType = root.TryGetProperty("event", out var eProp) ? eProp.GetString() : "verification.result";
                 var success = root.TryGetProperty("success", out var sProp) && sProp.GetBoolean();
 
-                return (refId, eventType, refId, success ? VerificationResultStatus.Match : VerificationResultStatus.Mismatch, 100m, null);
+                return new ParsedWebhookData(
+                    EventId: refId,
+                    EventType: eventType,
+                    Reference: refId,
+                    Result: success ? VerificationResultStatus.Match : VerificationResultStatus.Mismatch,
+                    Confidence: 100m,
+                    FailureReason: success ? null : "Verification failed via Ninja.");
             }
         }
         catch
@@ -241,6 +480,6 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
             // Fallback for non-JSON or unstructured payloads
         }
 
-        return (null, null, null, VerificationResultStatus.Mismatch, null, "Unrecognized webhook format");
+        return new ParsedWebhookData(null, null, null, VerificationResultStatus.Mismatch, null, "Unrecognized webhook format");
     }
 }

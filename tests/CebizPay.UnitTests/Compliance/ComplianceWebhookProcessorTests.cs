@@ -167,4 +167,84 @@ public sealed class ComplianceWebhookProcessorTests
 
         _outboxService.Received(1).Write(Arg.Any<VerificationCompletedDomainEvent>());
     }
+
+    [Fact]
+    public async Task ProcessWebhookAsync_ValidDojahKycSuccess_SynchronizesDemographicsAndProvisionsMonnifyVirtualAccount()
+    {
+        _signatureVerifier.VerifySignature(Arg.Any<VerificationProvider>(), Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<string>())
+            .Returns(true);
+
+        using var dbContext = CreateDbContext();
+
+        var userId = "user_dojah_kyc_01";
+        var profile = new CebizPay.Domain.Entities.IndividualProfile(userId, "OldFirst", "OldLast");
+        dbContext.IndividualProfiles.Add(profile);
+
+        var op = VerificationOperation.Create(
+            "CBZKYC-DOJAH-TEST-REF-001",
+            VerificationType.IndividualKyc,
+            VerificationCapability.Identity,
+            VerificationProvider.Dojah,
+            userId: userId);
+
+        op.MarkPendingCallback();
+        dbContext.VerificationOperations.Add(op);
+        await dbContext.SaveChangesAsync();
+
+        var cddService = Substitute.For<ICddService>();
+        var virtualAccountService = Substitute.For<CebizPay.Application.Common.Interfaces.Payments.IVirtualAccountService>();
+
+        var processor = new ComplianceWebhookProcessor(
+            dbContext,
+            _signatureVerifier,
+            _outboxService,
+            _dojahOptions,
+            _smileIdOptions,
+            _ninjaOptions,
+            NullLogger<ComplianceWebhookProcessor>.Instance,
+            cddService,
+            virtualAccountService);
+
+        var payload = """
+        {
+            "event_id": "evt_dojah_success_999",
+            "event": "verification.completed",
+            "reference": "CBZKYC-DOJAH-TEST-REF-001",
+            "status": "success",
+            "data": {
+                "first_name": "Emeka",
+                "last_name": "Okonkwo",
+                "middle_name": "Chukwudi",
+                "bvn": "22233344455",
+                "photo": "https://res.cloudinary.com/dojah-selfie.jpg"
+            }
+        }
+        """;
+
+        var result = await processor.ProcessWebhookAsync(
+            VerificationProvider.Dojah,
+            payload,
+            new Dictionary<string, string>());
+
+        Assert.Equal(ComplianceWebhookProcessingStatus.Processed, result.Status);
+
+        // Verify profile updated
+        var updatedProfile = await dbContext.IndividualProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
+        Assert.NotNull(updatedProfile);
+        Assert.Equal("Emeka", updatedProfile.FirstName);
+        Assert.Equal("Okonkwo", updatedProfile.LastName);
+        Assert.Equal("Chukwudi", updatedProfile.MiddleName);
+        Assert.Equal(CebizPay.Domain.Enums.KycStatus.Verified, updatedProfile.KycStatus);
+
+        // Verify CDD evaluated
+        await cddService.Received(1).EvaluateCddAsync(RiskSubjectType.Individual, userId, null, Arg.Any<CancellationToken>());
+
+        // Verify Monnify virtual account provisioned with verified BVN
+        await virtualAccountService.Received(1).ProvisionIndividualVirtualAccountAsync(
+            userId,
+            CebizPay.Domain.Finance.Enums.Currency.NGN,
+            CebizPay.Domain.Payments.Enums.PaymentProvider.Monnify,
+            "22233344455",
+            Arg.Any<CancellationToken>());
+    }
 }

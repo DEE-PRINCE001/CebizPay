@@ -97,4 +97,11 @@ public interface IVerificationOrchestrator
         string cacNumber,
         string? idempotencyKey = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Generates Dojah KYC widget configuration and correlated operation reference for client-side onboarding.
+    /// </summary>
+    Task<DojahWidgetConfigDto> GetDojahWidgetConfigAsync(
+        string userId,
+        CancellationToken cancellationToken = default);
 }

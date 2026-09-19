@@ -3,12 +3,15 @@ using System.Diagnostics;
 using CebizPay.Application.Common.Interfaces.Compliance;
 using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Persistence;
+using CebizPay.Application.Common.Interfaces.Security;
 using CebizPay.Domain.Compliance.Entities;
 using CebizPay.Domain.Compliance.Enums;
 using CebizPay.Domain.Compliance.Events;
 using CebizPay.Domain.Enums;
+using CebizPay.Infrastructure.Compliance.Dojah;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace CebizPay.Infrastructure.Compliance.Common;
 
@@ -18,10 +21,14 @@ namespace CebizPay.Infrastructure.Compliance.Common;
 /// </summary>
 public sealed class VerificationOrchestrator : IVerificationOrchestrator
 {
+    private static readonly string[] DefaultEnabledPages = ["government-data", "selfie"];
+
     private readonly IApplicationDbContext _dbContext;
     private readonly IVerificationRoutingService _routingService;
     private readonly IVerificationProviderFactory _providerFactory;
     private readonly IOutboxService _outboxService;
+    private readonly IIdentityService? _identityService;
+    private readonly DojahOptions _dojahOptions;
     private readonly ILogger<VerificationOrchestrator> _logger;
 
     public VerificationOrchestrator(
@@ -29,13 +36,27 @@ public sealed class VerificationOrchestrator : IVerificationOrchestrator
         IVerificationRoutingService routingService,
         IVerificationProviderFactory providerFactory,
         IOutboxService outboxService,
-        ILogger<VerificationOrchestrator> logger)
+        ILogger<VerificationOrchestrator>? logger)
+        : this(dbContext, routingService, providerFactory, outboxService, null, logger, null)
+    {
+    }
+
+    public VerificationOrchestrator(
+        IApplicationDbContext dbContext,
+        IVerificationRoutingService routingService,
+        IVerificationProviderFactory providerFactory,
+        IOutboxService outboxService,
+        IOptions<DojahOptions>? dojahOptions = null,
+        ILogger<VerificationOrchestrator>? logger = null,
+        IIdentityService? identityService = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _routingService = routingService ?? throw new ArgumentNullException(nameof(routingService));
         _providerFactory = providerFactory ?? throw new ArgumentNullException(nameof(providerFactory));
         _outboxService = outboxService ?? throw new ArgumentNullException(nameof(outboxService));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _dojahOptions = dojahOptions?.Value ?? new DojahOptions();
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<VerificationOrchestrator>.Instance;
+        _identityService = identityService;
     }
 
     public async Task<VerificationOperationResponse> VerifyBvnAsync(
@@ -213,6 +234,57 @@ public sealed class VerificationOrchestrator : IVerificationOrchestrator
                 return p.GetBeneficialOwnersAsync(cacNumber, ct);
             },
             cancellationToken: cancellationToken);
+    }
+
+    public async Task<DojahWidgetConfigDto> GetDojahWidgetConfigAsync(
+        string userId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+            throw new ArgumentException("UserId is required to generate Dojah widget configuration.", nameof(userId));
+
+        var profile = await _dbContext.IndividualProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken)
+            .ConfigureAwait(false);
+
+        UserIdentityDetails? user = null;
+        if (_identityService != null)
+        {
+            user = await _identityService.GetUserIdentityByIdAsync(userId, cancellationToken).ConfigureAwait(false);
+        }
+
+        var reference = $"CBZKYC-{Guid.NewGuid():N}"[..24].ToUpperInvariant();
+
+        var operation = VerificationOperation.Create(
+            reference: reference,
+            verificationType: VerificationType.IndividualKyc,
+            capability: VerificationCapability.Identity,
+            primaryProvider: VerificationProvider.Dojah,
+            userId: userId,
+            organizationId: null,
+            idempotencyKey: null);
+
+        _dbContext.VerificationOperations.Add(operation);
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        _outboxService.Write(new VerificationInitiatedDomainEvent(
+            operation.Id, operation.Reference, VerificationType.IndividualKyc, VerificationCapability.Identity, VerificationProvider.Dojah, userId, null, DateTime.UtcNow));
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        var userData = new DojahWidgetUserDataDto(
+            FirstName: profile?.FirstName,
+            LastName: profile?.LastName,
+            Email: user?.Email,
+            Phone: user?.PhoneNumber);
+
+        return new DojahWidgetConfigDto(
+            AppId: _dojahOptions.AppId,
+            PublicKey: _dojahOptions.PublicKey,
+            ReferenceId: reference,
+            WidgetType: "custom",
+            UserData: userData,
+            EnabledPages: DefaultEnabledPages);
     }
 
     private async Task<VerificationOperationResponse> ExecuteVerificationAsync(

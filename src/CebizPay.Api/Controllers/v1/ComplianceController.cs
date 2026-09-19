@@ -31,6 +31,18 @@ public sealed class ComplianceController : ControllerBase
     }
 
     /// <summary>
+    /// Generates client configuration and reference ID for initializing the Dojah KYC widget on the frontend.
+    /// </summary>
+    [HttpPost("kyc/widget-config")]
+    [ProducesResponseType(typeof(DojahWidgetConfigDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> GetWidgetConfig(CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new GetDojahWidgetConfigCommand(), cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Verifies an individual's Bank Verification Number (BVN) against official NIBSS registry records.
     /// </summary>
     [HttpPost("kyc/bvn")]

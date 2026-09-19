@@ -2,6 +2,7 @@ using CebizPay.Application.Common.Interfaces.Messaging;
 using CebizPay.Application.Common.Interfaces.Payments;
 using CebizPay.Domain.Auditing;
 using CebizPay.Domain.Entities;
+using CebizPay.Domain.Enums;
 using CebizPay.Domain.Finance.Enums;
 using CebizPay.Domain.Payments.Entities;
 using CebizPay.Domain.Payments.Enums;
@@ -48,10 +49,21 @@ public sealed partial class VirtualAccountService : IVirtualAccountService
     }
 
     /// <inheritdoc/>
-    public async Task<VirtualAccountDto> ProvisionIndividualVirtualAccountAsync(
+    public Task<VirtualAccountDto> ProvisionIndividualVirtualAccountAsync(
         string individualId,
         Currency currency,
         PaymentProvider provider = PaymentProvider.Monnify,
+        CancellationToken cancellationToken = default)
+    {
+        return ProvisionIndividualVirtualAccountAsync(individualId, currency, provider, bvn: null, cancellationToken);
+    }
+
+    /// <inheritdoc/>
+    public async Task<VirtualAccountDto> ProvisionIndividualVirtualAccountAsync(
+        string individualId,
+        Currency currency,
+        PaymentProvider provider,
+        string? bvn,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(individualId))
@@ -79,7 +91,25 @@ public sealed partial class VirtualAccountService : IVirtualAccountService
             : $"User {individualId}";
         var email = $"{individualId}@cebizpay.internal";
         string? phone = null;
-        string? bvn = null;
+
+        var user = await _dbContext.Users
+            .FirstOrDefaultAsync(u => u.Id == individualId, cancellationToken)
+            .ConfigureAwait(false);
+        if (user != null)
+        {
+            if (!string.IsNullOrWhiteSpace(user.Email)) email = user.Email;
+            if (!string.IsNullOrWhiteSpace(user.PhoneNumber)) phone = user.PhoneNumber;
+        }
+
+        if (string.IsNullOrWhiteSpace(bvn))
+        {
+            var bvnDoc = await _dbContext.KycDocuments
+                .Where(d => d.UserId == individualId && d.Status == KycStatus.Verified && d.DocumentNumber.Length == 11)
+                .OrderByDescending(d => d.SubmittedAtUtc)
+                .FirstOrDefaultAsync(cancellationToken)
+                .ConfigureAwait(false);
+            bvn = bvnDoc?.DocumentNumber;
+        }
 
         var providerAdapter = GetProvider(provider);
         var request = new VirtualAccountCreationRequest(

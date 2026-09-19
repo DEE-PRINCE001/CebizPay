@@ -116,4 +116,37 @@ public sealed class IndividualProfileTests
         var ex = Assert.Throws<InvalidOperationException>(() => profile.Reactivate());
         Assert.Equal("Individual profile is not suspended.", ex.Message);
     }
+
+    [Fact]
+    public void SynchronizeLegalIdentity_ValidDemographics_UpdatesNamesAndAvatar()
+    {
+        // Arrange
+        var profile = new IndividualProfile("user-123", "John", "Doe");
+
+        // Act
+        profile.SynchronizeLegalIdentity("Emeka", "Okonkwo", "Chukwudi", "https://res.cloudinary.com/avatar.jpg");
+
+        // Assert
+        Assert.Equal("Emeka", profile.FirstName);
+        Assert.Equal("Okonkwo", profile.LastName);
+        Assert.Equal("Chukwudi", profile.MiddleName);
+        Assert.Equal("https://res.cloudinary.com/avatar.jpg", profile.AvatarUrl);
+        Assert.NotNull(profile.UpdatedAtUtc);
+    }
+
+    [Theory]
+    [InlineData(null, "Doe")]
+    [InlineData("", "Doe")]
+    [InlineData("   ", "Doe")]
+    [InlineData("John", null)]
+    [InlineData("John", "")]
+    [InlineData("John", "   ")]
+    public void SynchronizeLegalIdentity_InvalidNames_ThrowsArgumentException(string? firstName, string? lastName)
+    {
+        // Arrange
+        var profile = new IndividualProfile("user-123", "John", "Doe");
+
+        // Act & Assert
+        Assert.Throws<ArgumentException>(() => profile.SynchronizeLegalIdentity(firstName!, lastName!));
+    }
 }

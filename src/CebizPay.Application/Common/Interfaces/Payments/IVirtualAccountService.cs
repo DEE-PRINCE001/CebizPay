@@ -18,6 +18,16 @@ public interface IVirtualAccountService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Provisions or retrieves the primary persistent dedicated virtual account for an Individual with an explicit BVN.
+    /// </summary>
+    Task<VirtualAccountDto> ProvisionIndividualVirtualAccountAsync(
+        string individualId,
+        Currency currency,
+        PaymentProvider provider,
+        string? bvn,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Provisions or retrieves the primary persistent dedicated virtual account for an Organization.
     /// </summary>
     Task<VirtualAccountDto> ProvisionOrganizationVirtualAccountAsync(

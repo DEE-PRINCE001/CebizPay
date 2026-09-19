@@ -70,6 +70,28 @@ public class IndividualProfile
     }
 
     /// <summary>
+    /// Synchronizes official legal identity details confirmed by national registry (NIBSS/NIMC).
+    /// </summary>
+    public void SynchronizeLegalIdentity(string firstName, string lastName, string? middleName = null, string? avatarUrl = null)
+    {
+        if (string.IsNullOrWhiteSpace(firstName))
+            throw new ArgumentException("Legal first name is required for synchronization.", nameof(firstName));
+        if (string.IsNullOrWhiteSpace(lastName))
+            throw new ArgumentException("Legal last name is required for synchronization.", nameof(lastName));
+
+        FirstName = firstName.Trim();
+        LastName = lastName.Trim();
+
+        if (!string.IsNullOrWhiteSpace(middleName))
+            MiddleName = middleName.Trim();
+
+        if (!string.IsNullOrWhiteSpace(avatarUrl) && string.IsNullOrWhiteSpace(AvatarUrl))
+            AvatarUrl = avatarUrl.Trim();
+
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
     /// Updates the KYC status with lifecycle transition validation.
     /// </summary>
     public void SetKycStatus(KycStatus newStatus)

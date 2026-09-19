@@ -532,3 +532,38 @@ public sealed class GetBeneficialOwnersCommandHandler : IRequestHandler<GetBenef
             cancellationToken);
     }
 }
+
+/// <summary>
+/// Command to generate client-side initialization configuration for the Dojah KYC widget.
+/// </summary>
+public sealed record GetDojahWidgetConfigCommand(
+    string? TargetUserId = null) : IRequest<DojahWidgetConfigDto>;
+
+public sealed class GetDojahWidgetConfigCommandHandler : IRequestHandler<GetDojahWidgetConfigCommand, DojahWidgetConfigDto>
+{
+    private readonly IVerificationOrchestrator _orchestrator;
+    private readonly ICurrentUserService _currentUserService;
+    private readonly IApplicationDbContext? _dbContext;
+
+    public GetDojahWidgetConfigCommandHandler(
+        IVerificationOrchestrator orchestrator,
+        ICurrentUserService currentUserService,
+        IApplicationDbContext? dbContext = null)
+    {
+        _orchestrator = orchestrator;
+        _currentUserService = currentUserService;
+        _dbContext = dbContext;
+    }
+
+    public async Task<DojahWidgetConfigDto> Handle(GetDojahWidgetConfigCommand request, CancellationToken cancellationToken)
+    {
+        await ComplianceSecurityHelper.VerifyTargetUserAccessAsync(request.TargetUserId, _currentUserService, _dbContext, cancellationToken);
+        var effectiveUserId = !string.IsNullOrWhiteSpace(request.TargetUserId) ? request.TargetUserId : _currentUserService.UserId;
+
+        if (string.IsNullOrWhiteSpace(effectiveUserId))
+            throw new UnauthorizedAccessException("User must be authenticated to initialize KYC verification widget.");
+
+        return await _orchestrator.GetDojahWidgetConfigAsync(effectiveUserId, cancellationToken);
+    }
+}
+
