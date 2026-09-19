@@ -1,5 +1,6 @@
 using CebizPay.Application.Common.Interfaces.Finance;
 using CebizPay.Application.Common.Interfaces.Messaging;
+using CebizPay.Application.Common.Interfaces.Payments;
 using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Domain.Entities;
 using CebizPay.Domain.Enums;
@@ -7,6 +8,7 @@ using CebizPay.Domain.Events;
 using CebizPay.Domain.Finance.Enums;
 using FluentValidation;
 using MediatR;
+using Microsoft.Extensions.Logging;
 
 namespace CebizPay.Application.UseCases.Organizations.ReviewKyb;
 
@@ -54,10 +56,18 @@ public sealed class ReviewKybCommandValidator : AbstractValidator<ReviewKybComma
 /// </summary>
 public sealed class ReviewKybCommandHandler : IRequestHandler<ReviewKybCommand, ReviewKybResponseDto>
 {
+    private static readonly Action<ILogger, Guid, Exception?> LogVirtualAccountProvisioningFailed =
+        LoggerMessage.Define<Guid>(
+            LogLevel.Error,
+            new EventId(1, nameof(LogVirtualAccountProvisioningFailed)),
+            "Failed to auto-provision dedicated Monnify virtual account for organization {OrganizationId}");
+
     private readonly IApplicationDbContext _dbContext;
     private readonly IEventPublisher _eventPublisher;
     private readonly CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? _currentUserService;
     private readonly IWalletService? _walletService;
+    private readonly IVirtualAccountService? _virtualAccountService;
+    private readonly ILogger<ReviewKybCommandHandler>? _logger;
 
     /// <summary>
     /// Initializes a new instance of <see cref="ReviewKybCommandHandler"/>.
@@ -66,12 +76,16 @@ public sealed class ReviewKybCommandHandler : IRequestHandler<ReviewKybCommand, 
         IApplicationDbContext dbContext,
         IEventPublisher eventPublisher,
         CebizPay.Application.Common.Interfaces.Security.ICurrentUserService? currentUserService = null,
-        IWalletService? walletService = null)
+        IWalletService? walletService = null,
+        IVirtualAccountService? virtualAccountService = null,
+        ILogger<ReviewKybCommandHandler>? logger = null)
     {
         _dbContext = dbContext;
         _eventPublisher = eventPublisher;
         _currentUserService = currentUserService;
         _walletService = walletService;
+        _virtualAccountService = virtualAccountService;
+        _logger = logger;
     }
 
     /// <inheritdoc/>
@@ -118,6 +132,25 @@ public sealed class ReviewKybCommandHandler : IRequestHandler<ReviewKybCommand, 
             if (_walletService != null)
             {
                 await _walletService.GetOrCreateOrganizationWalletAsync(org.Id, Currency.NGN, cancellationToken);
+            }
+
+            if (_virtualAccountService != null)
+            {
+                try
+                {
+                    await _virtualAccountService.ProvisionOrganizationVirtualAccountAsync(
+                        org.Id,
+                        Currency.NGN,
+                        CebizPay.Domain.Payments.Enums.PaymentProvider.Monnify,
+                        cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    if (_logger != null)
+                    {
+                        LogVirtualAccountProvisioningFailed(_logger, org.Id, ex);
+                    }
+                }
             }
         }
         else if (request.NewStatus == KybStatus.Rejected)

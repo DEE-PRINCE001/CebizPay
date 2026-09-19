@@ -111,6 +111,28 @@ public class Organization
     }
 
     /// <summary>
+    /// Sets or updates the CAC certificate document URL.
+    /// </summary>
+    public void SetCacCertificateUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            throw new ArgumentException("CAC certificate URL is required.", nameof(url));
+        CacCertificateUrl = url.Trim();
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Sets or updates the company logo URL.
+    /// </summary>
+    public void SetLogoUrl(string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+            throw new ArgumentException("Logo URL is required.", nameof(url));
+        LogoUrl = url.Trim();
+        UpdatedAtUtc = DateTime.UtcNow;
+    }
+
+    /// <summary>
     /// Executes a controlled organization status transition.
     /// </summary>
     public void TransitionStatus(OrganizationStatus newStatus, string? reason = null)
