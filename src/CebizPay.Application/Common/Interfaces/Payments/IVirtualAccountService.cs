@@ -14,7 +14,7 @@ public interface IVirtualAccountService
     Task<VirtualAccountDto> ProvisionIndividualVirtualAccountAsync(
         string individualId,
         Currency currency,
-        PaymentProvider provider = PaymentProvider.Flutterwave,
+        PaymentProvider provider = PaymentProvider.Monnify,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -23,7 +23,7 @@ public interface IVirtualAccountService
     Task<VirtualAccountDto> ProvisionOrganizationVirtualAccountAsync(
         Guid organizationId,
         Currency currency,
-        PaymentProvider provider = PaymentProvider.Flutterwave,
+        PaymentProvider provider = PaymentProvider.Monnify,
         CancellationToken cancellationToken = default);
 
     /// <summary>

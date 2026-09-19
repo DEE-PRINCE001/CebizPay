@@ -51,7 +51,7 @@ public sealed partial class VirtualAccountService : IVirtualAccountService
     public async Task<VirtualAccountDto> ProvisionIndividualVirtualAccountAsync(
         string individualId,
         Currency currency,
-        PaymentProvider provider = PaymentProvider.Flutterwave,
+        PaymentProvider provider = PaymentProvider.Monnify,
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(individualId))
@@ -149,7 +149,7 @@ public sealed partial class VirtualAccountService : IVirtualAccountService
     public async Task<VirtualAccountDto> ProvisionOrganizationVirtualAccountAsync(
         Guid organizationId,
         Currency currency,
-        PaymentProvider provider = PaymentProvider.Flutterwave,
+        PaymentProvider provider = PaymentProvider.Monnify,
         CancellationToken cancellationToken = default)
     {
         if (organizationId == Guid.Empty)

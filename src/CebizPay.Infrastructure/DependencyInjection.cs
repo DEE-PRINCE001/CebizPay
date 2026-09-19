@@ -254,6 +254,13 @@ public static class DependencyInjection
             .ValidateDataAnnotations()
             .ValidateOnStart();
 
+        // Configure Cloudinary Storage
+        services.AddOptions<CebizPay.Infrastructure.Storage.Cloudinary.CloudinaryOptions>()
+            .Bind(configuration.GetSection(CebizPay.Infrastructure.Storage.Cloudinary.CloudinaryOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services.AddScoped<CebizPay.Application.Common.Interfaces.Storage.ICloudinaryStorageService, CebizPay.Infrastructure.Storage.Cloudinary.CloudinaryStorageService>();
+
         // Compliance HTTP Clients
         services.AddHttpClient<CebizPay.Infrastructure.Compliance.Dojah.IDojahClient, CebizPay.Infrastructure.Compliance.Dojah.DojahClient>();
         services.AddHttpClient<CebizPay.Infrastructure.Compliance.SmileId.ISmileIdClient, CebizPay.Infrastructure.Compliance.SmileId.SmileIdClient>();

@@ -24,8 +24,8 @@ public sealed class VerificationRoutingServiceTests
 
     [Theory]
     [InlineData(VerificationCapability.Identity, VerificationProvider.Dojah)]
-    [InlineData(VerificationCapability.Biometrics, VerificationProvider.SmileId)]
-    [InlineData(VerificationCapability.Document, VerificationProvider.SmileId)]
+    [InlineData(VerificationCapability.Biometrics, VerificationProvider.Dojah)]
+    [InlineData(VerificationCapability.Document, VerificationProvider.Dojah)]
     [InlineData(VerificationCapability.AmlScreening, VerificationProvider.Dojah)]
     [InlineData(VerificationCapability.Business, VerificationProvider.Dojah)]
     [InlineData(VerificationCapability.BeneficialOwnership, VerificationProvider.Dojah)]

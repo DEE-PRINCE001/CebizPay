@@ -20,8 +20,8 @@ public sealed class VerificationRoutingService : IVerificationRoutingService
     private static readonly Dictionary<VerificationCapability, List<VerificationProvider>> DefaultRoutes = new()
     {
         [VerificationCapability.Identity] = new() { VerificationProvider.Dojah, VerificationProvider.SmileId, VerificationProvider.Ninja },
-        [VerificationCapability.Biometrics] = new() { VerificationProvider.SmileId, VerificationProvider.Dojah },
-        [VerificationCapability.Document] = new() { VerificationProvider.SmileId, VerificationProvider.Dojah },
+        [VerificationCapability.Biometrics] = new() { VerificationProvider.Dojah, VerificationProvider.SmileId },
+        [VerificationCapability.Document] = new() { VerificationProvider.Dojah, VerificationProvider.SmileId },
         [VerificationCapability.AmlScreening] = new() { VerificationProvider.Dojah, VerificationProvider.SmileId, VerificationProvider.Ninja },
         [VerificationCapability.Business] = new() { VerificationProvider.Dojah, VerificationProvider.Ninja, VerificationProvider.SmileId },
         [VerificationCapability.BeneficialOwnership] = new() { VerificationProvider.Dojah, VerificationProvider.SmileId, VerificationProvider.Ninja }
