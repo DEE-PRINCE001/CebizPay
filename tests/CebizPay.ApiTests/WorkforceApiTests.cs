@@ -255,6 +255,85 @@ public sealed class WorkforceApiTests
             Assert.Equal("Accepted", content.Status);
         }
     }
+
+    [Fact]
+    public async Task CreateDepartmentWithRoles_Returns201CreatedWithRolesDto()
+    {
+        var sender = Substitute.For<ISender>();
+        var orgContext = Substitute.For<ICurrentOrganizationContext>();
+        var userService = Substitute.For<ICurrentUserService>();
+
+        var orgId = Guid.NewGuid();
+        var deptId = Guid.NewGuid();
+        orgContext.CurrentOrganizationId.Returns(orgId);
+
+        var dto = new DepartmentWithRolesDto(
+            deptId,
+            orgId,
+            "UI/UX Design",
+            "Product design",
+            new List<RoleSummaryDto>
+            {
+                new(Guid.NewGuid(), "UI/UX Intern"),
+                new(Guid.NewGuid(), "Senior Designer")
+            },
+            DateTime.UtcNow);
+
+        sender.Send(Arg.Any<CreateDepartmentWithRolesCommand>(), Arg.Any<CancellationToken>())
+            .Returns(dto);
+
+        var (host, client) = await CreateTestServer(sender, orgContext, userService);
+        using (host)
+        {
+            var roles = new List<string> { "UI/UX Intern", "Senior Designer" };
+            var req = new CreateDepartmentWithRolesApiRequest("UI/UX Design", "Product design", roles);
+            var response = await client.PostAsJsonAsync("/api/v1/org/departments/with-roles", req);
+
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var content = await response.Content.ReadFromJsonAsync<DepartmentWithRolesDto>();
+            Assert.NotNull(content);
+            Assert.Equal(deptId, content.Id);
+            Assert.Equal(2, content.Roles.Count);
+        }
+    }
+
+    [Fact]
+    public async Task CreateSalaryLevelWithMembers_Returns201CreatedWithMembersDto()
+    {
+        var sender = Substitute.For<ISender>();
+        var orgContext = Substitute.For<ICurrentOrganizationContext>();
+        var userService = Substitute.For<ICurrentUserService>();
+
+        var orgId = Guid.NewGuid();
+        var levelId = Guid.NewGuid();
+        orgContext.CurrentOrganizationId.Returns(orgId);
+
+        var dto = new SalaryLevelWithMembersDto(
+            levelId,
+            orgId,
+            "Level 10",
+            500000.00m,
+            "NGN",
+            2,
+            DateTime.UtcNow);
+
+        sender.Send(Arg.Any<CreateSalaryLevelWithMembersCommand>(), Arg.Any<CancellationToken>())
+            .Returns(dto);
+
+        var (host, client) = await CreateTestServer(sender, orgContext, userService);
+        using (host)
+        {
+            var memberIds = new List<Guid> { Guid.NewGuid(), Guid.NewGuid() };
+            var req = new CreateSalaryLevelWithMembersApiRequest("Level 10", 500000.00m, "NGN", memberIds);
+            var response = await client.PostAsJsonAsync("/api/v1/org/levels/with-members", req);
+
+            Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+            var content = await response.Content.ReadFromJsonAsync<SalaryLevelWithMembersDto>();
+            Assert.NotNull(content);
+            Assert.Equal(levelId, content.Id);
+            Assert.Equal(2, content.AssignedStaffCount);
+        }
+    }
 }
 
 internal sealed class TestWorkforceAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
