@@ -141,7 +141,10 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
 
         if (existingEvent != null)
         {
-            if (existingEvent.Status == WebhookEventStatus.Failed || existingEvent.Status == WebhookEventStatus.DeadLetter)
+            if (existingEvent.Status == WebhookEventStatus.Failed
+                || existingEvent.Status == WebhookEventStatus.DeadLetter
+                || (existingEvent.Status == WebhookEventStatus.Received
+                    && !string.IsNullOrEmpty(existingEvent.ProcessingError)))
             {
                 existingEvent.ReactivateForRetry("Re-triggered via provider retry/redelivery for previously failed event", TimeSpan.Zero);
                 RecordAudit(AuditActions.WebhookReactivated, AuditResourceTypes.WebhookEvent, existingEvent.Id.ToString(),
@@ -596,71 +599,71 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         }
 
         // Post inbound double-entry credit through central ledger
-        await using var dbTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var (txn, funding) = await _ledgerPostingService.PostExternalFundingAccountCreditCoreAsync(
-                walletId: wallet.Id,
-                externalFundingAccountId: externalFundingAccount.Id,
-                grossAmount: parsed.Amount.Value,
-                feeAmount: feeAmount,
-                netCreditedAmount: netCreditedAmount,
-                providerFeeAmount: 0m,
-                currency: depositCurrency,
-                provider: provider,
-                providerTransactionReference: depositReference,
-                providerEventReference: parsed.ProviderEventId,
-                feePolicyId: feePolicyId,
-                feePolicyVersion: feePolicyVersion,
-                feeBearer: feeBearer,
-                channel: FundingChannel.VirtualAccount,
-                description: $"Inbound deposit via {provider} account {externalFundingAccount.AccountNumber}",
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+            return await ExecuteInTransactionAsync(async ct =>
+            {
+                var (txn, funding) = await _ledgerPostingService.PostExternalFundingAccountCreditCoreAsync(
+                    walletId: wallet.Id,
+                    externalFundingAccountId: externalFundingAccount.Id,
+                    grossAmount: parsed.Amount.Value,
+                    feeAmount: feeAmount,
+                    netCreditedAmount: netCreditedAmount,
+                    providerFeeAmount: 0m,
+                    currency: depositCurrency,
+                    provider: provider,
+                    providerTransactionReference: depositReference,
+                    providerEventReference: parsed.ProviderEventId,
+                    feePolicyId: feePolicyId,
+                    feePolicyVersion: feePolicyVersion,
+                    feeBearer: feeBearer,
+                    channel: FundingChannel.VirtualAccount,
+                    description: $"Inbound deposit via {provider} account {externalFundingAccount.AccountNumber}",
+                    cancellationToken: ct).ConfigureAwait(false);
 
-            RecordAudit(AuditActions.FundingReceived, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
-                JsonSerializer.Serialize(new
-                {
-                    AccountNumber = externalFundingAccount.AccountNumber,
-                    GrossAmount = parsed.Amount.Value,
-                    FeeAmount = feeAmount,
-                    NetCreditedAmount = netCreditedAmount,
-                    Currency = depositCurrency.ToString(),
-                    Reference = depositReference
-                }));
+                RecordAudit(AuditActions.FundingReceived, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
+                    JsonSerializer.Serialize(new
+                    {
+                        AccountNumber = externalFundingAccount.AccountNumber,
+                        GrossAmount = parsed.Amount.Value,
+                        FeeAmount = feeAmount,
+                        NetCreditedAmount = netCreditedAmount,
+                        Currency = depositCurrency.ToString(),
+                        Reference = depositReference
+                    }));
 
-            RecordAudit(AuditActions.PaymentFundingCompleted, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
-                JsonSerializer.Serialize(new
-                {
-                    FundingTransactionId = funding.Id,
-                    LedgerTransactionId = txn.Id,
-                    WalletId = wallet.Id,
-                    NetCreditedAmount = netCreditedAmount
-                }));
+                RecordAudit(AuditActions.PaymentFundingCompleted, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
+                    JsonSerializer.Serialize(new
+                    {
+                        FundingTransactionId = funding.Id,
+                        LedgerTransactionId = txn.Id,
+                        WalletId = wallet.Id,
+                        NetCreditedAmount = netCreditedAmount
+                    }));
 
-            _outboxService.Write(new ExternalFundingAccountDepositCompletedDomainEvent(
-                FundingTransactionId: funding.Id,
-                WalletId: wallet.Id,
-                ExternalFundingAccountId: externalFundingAccount.Id,
-                LedgerTransactionId: txn.Id,
-                GrossAmount: parsed.Amount.Value,
-                FeeAmount: feeAmount,
-                NetCreditedAmount: netCreditedAmount,
-                Currency: depositCurrency,
-                Provider: provider,
-                ProviderTransactionReference: depositReference,
-                OccurredOnUtc: DateTime.UtcNow));
+                _outboxService.Write(new ExternalFundingAccountDepositCompletedDomainEvent(
+                    FundingTransactionId: funding.Id,
+                    WalletId: wallet.Id,
+                    ExternalFundingAccountId: externalFundingAccount.Id,
+                    LedgerTransactionId: txn.Id,
+                    GrossAmount: parsed.Amount.Value,
+                    FeeAmount: feeAmount,
+                    NetCreditedAmount: netCreditedAmount,
+                    Currency: depositCurrency,
+                    Provider: provider,
+                    ProviderTransactionReference: depositReference,
+                    OccurredOnUtc: DateTime.UtcNow));
 
-            webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
-            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await dbTx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
+                await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
 
-            var currStr = depositCurrency.ToString();
-            LogVirtualAccountDepositSuccess(_logger, netCreditedAmount, currStr, wallet.Id);
-            return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "External funding account deposit credited.");
+                var currStr = depositCurrency.ToString();
+                LogVirtualAccountDepositSuccess(_logger, netCreditedAmount, currStr, wallet.Id);
+                return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "External funding account deposit credited.");
+            }, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
             LogVirtualAccountDepositException(_logger, parsed.ProviderEventId, ex);
             webhookEvent.ReleaseClaim($"Credit failure: {ex.Message}", TimeSpan.FromSeconds(10));
             await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -704,34 +707,34 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         var depositReference = parsed.ProviderReference ?? parsed.Reference ?? parsed.ProviderEventId;
 
         // Post inbound double-entry credit through central ledger
-        await using var dbTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var (txn, funding) = await _ledgerPostingService.PostInboundFundingCreditCoreAsync(
-                walletId: wallet.Id,
-                virtualAccountId: virtualAccount.Id,
-                amount: parsed.Amount.Value,
-                currency: virtualAccount.Currency,
-                provider: provider,
-                providerTransactionReference: depositReference,
-                channel: FundingChannel.VirtualAccount,
-                description: $"Inbound deposit via virtual account {virtualAccount.AccountNumber}",
-                cancellationToken: cancellationToken).ConfigureAwait(false);
+            return await ExecuteInTransactionAsync(async ct =>
+            {
+                var (txn, funding) = await _ledgerPostingService.PostInboundFundingCreditCoreAsync(
+                    walletId: wallet.Id,
+                    virtualAccountId: virtualAccount.Id,
+                    amount: parsed.Amount.Value,
+                    currency: virtualAccount.Currency,
+                    provider: provider,
+                    providerTransactionReference: depositReference,
+                    channel: FundingChannel.VirtualAccount,
+                    description: $"Inbound deposit via virtual account {virtualAccount.AccountNumber}",
+                    cancellationToken: ct).ConfigureAwait(false);
 
-            RecordAudit(AuditActions.FundingReceived, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
-                JsonSerializer.Serialize(new { AccountNumber = virtualAccount.AccountNumber, Amount = parsed.Amount.Value, virtualAccount.Currency, Reference = depositReference }));
+                RecordAudit(AuditActions.FundingReceived, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
+                    JsonSerializer.Serialize(new { AccountNumber = virtualAccount.AccountNumber, Amount = parsed.Amount.Value, virtualAccount.Currency, Reference = depositReference }));
 
-            webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
-            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await dbTx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
+                await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
 
-            var currStr = virtualAccount.Currency.ToString();
-            LogVirtualAccountDepositSuccess(_logger, parsed.Amount.Value, currStr, wallet.Id);
-            return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "Virtual account deposit credited.");
+                var currStr = virtualAccount.Currency.ToString();
+                LogVirtualAccountDepositSuccess(_logger, parsed.Amount.Value, currStr, wallet.Id);
+                return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "Virtual account deposit credited.");
+            }, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
             LogVirtualAccountDepositException(_logger, parsed.ProviderEventId, ex);
             webhookEvent.ReleaseClaim($"Credit failure: {ex.Message}", TimeSpan.FromSeconds(10));
             await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -782,56 +785,56 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
                 feeBearer = feePolicy.FeeBearer;
             }
 
-            await using var dbTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                var (txn, funding) = await _ledgerPostingService.PostCardFundingCreditCoreAsync(
-                    walletId: fundingTx.WalletId,
-                    grossAmount: fundingTx.Amount,
-                    feeAmount: feeAmount,
-                    netCreditedAmount: netCreditedAmount,
-                    providerFeeAmount: 0m,
-                    currency: fundingTx.Currency,
-                    provider: provider,
-                    providerTransactionReference: fundingTx.ProviderTransactionReference,
-                    providerEventReference: parsed.ProviderEventId,
-                    feePolicyId: feePolicyId,
-                    feePolicyVersion: feePolicyVersion,
-                    feeBearer: feeBearer,
-                    description: $"Card deposit via {provider} ({fundingTx.ProviderTransactionReference})",
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                return await ExecuteInTransactionAsync(async ct =>
+                {
+                    var (txn, funding) = await _ledgerPostingService.PostCardFundingCreditCoreAsync(
+                        walletId: fundingTx.WalletId,
+                        grossAmount: fundingTx.Amount,
+                        feeAmount: feeAmount,
+                        netCreditedAmount: netCreditedAmount,
+                        providerFeeAmount: 0m,
+                        currency: fundingTx.Currency,
+                        provider: provider,
+                        providerTransactionReference: fundingTx.ProviderTransactionReference,
+                        providerEventReference: parsed.ProviderEventId,
+                        feePolicyId: feePolicyId,
+                        feePolicyVersion: feePolicyVersion,
+                        feeBearer: feeBearer,
+                        description: $"Card deposit via {provider} ({fundingTx.ProviderTransactionReference})",
+                        cancellationToken: ct).ConfigureAwait(false);
 
-                RecordAudit(AuditActions.CardFundingCompleted, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
-                    JsonSerializer.Serialize(new
-                    {
-                        fundingTx.ProviderTransactionReference,
-                        GrossAmount = fundingTx.Amount,
-                        FeeAmount = feeAmount,
-                        NetCreditedAmount = netCreditedAmount,
-                        Currency = fundingTx.Currency.ToString()
-                    }));
+                    RecordAudit(AuditActions.CardFundingCompleted, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
+                        JsonSerializer.Serialize(new
+                        {
+                            fundingTx.ProviderTransactionReference,
+                            GrossAmount = fundingTx.Amount,
+                            FeeAmount = feeAmount,
+                            NetCreditedAmount = netCreditedAmount,
+                            Currency = fundingTx.Currency.ToString()
+                        }));
 
-                _outboxService.Write(new CardFundingCompletedDomainEvent(
-                    FundingTransactionId: funding.Id,
-                    WalletId: fundingTx.WalletId,
-                    LedgerTransactionId: txn.Id,
-                    Amount: fundingTx.Amount,
-                    Currency: fundingTx.Currency,
-                    Provider: provider,
-                    ProviderTransactionReference: fundingTx.ProviderTransactionReference,
-                    OccurredOnUtc: DateTime.UtcNow));
+                    _outboxService.Write(new CardFundingCompletedDomainEvent(
+                        FundingTransactionId: funding.Id,
+                        WalletId: fundingTx.WalletId,
+                        LedgerTransactionId: txn.Id,
+                        Amount: fundingTx.Amount,
+                        Currency: fundingTx.Currency,
+                        Provider: provider,
+                        ProviderTransactionReference: fundingTx.ProviderTransactionReference,
+                        OccurredOnUtc: DateTime.UtcNow));
 
-                webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
-                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                await dbTx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    webhookEvent.MarkProcessed(null, parsed.SafeMetadata);
+                    await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                var currStr = fundingTx.Currency.ToString();
-                LogCardFundingSuccess(_logger, fundingTx.ProviderTransactionReference, fundingTx.Amount, currStr, fundingTx.WalletId);
-                return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "Card funding credited.");
+                    var currStr = fundingTx.Currency.ToString();
+                    LogCardFundingSuccess(_logger, fundingTx.ProviderTransactionReference, fundingTx.Amount, currStr, fundingTx.WalletId);
+                    return WebhookProcessingResult.Processed(parsed.ProviderEventId, null, "Card funding credited.");
+                }, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 LogCardFundingException(_logger, fundingTx.ProviderTransactionReference, ex);
                 webhookEvent.ReleaseClaim($"Credit failure: {ex.Message}", TimeSpan.FromSeconds(10));
                 await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
