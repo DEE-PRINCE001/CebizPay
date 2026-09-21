@@ -5,6 +5,7 @@ using CebizPay.Application.Common.Models;
 using CebizPay.Domain.Auditing;
 using CebizPay.Domain.Entities;
 using CebizPay.Domain.Enums;
+using CebizPay.Domain.Erp.Enums;
 using CebizPay.Domain.Finance.Enums;
 using CebizPay.Domain.Payroll.Entities;
 using CebizPay.Domain.Payroll.Enums;
@@ -496,6 +497,230 @@ public sealed partial class PayrollBatchService : IPayrollBatchService
             TotalDisbursedInternationalNgn: totalIntNgn,
             TotalDisbursedUsdt: totalUsdt,
             LastPayrollExecutedAtUtc: lastExecution);
+    }
+
+    /// <inheritdoc/>
+    public async Task<OrgPayrollAnalyticsSummaryDto> GetPortalPayrollAnalyticsSummaryAsync(
+        Guid organizationId,
+        int? year = null,
+        string? currency = null,
+        CancellationToken cancellationToken = default)
+    {
+        var targetYear = year.HasValue && year.Value >= 2000 ? year.Value : DateTime.UtcNow.Year;
+        var priorYear = targetYear - 1;
+        var baseCurrency = string.IsNullOrWhiteSpace(currency) ? "NGN" : currency.Trim().ToUpperInvariant();
+
+        var targetYearStart = new DateTime(targetYear, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var targetYearEnd = targetYearStart.AddYears(1);
+        var priorYearStart = new DateTime(priorYear, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+        var priorYearEnd = targetYearStart;
+
+        var targetItems = await _dbContext.PayrollItems
+            .AsNoTracking()
+            .Where(i => i.OrganizationId == organizationId &&
+                        i.Status == PayrollItemStatus.Completed &&
+                        i.CreatedAtUtc >= targetYearStart && i.CreatedAtUtc < targetYearEnd)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var priorItems = await _dbContext.PayrollItems
+            .AsNoTracking()
+            .Where(i => i.OrganizationId == organizationId &&
+                        i.Status == PayrollItemStatus.Completed &&
+                        i.CreatedAtUtc >= priorYearStart && i.CreatedAtUtc < priorYearEnd)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        // 1. Spend Metrics
+        var targetNgn = targetItems.Where(i => i.Currency == Currency.NGN).Sum(i => i.NetPay);
+        var priorNgn = priorItems.Where(i => i.Currency == Currency.NGN).Sum(i => i.NetPay);
+
+        var targetIntNgn = targetItems.Where(i => i.Currency == Currency.INTERNATIONAL_NGN).Sum(i => i.NetPay);
+        var priorIntNgn = priorItems.Where(i => i.Currency == Currency.INTERNATIONAL_NGN).Sum(i => i.NetPay);
+
+        var targetUsdt = targetItems.Where(i => i.Currency == Currency.USDT).Sum(i => i.NetPay);
+        var priorUsdt = priorItems.Where(i => i.Currency == Currency.USDT).Sum(i => i.NetPay);
+
+        var targetEmployeesPaid = targetItems.Select(i => i.EmployeeUserId).Distinct().Count();
+        var priorEmployeesPaid = priorItems.Select(i => i.EmployeeUserId).Distinct().Count();
+
+        static string FormatSpendTrend(decimal target, decimal prior)
+        {
+            if (prior == 0m && target == 0m)
+            {
+                return "0.00 compared to prior year";
+            }
+            if (prior == 0m)
+            {
+                return "Baseline year — no prior historical data";
+            }
+            if (target >= prior)
+            {
+                return $"{(target - prior):N2} more than a year";
+            }
+            return $"{(prior - target):N2} Less than a year";
+        }
+
+        static string FormatEmployeeTrend(int target, int prior)
+        {
+            if (prior == 0 && target == 0)
+            {
+                return "0 compared to prior year";
+            }
+            if (prior == 0)
+            {
+                return $"+{target} active employees paid this year";
+            }
+            if (target >= prior)
+            {
+                return $"+{(target - prior)} compared to last year";
+            }
+            return $"-{(prior - target)} compared to last year";
+        }
+
+        var metrics = new OrgPayrollMetricsDto(
+            TotalSpendLocal: new PayrollSpendMetricDto(targetNgn, "NGN", FormatSpendTrend(targetNgn, priorNgn)),
+            TotalSpendInternational: new PayrollSpendMetricDto(targetIntNgn, "NGN", FormatSpendTrend(targetIntNgn, priorIntNgn)),
+            TotalSpendUsdt: new PayrollSpendMetricDto(targetUsdt, "USDT", FormatSpendTrend(targetUsdt, priorUsdt)),
+            TotalEmployeesPaid: new PayrollEmployeeMetricDto(targetEmployeesPaid, FormatEmployeeTrend(targetEmployeesPaid, priorEmployeesPaid)));
+
+        // 2. Breakdown Analytics
+        var totalGross = targetItems.Sum(i => i.GrossPay);
+        var totalNet = targetItems.Sum(i => i.NetPay);
+        var totalDeductions = targetItems.Sum(i => i.TotalDeductions);
+
+        var salaryAllocationPercent = totalGross > 0m ? Math.Round((totalNet / totalGross) * 100m, 1) : 0m;
+        var deductionAllocationPercent = totalGross > 0m ? Math.Round((totalDeductions / totalGross) * 100m, 1) : 0m;
+
+        // Department distributions
+        var deptIds = targetItems.Where(i => i.DepartmentId.HasValue).Select(i => i.DepartmentId!.Value).Distinct().ToList();
+        var departments = await _dbContext.Departments
+            .AsNoTracking()
+            .Where(d => d.OrganizationId == organizationId && deptIds.Contains(d.Id))
+            .ToDictionaryAsync(d => d.Id, d => d.Name, cancellationToken)
+            .ConfigureAwait(false);
+
+        var deptGroups = targetItems
+            .Where(i => i.DepartmentId.HasValue && departments.ContainsKey(i.DepartmentId.Value))
+            .GroupBy(i => i.DepartmentId!.Value)
+            .Select(g => new
+            {
+                DepartmentId = g.Key,
+                DepartmentName = departments[g.Key],
+                TotalNet = g.Sum(i => i.NetPay)
+            })
+            .OrderByDescending(g => g.TotalNet)
+            .ToList();
+
+        string topDeptDescription;
+        string deptSpendDescription;
+        if (deptGroups.Count > 0 && totalNet > 0m)
+        {
+            var topDept = deptGroups[0];
+            var proportion = Math.Round((topDept.TotalNet / totalNet) * 100m, 1);
+            topDeptDescription = $"{topDept.DepartmentName} accounts for {proportion:0.#}% of total compensation disbursements.";
+            deptSpendDescription = $"{proportion:0.#}% of your {baseCurrency} payroll this year was allocated to paying out employees in {topDept.DepartmentName}.";
+        }
+        else
+        {
+            topDeptDescription = "No departmental compensation disbursements recorded for this period.";
+            deptSpendDescription = $"0% of your {baseCurrency} payroll this year was allocated to paying out department employees.";
+        }
+
+        // Median monthly payout
+        decimal medianMonthlySalary = 0m;
+        if (targetItems.Count > 0)
+        {
+            var sortedNet = targetItems.Select(i => i.NetPay).OrderBy(x => x).ToList();
+            int mid = sortedNet.Count / 2;
+            medianMonthlySalary = sortedNet.Count % 2 != 0 ? sortedNet[mid] : Math.Round((sortedNet[mid - 1] + sortedNet[mid]) / 2m, 2);
+        }
+        else
+        {
+            var levelAmounts = await _dbContext.SalaryLevels
+                .AsNoTracking()
+                .Where(s => s.OrganizationId == organizationId)
+                .Select(s => s.BaseAmount)
+                .OrderBy(x => x)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            if (levelAmounts.Count > 0)
+            {
+                int mid = levelAmounts.Count / 2;
+                medianMonthlySalary = levelAmounts.Count % 2 != 0 ? levelAmounts[mid] : Math.Round((levelAmounts[mid - 1] + levelAmounts[mid]) / 2m, 2);
+            }
+        }
+
+        var medianSalaryDescription = medianMonthlySalary > 0m
+            ? $"The average median salary across active full-time departments is ₦{medianMonthlySalary:N0}."
+            : "No salary disbursements recorded for active full-time staff.";
+
+        // Contractor Invoices & Discretionary Bonuses from OperatingExpenses
+#pragma warning disable CA1862, CA1304, CA1311
+        var contractorExpenses = await _dbContext.OperatingExpenses
+            .AsNoTracking()
+            .Where(e => e.OrganizationId == organizationId &&
+                        e.ExpenseDate >= targetYearStart && e.ExpenseDate < targetYearEnd &&
+                        (e.Category == ExpenseCategory.Salaries || e.Description.ToLower().Contains("contractor")))
+            .SumAsync(e => (decimal?)e.Amount, cancellationToken)
+            .ConfigureAwait(false) ?? 0m;
+
+        var bonusExpenses = await _dbContext.OperatingExpenses
+            .AsNoTracking()
+            .Where(e => e.OrganizationId == organizationId &&
+                        e.ExpenseDate >= targetYearStart && e.ExpenseDate < targetYearEnd &&
+                        e.Description.ToLower().Contains("bonus"))
+            .SumAsync(e => (decimal?)e.Amount, cancellationToken)
+            .ConfigureAwait(false) ?? 0m;
+#pragma warning restore CA1862, CA1304, CA1311
+
+        var bonusDescription = bonusExpenses > 0m
+            ? $"₦{bonusExpenses:N2} in discretionary bonuses was processed in the current calendar year."
+            : "Zero discretionary bonuses were processed in the current calendar quarter.";
+
+        var contractorDescription = contractorExpenses > 0m
+            ? $"Contractor invoices processed through payroll total ₦{contractorExpenses:N0} this quarter."
+            : "Contractor invoices processed through payroll total ₦0.00 this quarter.";
+
+        var generalCards = new List<AnalyticsCardDto>
+        {
+            new("spend-breakdown", "Payroll spend breakdown", $"{salaryAllocationPercent:0.#}% of your {baseCurrency} payroll this year was allocated to paying out salaries"),
+            new("spend-annual", "Average payroll spend by annual", totalNet > 0m
+                ? $"Annualized payroll expenditure across completed disbursements for {targetYear} is ₦{totalNet:N2}."
+                : $"No payroll disbursements recorded for calendar year {targetYear}."),
+            new("spend-dept", "Payroll spend per Department", deptSpendDescription)
+        };
+
+        var payrollSpendCards = new List<AnalyticsCardDto>
+        {
+            new("direct-salaries", "Direct Salaries Allocation", $"{salaryAllocationPercent:0.#}% allocated towards gross direct salaries and basic allowances."),
+            new("benefits-tax", "Statutory Taxes & Pension", $"{deductionAllocationPercent:0.#}% allocated towards PAYE, NHF, and statutory employee deductions.")
+        };
+
+        var salariesAnalyticsCards = new List<AnalyticsCardDto>
+        {
+            new("median-salary", "Median Monthly Salary", medianSalaryDescription),
+            new("top-earning-dept", "Top Earning Department", topDeptDescription)
+        };
+
+        var othersAnalyticsCards = new List<AnalyticsCardDto>
+        {
+            new("bonus-spend", "Discretionary Bonuses & Stipas", bonusDescription),
+            new("contractors", "External Contractor Payouts", contractorDescription)
+        };
+
+        var breakdown = new OrgPayrollBreakdownDto(
+            General: generalCards,
+            PayrollSpend: payrollSpendCards,
+            SalariesAnalytics: salariesAnalyticsCards,
+            OthersAnalytics: othersAnalyticsCards);
+
+        return new OrgPayrollAnalyticsSummaryDto(
+            OrganizationId: organizationId,
+            Currency: baseCurrency,
+            Metrics: metrics,
+            Breakdown: breakdown);
     }
 
     /// <inheritdoc/>

@@ -253,6 +253,52 @@ public sealed class PayrollApiTests
         }
     }
 
+    [Fact]
+    public async Task GetPayrollAnalytics_Returns200OkWithAnalyticsSummaryDto()
+    {
+        var calcService = Substitute.For<IPayrollCalculationService>();
+        var batchService = Substitute.For<IPayrollBatchService>();
+        var userService = Substitute.For<ICurrentUserService>();
+        var orgContext = Substitute.For<ICurrentOrganizationContext>();
+
+        var orgId = Guid.NewGuid();
+        orgContext.CurrentOrganizationId.Returns(orgId);
+        orgContext.HasPermissionAsync(orgId, Arg.Any<string>(), Arg.Any<CancellationToken>()).Returns(true);
+        userService.UserId.Returns("usr_ceo");
+
+        var expectedResult = new OrgPayrollAnalyticsSummaryDto(
+            OrganizationId: orgId,
+            Currency: "NGN",
+            Metrics: new OrgPayrollMetricsDto(
+                TotalSpendLocal: new PayrollSpendMetricDto(238000909.00m, "NGN", "43,000.00 Less than a year"),
+                TotalSpendInternational: new PayrollSpendMetricDto(0m, "NGN", "0.00 compared to prior year"),
+                TotalSpendUsdt: new PayrollSpendMetricDto(9.00m, "USDT", "43,000.00 Less than a year"),
+                TotalEmployeesPaid: new PayrollEmployeeMetricDto(89, "+12 compared to last year")),
+            Breakdown: new OrgPayrollBreakdownDto(
+                General: new List<AnalyticsCardDto> { new("spend-breakdown", "Payroll spend breakdown", "92% allocated") },
+                PayrollSpend: new List<AnalyticsCardDto> { new("direct-salaries", "Direct Salaries Allocation", "92% allocated") },
+                SalariesAnalytics: new List<AnalyticsCardDto> { new("median-salary", "Median Monthly Salary", "₦350,000") },
+                OthersAnalytics: new List<AnalyticsCardDto> { new("bonus-spend", "Discretionary Bonuses", "Zero bonuses") }));
+
+        batchService.GetPortalPayrollAnalyticsSummaryAsync(orgId, Arg.Any<int?>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(expectedResult);
+
+        var (host, client) = await CreateTestServer(calcService, batchService, userService, orgContext);
+        using (host)
+        {
+            var response = await client.GetAsync("/api/v1/org/payroll/analytics?year=2026&currency=NGN");
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var content = await response.Content.ReadFromJsonAsync<OrgPayrollAnalyticsSummaryDto>();
+            Assert.NotNull(content);
+            Assert.Equal(orgId, content.OrganizationId);
+            Assert.Equal("NGN", content.Currency);
+            Assert.Equal(238000909.00m, content.Metrics.TotalSpendLocal.Amount);
+            Assert.Equal(89, content.Metrics.TotalEmployeesPaid.Count);
+            Assert.Single(content.Breakdown.General);
+        }
+    }
+
     private sealed class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions>
     {
         public TestAuthHandler(

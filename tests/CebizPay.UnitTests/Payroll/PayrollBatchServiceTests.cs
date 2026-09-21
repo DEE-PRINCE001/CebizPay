@@ -149,4 +149,76 @@ public sealed class PayrollBatchServiceTests
         Assert.Equal(PayrollItemStatus.RetryPending, item.Status);
         Assert.Equal(PayrollBatchStatus.Processing, batch.Status);
     }
+
+    [Fact]
+    public async Task GetPortalPayrollAnalyticsSummary_WhenItemsExist_ComputesCorrectMetricsAndBreakdowns()
+    {
+        using var dbContext = CreateInMemoryDbContext();
+        var orgId = Guid.NewGuid();
+
+        var dept = new Department(orgId, "Engineering", "Engineering Dept");
+        dbContext.Departments.Add(dept);
+
+        var batch = PayrollBatch.Create(
+            orgId, Currency.NGN, PayrollSelectionMode.All, DateTime.UtcNow.AddDays(-30), DateTime.UtcNow, "usr_1");
+
+        var item1 = PayrollItem.Create(batch.Id, orgId, "emp_1", "Alice", "alice@example.com", Currency.NGN, 200000m, 20000m, dept.Id);
+        item1.Claim("worker-1");
+        item1.MarkCompleted(Guid.NewGuid(), Guid.NewGuid());
+
+        var item2 = PayrollItem.Create(batch.Id, orgId, "emp_2", "Bob", "bob@example.com", Currency.NGN, 300000m, 30000m, dept.Id);
+        item2.Claim("worker-1");
+        item2.MarkCompleted(Guid.NewGuid(), Guid.NewGuid());
+
+        batch.AddItem(item1);
+        batch.AddItem(item2);
+        batch.MarkCompleted();
+
+        dbContext.PayrollBatches.Add(batch);
+        await dbContext.SaveChangesAsync();
+
+        var calcService = new PayrollCalculationService(dbContext, new NullPayrollDeductionProvider());
+        var batchService = new PayrollBatchService(dbContext, calcService, Substitute.For<IOutboxService>(), NullLogger<PayrollBatchService>.Instance);
+
+        var result = await batchService.GetPortalPayrollAnalyticsSummaryAsync(orgId, DateTime.UtcNow.Year, "NGN");
+
+        Assert.NotNull(result);
+        Assert.Equal(orgId, result.OrganizationId);
+        Assert.Equal("NGN", result.Currency);
+        Assert.Equal(450000m, result.Metrics.TotalSpendLocal.Amount);
+        Assert.Equal(2, result.Metrics.TotalEmployeesPaid.Count);
+        Assert.NotNull(result.Breakdown);
+        Assert.NotEmpty(result.Breakdown.General);
+        Assert.NotEmpty(result.Breakdown.PayrollSpend);
+        Assert.NotEmpty(result.Breakdown.SalariesAnalytics);
+        Assert.NotEmpty(result.Breakdown.OthersAnalytics);
+    }
+
+    [Fact]
+    public async Task GetPortalPayrollAnalyticsSummary_WhenZeroItems_ReturnsSafeDefaultsWithoutDivByZeroOrInfinity()
+    {
+        using var dbContext = CreateInMemoryDbContext();
+        var orgId = Guid.NewGuid();
+
+        var calcService = new PayrollCalculationService(dbContext, new NullPayrollDeductionProvider());
+        var batchService = new PayrollBatchService(dbContext, calcService, Substitute.For<IOutboxService>(), NullLogger<PayrollBatchService>.Instance);
+
+        var result = await batchService.GetPortalPayrollAnalyticsSummaryAsync(orgId, 2026, "NGN");
+
+        Assert.NotNull(result);
+        Assert.Equal(orgId, result.OrganizationId);
+        Assert.Equal(0m, result.Metrics.TotalSpendLocal.Amount);
+        Assert.Equal(0, result.Metrics.TotalEmployeesPaid.Count);
+
+        foreach (var card in result.Breakdown.General)
+        {
+            Assert.DoesNotContain("Infinity", card.Description);
+            Assert.DoesNotContain("NaN", card.Description);
+        }
+        foreach (var card in result.Breakdown.PayrollSpend)
+        {
+            Assert.DoesNotContain("Infinity", card.Description);
+            Assert.DoesNotContain("NaN", card.Description);
+        }
+    }
 }

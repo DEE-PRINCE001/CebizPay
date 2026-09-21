@@ -40,6 +40,39 @@ public sealed class PayrollController : ControllerBase
     }
 
     /// <summary>
+    /// Retrieves tenant-scoped aggregated payroll expenditure metrics and category spend distributions for the active corporate organization.
+    /// </summary>
+    [HttpGet("analytics")]
+    [ProducesResponseType(typeof(OrgPayrollAnalyticsSummaryDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetPayrollAnalytics(
+        [FromQuery] int? year = null,
+        [FromQuery] string? currency = "NGN",
+        CancellationToken cancellationToken = default)
+    {
+        var orgId = _orgContext.CurrentOrganizationId;
+        if (!orgId.HasValue || orgId.Value == Guid.Empty)
+        {
+            return BadRequest(new { code = "ORGANIZATION_CONTEXT_REQUIRED", message = "Active organization context header or claim is required." });
+        }
+
+        var hasPermission = await _orgContext.HasPermissionAsync(orgId.Value, Permissions.PayrollView, cancellationToken).ConfigureAwait(false);
+        if (!hasPermission)
+        {
+            return Forbid();
+        }
+
+        var analytics = await _batchService.GetPortalPayrollAnalyticsSummaryAsync(
+            orgId.Value,
+            year,
+            currency,
+            cancellationToken).ConfigureAwait(false);
+
+        return Ok(analytics);
+    }
+
+    /// <summary>
     /// Computes and returns a deterministic payroll calculation dry-run without mutating wallets or ledger balances.
     /// </summary>
     [HttpPost("calculate")]

@@ -86,4 +86,13 @@ public interface IPayrollBatchService
         DateTime? periodStart = null,
         DateTime? periodEnd = null,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Retrieves tenant-scoped aggregated payroll expenditure metrics and category spend distributions for the active corporate organization.
+    /// </summary>
+    Task<OrgPayrollAnalyticsSummaryDto> GetPortalPayrollAnalyticsSummaryAsync(
+        Guid organizationId,
+        int? year = null,
+        string? currency = null,
+        CancellationToken cancellationToken = default);
 }

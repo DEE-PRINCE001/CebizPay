@@ -168,3 +168,54 @@ public sealed record PayrollAnalyticsDto(
     decimal TotalDisbursedInternationalNgn,
     decimal TotalDisbursedUsdt,
     DateTime? LastPayrollExecutedAtUtc);
+
+/// <summary>
+/// Individual analytics metric item with amount, currency, and comparative trend description.
+/// </summary>
+public sealed record PayrollSpendMetricDto(
+    decimal Amount,
+    string Currency,
+    string TrendDescription);
+
+/// <summary>
+/// Employee headcount metric item with count and comparative trend description.
+/// </summary>
+public sealed record PayrollEmployeeMetricDto(
+    int Count,
+    string TrendDescription);
+
+/// <summary>
+/// Primary top-level KPI metrics summary for organization payroll.
+/// </summary>
+public sealed record OrgPayrollMetricsDto(
+    PayrollSpendMetricDto TotalSpendLocal,
+    PayrollSpendMetricDto TotalSpendInternational,
+    PayrollSpendMetricDto TotalSpendUsdt,
+    PayrollEmployeeMetricDto TotalEmployeesPaid);
+
+/// <summary>
+/// Single analytical category card item.
+/// </summary>
+public sealed record AnalyticsCardDto(
+    string Id,
+    string Title,
+    string Description);
+
+/// <summary>
+/// Category spend distributions and analytics breakdowns.
+/// </summary>
+public sealed record OrgPayrollBreakdownDto(
+    IReadOnlyList<AnalyticsCardDto> General,
+    IReadOnlyList<AnalyticsCardDto> PayrollSpend,
+    IReadOnlyList<AnalyticsCardDto> SalariesAnalytics,
+    IReadOnlyList<AnalyticsCardDto> OthersAnalytics);
+
+/// <summary>
+/// Complete organization portal payroll analytics summary response model.
+/// </summary>
+public sealed record OrgPayrollAnalyticsSummaryDto(
+    Guid OrganizationId,
+    string Currency,
+    OrgPayrollMetricsDto Metrics,
+    OrgPayrollBreakdownDto Breakdown);
+
