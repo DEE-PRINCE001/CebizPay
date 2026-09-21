@@ -49,6 +49,25 @@ public sealed class ComplianceWebhookSignatureVerifierTests
     }
 
     [Fact]
+    public void VerifySignature_DojahBothHeadersSupplied_WhenV2Valid_ReturnsTrue()
+    {
+        const string secret = "dojah_wh_secret_xyz";
+        const string payload = "{\"event\":\"verification.completed\",\"data\":{\"id\":\"123\"}}";
+
+        var v2Hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(secret))).ToLowerInvariant();
+
+        // Simulate scenario where x-dojah-signature (V1) is present (even if mismatched due to whitespace), but x-dojah-signature-v2 matches
+        var headers = new Dictionary<string, string>
+        {
+            { "X-Dojah-Signature", "some_differing_v1_hash" },
+            { "X-Dojah-Signature-V2", v2Hash }
+        };
+
+        var result = _verifier.VerifySignature(VerificationProvider.Dojah, payload, headers, secret);
+        Assert.True(result);
+    }
+
+    [Fact]
     public void VerifySignature_DojahInvalidSignature_ReturnsFalse()
     {
         const string secret = "dojah_wh_secret_xyz";

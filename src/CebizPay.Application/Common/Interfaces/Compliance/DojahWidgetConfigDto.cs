@@ -9,7 +9,8 @@ public sealed record DojahWidgetConfigDto(
     string ReferenceId,
     string WidgetType,
     DojahWidgetUserDataDto UserData,
-    IReadOnlyList<string> EnabledPages);
+    IReadOnlyList<string> EnabledPages,
+    string? WidgetId = null);
 
 /// <summary>
 /// User demographic details to pre-populate in the Dojah KYC widget.

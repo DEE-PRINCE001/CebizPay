@@ -284,7 +284,8 @@ public sealed class VerificationOrchestrator : IVerificationOrchestrator
             ReferenceId: reference,
             WidgetType: "custom",
             UserData: userData,
-            EnabledPages: DefaultEnabledPages);
+            EnabledPages: DefaultEnabledPages,
+            WidgetId: _dojahOptions.WidgetId);
     }
 
     private async Task<VerificationOperationResponse> ExecuteVerificationAsync(

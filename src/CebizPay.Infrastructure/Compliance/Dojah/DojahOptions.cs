@@ -25,6 +25,9 @@ public sealed class DojahOptions : IValidatableObject
     /// <summary>Dojah Public Key for client-side widget initialization.</summary>
     public string PublicKey { get; set; } = string.Empty;
 
+    /// <summary>Dojah Custom Widget ID configured in the Dojah Dashboard.</summary>
+    public string WidgetId { get; set; } = string.Empty;
+
     /// <summary>Secret used to verify cryptographic signatures on inbound Dojah webhooks.</summary>
     public string WebhookSecret { get; set; } = string.Empty;
 

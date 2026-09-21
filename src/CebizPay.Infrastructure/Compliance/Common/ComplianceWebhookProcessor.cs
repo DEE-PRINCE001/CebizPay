@@ -73,14 +73,41 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
             return ComplianceWebhookProcessingResult.InvalidPayload("Empty webhook payload.");
 
         // 1. Verify provider signature if secret is configured
-        var secret = GetProviderWebhookSecret(provider);
-        if (!string.IsNullOrWhiteSpace(secret))
+        if (provider == VerificationProvider.Dojah)
         {
-            var isValid = _signatureVerifier.VerifySignature(provider, rawPayload, headers, secret);
-            if (!isValid)
+            var isValid = false;
+            var checkedAny = false;
+
+            if (!string.IsNullOrWhiteSpace(_dojahOptions.WebhookSecret))
+            {
+                checkedAny = true;
+                isValid = _signatureVerifier.VerifySignature(provider, rawPayload, headers, _dojahOptions.WebhookSecret);
+            }
+
+            if (!isValid && !string.IsNullOrWhiteSpace(_dojahOptions.PrivateKey) &&
+                !string.Equals(_dojahOptions.PrivateKey, _dojahOptions.WebhookSecret, StringComparison.Ordinal))
+            {
+                checkedAny = true;
+                isValid = _signatureVerifier.VerifySignature(provider, rawPayload, headers, _dojahOptions.PrivateKey);
+            }
+
+            if (checkedAny && !isValid)
             {
                 _logger.LogWarning("Invalid webhook signature for provider {Provider}.", provider);
                 return ComplianceWebhookProcessingResult.InvalidSignature();
+            }
+        }
+        else
+        {
+            var secret = GetProviderWebhookSecret(provider);
+            if (!string.IsNullOrWhiteSpace(secret))
+            {
+                var isValid = _signatureVerifier.VerifySignature(provider, rawPayload, headers, secret);
+                if (!isValid)
+                {
+                    _logger.LogWarning("Invalid webhook signature for provider {Provider}.", provider);
+                    return ComplianceWebhookProcessingResult.InvalidSignature();
+                }
             }
         }
 
