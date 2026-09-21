@@ -1,9 +1,11 @@
 #pragma warning disable CS1591, CA1822
 using CebizPay.Application.Common.Interfaces.Compliance;
 using CebizPay.Application.Common.Interfaces.Messaging;
+using CebizPay.Application.Common.Interfaces.Payments;
 using CebizPay.Domain.Compliance.Entities;
 using CebizPay.Domain.Compliance.Enums;
 using CebizPay.Domain.Compliance.Events;
+using CebizPay.Domain.Entities;
 using CebizPay.Infrastructure.Compliance.Common;
 using CebizPay.Infrastructure.Compliance.Dojah;
 using CebizPay.Infrastructure.Compliance.Ninja;
@@ -245,6 +247,91 @@ public sealed class ComplianceWebhookProcessorTests
             CebizPay.Domain.Finance.Enums.Currency.NGN,
             CebizPay.Domain.Payments.Enums.PaymentProvider.Monnify,
             "22233344455",
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task ProcessDirectPayloadAsync_DojahOfficialWidgetPayload_ProcessesDemographicsAndProvisionsAccount()
+    {
+        await using var dbContext = CreateDbContext();
+        var cddService = Substitute.For<ICddService>();
+        var virtualAccountService = Substitute.For<IVirtualAccountService>();
+
+        var processor = new ComplianceWebhookProcessor(
+            dbContext,
+            _signatureVerifier,
+            _outboxService,
+            _dojahOptions,
+            _smileIdOptions,
+            _ninjaOptions,
+            NullLogger<ComplianceWebhookProcessor>.Instance,
+            cddService,
+            virtualAccountService);
+
+        var userId = "user_dojah_widget_123";
+        const string refId = "CBZKYC-22D982D8A7B74D399";
+
+        var profile = new IndividualProfile(userId, "InitialFirst", "InitialLast");
+        dbContext.IndividualProfiles.Add(profile);
+
+        var operation = VerificationOperation.Create(
+            reference: refId,
+            verificationType: VerificationType.IndividualKyc,
+            capability: VerificationCapability.Identity,
+            primaryProvider: VerificationProvider.Dojah,
+            userId: userId,
+            organizationId: null,
+            idempotencyKey: null);
+        dbContext.VerificationOperations.Add(operation);
+        await dbContext.SaveChangesAsync();
+
+        var payload = """
+        {
+          "metadata": {
+            "reference_id": "CBZKYC-22D982D8A7B74D399",
+            "user_id": "user_dojah_widget_123"
+          },
+          "data": {
+            "government_data": {
+              "data": {
+                "bvn": {
+                  "entity": {
+                    "bvn": "22324280081",
+                    "first_name": "IFEANYI",
+                    "last_name": "OKERE",
+                    "middle_name": "CHIDI"
+                  }
+                }
+              }
+            },
+            "selfie": {
+              "data": {
+                "selfie_url": "https://images.dojah.io/selfie_sample.jpg"
+              }
+            }
+          },
+          "status": true,
+          "verification_status": "Completed"
+        }
+        """;
+
+        var result = await processor.ProcessDirectPayloadAsync(VerificationProvider.Dojah, payload);
+
+        Assert.Equal(ComplianceWebhookProcessingStatus.Processed, result.Status);
+
+        var updatedProfile = await dbContext.IndividualProfiles.FirstOrDefaultAsync(p => p.UserId == userId);
+        Assert.NotNull(updatedProfile);
+        Assert.Equal("IFEANYI", updatedProfile.FirstName);
+        Assert.Equal("OKERE", updatedProfile.LastName);
+        Assert.Equal("CHIDI", updatedProfile.MiddleName);
+        Assert.Equal(CebizPay.Domain.Enums.KycStatus.Verified, updatedProfile.KycStatus);
+
+        await cddService.Received(1).EvaluateCddAsync(RiskSubjectType.Individual, userId, null, Arg.Any<CancellationToken>());
+        await virtualAccountService.Received(1).ProvisionIndividualVirtualAccountAsync(
+            userId,
+            CebizPay.Domain.Finance.Enums.Currency.NGN,
+            CebizPay.Domain.Payments.Enums.PaymentProvider.Monnify,
+            "22324280081",
             Arg.Any<CancellationToken>());
     }
 }

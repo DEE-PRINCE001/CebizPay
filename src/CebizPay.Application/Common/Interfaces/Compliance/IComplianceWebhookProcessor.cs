@@ -16,4 +16,12 @@ public interface IComplianceWebhookProcessor
         string rawPayload,
         IReadOnlyDictionary<string, string> headers,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Processes an authoritative, provider-verified direct payload without webhook signature checks.
+    /// </summary>
+    Task<ComplianceWebhookProcessingResult> ProcessDirectPayloadAsync(
+        VerificationProvider provider,
+        string rawPayload,
+        CancellationToken cancellationToken = default);
 }

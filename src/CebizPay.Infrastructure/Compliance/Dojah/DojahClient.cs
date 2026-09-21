@@ -510,4 +510,30 @@ public sealed class DojahClient : IDojahClient
             return VerificationProviderResult.TechnicalFailure("UNEXPECTED_ERROR", ex.Message);
         }
     }
+
+    public async Task<string?> GetVerificationRawJsonAsync(string referenceId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(referenceId))
+            return null;
+
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/kyc/verification?reference_id={Uri.EscapeDataString(referenceId.Trim())}");
+            ApplyAuthHeaders(request);
+
+            var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Dojah verification query returned status {StatusCode} for reference {ReferenceId}.", response.StatusCode, referenceId);
+                return null;
+            }
+
+            return await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to query verification status from Dojah for reference {ReferenceId}.", referenceId);
+            return null;
+        }
+    }
 }

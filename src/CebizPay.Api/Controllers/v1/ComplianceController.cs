@@ -43,6 +43,22 @@ public sealed class ComplianceController : ControllerBase
     }
 
     /// <summary>
+    /// Actively synchronizes and reconciles KYC verification status when a webhook is delayed or dropped.
+    /// </summary>
+    [HttpPost("kyc/sync")]
+    [ProducesResponseType(typeof(KycSyncResultDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> SyncKycStatus(
+        [FromBody] SyncKycStatusRequest request,
+        CancellationToken cancellationToken)
+    {
+        var command = new SyncKycStatusCommand(request.ReferenceId);
+        var result = await _mediator.Send(command, cancellationToken);
+        return Ok(result);
+    }
+
+    /// <summary>
     /// Verifies an individual's Bank Verification Number (BVN) against official NIBSS registry records.
     /// </summary>
     [HttpPost("kyc/bvn")]
@@ -400,3 +416,6 @@ public sealed record CheckEligibilityRequest(
     Currency Currency,
     string? UserId = null,
     Guid? OrganizationId = null);
+
+public sealed record SyncKycStatusRequest(string ReferenceId);
+

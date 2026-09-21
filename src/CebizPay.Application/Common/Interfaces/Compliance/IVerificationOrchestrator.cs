@@ -104,4 +104,12 @@ public interface IVerificationOrchestrator
     Task<DojahWidgetConfigDto> GetDojahWidgetConfigAsync(
         string userId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Synchronizes an active KYC verification session by reference, querying the provider if webhook was missed.
+    /// </summary>
+    Task<KycSyncResultDto> SyncKycVerificationAsync(
+        string userId,
+        string referenceId,
+        CancellationToken cancellationToken = default);
 }

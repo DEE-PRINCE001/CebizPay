@@ -46,4 +46,9 @@ public interface IDojahClient
         string rcNumber,
         string companyName,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Fetches the authoritative verification record by reference ID directly from Dojah.</summary>
+    Task<string?> GetVerificationRawJsonAsync(
+        string referenceId,
+        CancellationToken cancellationToken = default);
 }

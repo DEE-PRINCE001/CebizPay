@@ -30,6 +30,8 @@ public sealed class VerificationOrchestrator : IVerificationOrchestrator
     private readonly IIdentityService? _identityService;
     private readonly DojahOptions _dojahOptions;
     private readonly ILogger<VerificationOrchestrator> _logger;
+    private readonly IDojahClient? _dojahClient;
+    private readonly IComplianceWebhookProcessor? _webhookProcessor;
 
     public VerificationOrchestrator(
         IApplicationDbContext dbContext,
@@ -37,7 +39,7 @@ public sealed class VerificationOrchestrator : IVerificationOrchestrator
         IVerificationProviderFactory providerFactory,
         IOutboxService outboxService,
         ILogger<VerificationOrchestrator>? logger)
-        : this(dbContext, routingService, providerFactory, outboxService, null, logger, null)
+        : this(dbContext, routingService, providerFactory, outboxService, null, logger, null, null, null)
     {
     }
 
@@ -48,7 +50,9 @@ public sealed class VerificationOrchestrator : IVerificationOrchestrator
         IOutboxService outboxService,
         IOptions<DojahOptions>? dojahOptions = null,
         ILogger<VerificationOrchestrator>? logger = null,
-        IIdentityService? identityService = null)
+        IIdentityService? identityService = null,
+        IDojahClient? dojahClient = null,
+        IComplianceWebhookProcessor? webhookProcessor = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _routingService = routingService ?? throw new ArgumentNullException(nameof(routingService));
@@ -57,6 +61,8 @@ public sealed class VerificationOrchestrator : IVerificationOrchestrator
         _dojahOptions = dojahOptions?.Value ?? new DojahOptions();
         _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<VerificationOrchestrator>.Instance;
         _identityService = identityService;
+        _dojahClient = dojahClient;
+        _webhookProcessor = webhookProcessor;
     }
 
     public async Task<VerificationOperationResponse> VerifyBvnAsync(
@@ -286,6 +292,105 @@ public sealed class VerificationOrchestrator : IVerificationOrchestrator
             UserData: userData,
             EnabledPages: DefaultEnabledPages,
             WidgetId: _dojahOptions.WidgetId);
+    }
+
+    public async Task<KycSyncResultDto> SyncKycVerificationAsync(
+        string userId,
+        string referenceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(userId))
+            throw new ArgumentException("UserId is required to synchronize KYC status.", nameof(userId));
+        if (string.IsNullOrWhiteSpace(referenceId))
+            throw new ArgumentException("ReferenceId is required to synchronize KYC status.", nameof(referenceId));
+
+        var trimmedRef = referenceId.Trim();
+
+        // 1. Locate operation in local database
+        var operation = await _dbContext.VerificationOperations
+            .Include(o => o.Evidences)
+            .FirstOrDefaultAsync(o => o.Reference == trimmedRef && o.UserId == userId, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (operation == null && Guid.TryParse(trimmedRef, out var opId))
+        {
+            operation = await _dbContext.VerificationOperations
+                .Include(o => o.Evidences)
+                .FirstOrDefaultAsync(o => o.Id == opId && o.UserId == userId, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        var profile = await _dbContext.IndividualProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken)
+            .ConfigureAwait(false);
+
+        var cddProfile = await _dbContext.CddProfiles
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.SubjectId == userId && c.SubjectType == RiskSubjectType.Individual, cancellationToken)
+            .ConfigureAwait(false);
+
+        var primaryAccount = await _dbContext.VirtualAccounts
+            .AsNoTracking()
+            .FirstOrDefaultAsync(v => v.IndividualId == userId && v.Status == CebizPay.Domain.Payments.Enums.VirtualAccountStatus.Active, cancellationToken)
+            .ConfigureAwait(false);
+
+        var tierLabel = cddProfile?.Tier.HasValue == true ? $"Tier{cddProfile.Tier.Value}" : "Tier1";
+
+        // 2. If operation is already completed
+        if (operation != null && operation.Status == VerificationStatus.Completed)
+        {
+            return new KycSyncResultDto(
+                ReferenceId: operation.Reference,
+                Status: "Verified",
+                Message: "KYC verification completed successfully.",
+                KycTier: tierLabel,
+                VirtualAccountNumber: primaryAccount?.AccountNumber,
+                BankName: primaryAccount?.BankName);
+        }
+
+        // 3. Fallback: Query Dojah server-to-server API to fetch authoritative verification details
+        if (_dojahClient != null && _webhookProcessor != null)
+        {
+            var rawPayload = await _dojahClient.GetVerificationRawJsonAsync(trimmedRef, cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(rawPayload))
+            {
+                var procResult = await _webhookProcessor.ProcessDirectPayloadAsync(
+                    VerificationProvider.Dojah,
+                    rawPayload,
+                    cancellationToken).ConfigureAwait(false);
+
+                if (procResult.Status == ComplianceWebhookProcessingStatus.Processed ||
+                    procResult.Status == ComplianceWebhookProcessingStatus.Duplicate)
+                {
+                    cddProfile = await _dbContext.CddProfiles
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(c => c.SubjectId == userId && c.SubjectType == RiskSubjectType.Individual, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    primaryAccount = await _dbContext.VirtualAccounts
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(v => v.IndividualId == userId && v.Status == CebizPay.Domain.Payments.Enums.VirtualAccountStatus.Active, cancellationToken)
+                        .ConfigureAwait(false);
+
+                    return new KycSyncResultDto(
+                        ReferenceId: trimmedRef,
+                        Status: "Verified",
+                        Message: "KYC verification synchronized and verified successfully.",
+                        KycTier: cddProfile?.Tier.HasValue == true ? $"Tier{cddProfile.Tier.Value}" : "Tier2",
+                        VirtualAccountNumber: primaryAccount?.AccountNumber,
+                        BankName: primaryAccount?.BankName);
+                }
+            }
+        }
+
+        return new KycSyncResultDto(
+            ReferenceId: trimmedRef,
+            Status: operation?.Status.ToString() ?? "Pending",
+            Message: "Verification is in progress or awaiting provider confirmation.",
+            KycTier: tierLabel,
+            VirtualAccountNumber: primaryAccount?.AccountNumber,
+            BankName: primaryAccount?.BankName);
     }
 
     private async Task<VerificationOperationResponse> ExecuteVerificationAsync(

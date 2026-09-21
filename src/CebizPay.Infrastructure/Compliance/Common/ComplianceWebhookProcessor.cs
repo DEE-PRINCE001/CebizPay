@@ -63,50 +63,71 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
         _virtualAccountService = virtualAccountService;
     }
 
-    public async Task<ComplianceWebhookProcessingResult> ProcessWebhookAsync(
+    public Task<ComplianceWebhookProcessingResult> ProcessWebhookAsync(
         VerificationProvider provider,
         string rawPayload,
         IReadOnlyDictionary<string, string> headers,
         CancellationToken cancellationToken = default)
     {
+        return ProcessPayloadCoreAsync(provider, rawPayload, headers, verifySignature: true, cancellationToken);
+    }
+
+    public Task<ComplianceWebhookProcessingResult> ProcessDirectPayloadAsync(
+        VerificationProvider provider,
+        string rawPayload,
+        CancellationToken cancellationToken = default)
+    {
+        return ProcessPayloadCoreAsync(provider, rawPayload, headers: null, verifySignature: false, cancellationToken);
+    }
+
+    private async Task<ComplianceWebhookProcessingResult> ProcessPayloadCoreAsync(
+        VerificationProvider provider,
+        string rawPayload,
+        IReadOnlyDictionary<string, string>? headers,
+        bool verifySignature,
+        CancellationToken cancellationToken)
+    {
         if (string.IsNullOrWhiteSpace(rawPayload))
             return ComplianceWebhookProcessingResult.InvalidPayload("Empty webhook payload.");
 
-        // 1. Verify provider signature if secret is configured
-        if (provider == VerificationProvider.Dojah)
+        // 1. Verify provider signature if configured and verifySignature is enabled
+        if (verifySignature && headers != null)
         {
-            var isValid = false;
-            var checkedAny = false;
+            if (provider == VerificationProvider.Dojah)
+            {
+                var isValid = false;
+                var checkedAny = false;
 
-            if (!string.IsNullOrWhiteSpace(_dojahOptions.WebhookSecret))
-            {
-                checkedAny = true;
-                isValid = _signatureVerifier.VerifySignature(provider, rawPayload, headers, _dojahOptions.WebhookSecret);
-            }
+                if (!string.IsNullOrWhiteSpace(_dojahOptions.WebhookSecret))
+                {
+                    checkedAny = true;
+                    isValid = _signatureVerifier.VerifySignature(provider, rawPayload, headers, _dojahOptions.WebhookSecret);
+                }
 
-            if (!isValid && !string.IsNullOrWhiteSpace(_dojahOptions.PrivateKey) &&
-                !string.Equals(_dojahOptions.PrivateKey, _dojahOptions.WebhookSecret, StringComparison.Ordinal))
-            {
-                checkedAny = true;
-                isValid = _signatureVerifier.VerifySignature(provider, rawPayload, headers, _dojahOptions.PrivateKey);
-            }
+                if (!isValid && !string.IsNullOrWhiteSpace(_dojahOptions.PrivateKey) &&
+                    !string.Equals(_dojahOptions.PrivateKey, _dojahOptions.WebhookSecret, StringComparison.Ordinal))
+                {
+                    checkedAny = true;
+                    isValid = _signatureVerifier.VerifySignature(provider, rawPayload, headers, _dojahOptions.PrivateKey);
+                }
 
-            if (checkedAny && !isValid)
-            {
-                _logger.LogWarning("Invalid webhook signature for provider {Provider}.", provider);
-                return ComplianceWebhookProcessingResult.InvalidSignature();
-            }
-        }
-        else
-        {
-            var secret = GetProviderWebhookSecret(provider);
-            if (!string.IsNullOrWhiteSpace(secret))
-            {
-                var isValid = _signatureVerifier.VerifySignature(provider, rawPayload, headers, secret);
-                if (!isValid)
+                if (checkedAny && !isValid)
                 {
                     _logger.LogWarning("Invalid webhook signature for provider {Provider}.", provider);
                     return ComplianceWebhookProcessingResult.InvalidSignature();
+                }
+            }
+            else
+            {
+                var secret = GetProviderWebhookSecret(provider);
+                if (!string.IsNullOrWhiteSpace(secret))
+                {
+                    var isValid = _signatureVerifier.VerifySignature(provider, rawPayload, headers, secret);
+                    if (!isValid)
+                    {
+                        _logger.LogWarning("Invalid webhook signature for provider {Provider}.", provider);
+                        return ComplianceWebhookProcessingResult.InvalidSignature();
+                    }
                 }
             }
         }
@@ -355,29 +376,61 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
 
                 var eventType = root.TryGetProperty("event", out var evtProp) ? evtProp.GetString() : "verification";
 
-                var refId = root.TryGetProperty("reference_id", out var refProp) ? refProp.GetString() :
-                            root.TryGetProperty("reference", out var rProp) ? rProp.GetString() :
-                            dataElement.TryGetProperty("reference_id", out var dRefProp) ? dRefProp.GetString() :
-                            dataElement.TryGetProperty("reference", out var dRProp) ? dRProp.GetString() : null;
-
-                var statusStr = dataElement.TryGetProperty("status", out var stProp) ? stProp.GetString() :
-                                root.TryGetProperty("status", out var rStProp) ? rStProp.GetString() : null;
-
-                var isSuccess = string.Equals(statusStr, "success", StringComparison.OrdinalIgnoreCase) ||
-                                string.Equals(statusStr, "valid", StringComparison.OrdinalIgnoreCase) ||
-                                string.Equals(statusStr, "approved", StringComparison.OrdinalIgnoreCase);
-
                 // Extract metadata (userId and internal reference)
                 string? metadataUserId = null;
+                string? refId = null;
                 if (dataElement.TryGetProperty("metadata", out var metaProp) || root.TryGetProperty("metadata", out metaProp))
                 {
                     if (metaProp.TryGetProperty("user_id", out var mUserProp))
                         metadataUserId = mUserProp.GetString();
 
-                    if (string.IsNullOrWhiteSpace(refId) && metaProp.TryGetProperty("reference", out var mRefProp))
-                        refId = mRefProp.GetString();
-                    else if (string.IsNullOrWhiteSpace(refId) && metaProp.TryGetProperty("reference_id", out var mRefIdProp))
+                    if (metaProp.TryGetProperty("reference_id", out var mRefIdProp))
                         refId = mRefIdProp.GetString();
+                    else if (metaProp.TryGetProperty("reference", out var mRefProp))
+                        refId = mRefProp.GetString();
+                }
+
+                if (string.IsNullOrWhiteSpace(refId))
+                {
+                    refId = root.TryGetProperty("reference_id", out var refProp) ? refProp.GetString() :
+                            root.TryGetProperty("reference", out var rProp) ? rProp.GetString() :
+                            dataElement.TryGetProperty("reference_id", out var dRefProp) ? dRefProp.GetString() :
+                            dataElement.TryGetProperty("reference", out var dRProp) ? dRProp.GetString() : null;
+                }
+
+                // Determine success status (supporting boolean or status strings)
+                var isSuccess = false;
+                if (root.TryGetProperty("status", out var rStProp))
+                {
+                    if (rStProp.ValueKind == JsonValueKind.True)
+                        isSuccess = true;
+                    else if (rStProp.ValueKind == JsonValueKind.String)
+                    {
+                        var s = rStProp.GetString();
+                        isSuccess = string.Equals(s, "success", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(s, "valid", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(s, "approved", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(s, "completed", StringComparison.OrdinalIgnoreCase);
+                    }
+                }
+
+                if (!isSuccess && dataElement.TryGetProperty("status", out var dStProp))
+                {
+                    if (dStProp.ValueKind == JsonValueKind.True)
+                        isSuccess = true;
+                    else if (dStProp.ValueKind == JsonValueKind.String)
+                    {
+                        var s = dStProp.GetString();
+                        isSuccess = string.Equals(s, "success", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(s, "valid", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(s, "approved", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(s, "completed", StringComparison.OrdinalIgnoreCase);
+                    }
+                }
+
+                if (!isSuccess && root.TryGetProperty("verification_status", out var vsProp) && vsProp.ValueKind == JsonValueKind.String)
+                {
+                    isSuccess = string.Equals(vsProp.GetString(), "Completed", StringComparison.OrdinalIgnoreCase);
                 }
 
                 // Extract BVN & NIN
@@ -388,6 +441,45 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
                 if (dataElement.TryGetProperty("nin", out var ninProp) && ninProp.ValueKind == JsonValueKind.String)
                     nin = ninProp.GetString();
 
+                // Extract legal demographics
+                string? firstName = null;
+                string? lastName = null;
+                string? middleName = null;
+                string? photoUrl = null;
+
+                // Support Dojah widget official structure: data.government_data.data.bvn/nin.entity
+                if (dataElement.TryGetProperty("government_data", out var govProp) && govProp.ValueKind == JsonValueKind.Object &&
+                    govProp.TryGetProperty("data", out var govDataProp) && govDataProp.ValueKind == JsonValueKind.Object)
+                {
+                    if (govDataProp.TryGetProperty("bvn", out var gBvnProp) && gBvnProp.ValueKind == JsonValueKind.Object &&
+                        gBvnProp.TryGetProperty("entity", out var bvnEntity) && bvnEntity.ValueKind == JsonValueKind.Object)
+                    {
+                        if (string.IsNullOrWhiteSpace(bvn) && bvnEntity.TryGetProperty("bvn", out var bVal)) bvn = bVal.GetString();
+                        if (string.IsNullOrWhiteSpace(firstName) && bvnEntity.TryGetProperty("first_name", out var fVal)) firstName = fVal.GetString();
+                        if (string.IsNullOrWhiteSpace(lastName) && bvnEntity.TryGetProperty("last_name", out var lVal)) lastName = lVal.GetString();
+                        if (string.IsNullOrWhiteSpace(middleName) && bvnEntity.TryGetProperty("middle_name", out var mVal)) middleName = mVal.GetString();
+                    }
+
+                    if (govDataProp.TryGetProperty("nin", out var gNinProp) && gNinProp.ValueKind == JsonValueKind.Object &&
+                        gNinProp.TryGetProperty("entity", out var ninEntity) && ninEntity.ValueKind == JsonValueKind.Object)
+                    {
+                        if (string.IsNullOrWhiteSpace(nin) && ninEntity.TryGetProperty("nin", out var nVal)) nin = nVal.GetString();
+                        if (string.IsNullOrWhiteSpace(firstName) && ninEntity.TryGetProperty("first_name", out var fnVal)) firstName = fnVal.GetString();
+                        if (string.IsNullOrWhiteSpace(lastName) && ninEntity.TryGetProperty("last_name", out var lnVal)) lastName = lnVal.GetString();
+                        if (string.IsNullOrWhiteSpace(middleName) && ninEntity.TryGetProperty("middle_name", out var mnVal)) middleName = mnVal.GetString();
+                    }
+                }
+
+                // Support direct id data: data.id.data.id_data
+                if (dataElement.TryGetProperty("id", out var idDataOuter) && idDataOuter.ValueKind == JsonValueKind.Object &&
+                    idDataOuter.TryGetProperty("data", out var idDataInner) && idDataInner.ValueKind == JsonValueKind.Object &&
+                    idDataInner.TryGetProperty("id_data", out var idEntity) && idEntity.ValueKind == JsonValueKind.Object)
+                {
+                    if (string.IsNullOrWhiteSpace(firstName) && idEntity.TryGetProperty("first_name", out var ifnVal)) firstName = ifnVal.GetString();
+                    if (string.IsNullOrWhiteSpace(lastName) && idEntity.TryGetProperty("last_name", out var ilnVal)) lastName = ilnVal.GetString();
+                }
+
+                // Support verification wrapper
                 if (dataElement.TryGetProperty("verification", out var vProp) && vProp.ValueKind == JsonValueKind.Object)
                 {
                     if (string.IsNullOrWhiteSpace(bvn) && vProp.TryGetProperty("bvn", out var vbProp) && vbProp.ValueKind == JsonValueKind.Object)
@@ -402,18 +494,13 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
                     }
                 }
 
-                // Extract legal demographics
-                string? firstName = null;
-                string? lastName = null;
-                string? middleName = null;
-                string? photoUrl = null;
-
+                // Support user_data object
                 if (dataElement.TryGetProperty("user_data", out var uProp) && uProp.ValueKind == JsonValueKind.Object)
                 {
-                    if (uProp.TryGetProperty("first_name", out var fnProp)) firstName = fnProp.GetString();
-                    if (uProp.TryGetProperty("last_name", out var lnProp)) lastName = lnProp.GetString();
-                    if (uProp.TryGetProperty("middle_name", out var mnProp)) middleName = mnProp.GetString();
-                    if (uProp.TryGetProperty("photo", out var phProp)) photoUrl = phProp.GetString();
+                    if (string.IsNullOrWhiteSpace(firstName) && uProp.TryGetProperty("first_name", out var fnProp)) firstName = fnProp.GetString();
+                    if (string.IsNullOrWhiteSpace(lastName) && uProp.TryGetProperty("last_name", out var lnProp)) lastName = lnProp.GetString();
+                    if (string.IsNullOrWhiteSpace(middleName) && uProp.TryGetProperty("middle_name", out var mnProp)) middleName = mnProp.GetString();
+                    if (string.IsNullOrWhiteSpace(photoUrl) && uProp.TryGetProperty("photo", out var phProp)) photoUrl = phProp.GetString();
                 }
 
                 if (string.IsNullOrWhiteSpace(firstName) && dataElement.TryGetProperty("first_name", out var dfnProp))
@@ -422,6 +509,21 @@ public sealed class ComplianceWebhookProcessor : IComplianceWebhookProcessor
                     lastName = dlnProp.GetString();
                 if (string.IsNullOrWhiteSpace(middleName) && dataElement.TryGetProperty("middle_name", out var dmnProp))
                     middleName = dmnProp.GetString();
+
+                // Extract selfie URL
+                if (string.IsNullOrWhiteSpace(photoUrl))
+                {
+                    if (dataElement.TryGetProperty("selfie", out var selfieProp) && selfieProp.ValueKind == JsonValueKind.Object &&
+                        selfieProp.TryGetProperty("data", out var sData) && sData.ValueKind == JsonValueKind.Object &&
+                        sData.TryGetProperty("selfie_url", out var suProp))
+                    {
+                        photoUrl = suProp.GetString();
+                    }
+                    else if (root.TryGetProperty("selfie_url", out var rSuProp))
+                    {
+                        photoUrl = rSuProp.GetString();
+                    }
+                }
 
                 return new ParsedWebhookData(
                     EventId: eventId,
