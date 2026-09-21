@@ -95,10 +95,11 @@ public sealed class DepartmentsController : ControllerBase
     }
 
     /// <summary>
-    /// Creates a new department in the organization.
+    /// Creates a new department in the organization. If roles are provided, creates them atomically.
     /// </summary>
     [HttpPost]
     [ProducesResponseType(typeof(Guid), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(DepartmentWithRolesDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CreateDepartment(
@@ -111,9 +112,38 @@ public sealed class DepartmentsController : ControllerBase
             return Forbid();
         }
 
+        if (request.Roles != null && request.Roles.Count > 0)
+        {
+            var compositeCommand = new CreateDepartmentWithRolesCommand(orgId, request.Name, request.Description, request.Roles);
+            var compositeResult = await _sender.Send(compositeCommand, cancellationToken);
+            return CreatedAtAction(nameof(GetDepartmentById), new { version = "1.0", id = compositeResult.Id }, compositeResult);
+        }
+
         var command = new CreateDepartmentCommand(orgId, request.Name, request.Description);
         var id = await _sender.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetDepartmentById), new { version = "1.0", id }, new { id });
+    }
+
+    /// <summary>
+    /// Atomically creates a department and registers its initial collection of workforce roles.
+    /// </summary>
+    [HttpPost("with-roles")]
+    [ProducesResponseType(typeof(DepartmentWithRolesDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> CreateDepartmentWithRoles(
+        [FromBody] CreateDepartmentWithRolesApiRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.DepartmentsManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var command = new CreateDepartmentWithRolesCommand(orgId, request.Name, request.Description, request.Roles);
+        var result = await _sender.Send(command, cancellationToken);
+        return CreatedAtAction(nameof(GetDepartmentById), new { version = "1.0", id = result.Id }, result);
     }
 
     /// <summary>
@@ -164,8 +194,11 @@ public sealed class DepartmentsController : ControllerBase
     }
 }
 
-/// <summary>Request payload for creating a department.</summary>
-public sealed record CreateDepartmentApiRequest(string Name, string? Description);
+/// <summary>Request payload for creating a department, optionally with initial workforce roles.</summary>
+public sealed record CreateDepartmentApiRequest(string Name, string? Description, IReadOnlyList<string>? Roles = null);
+
+/// <summary>Request payload for atomically creating a department and its workforce roles.</summary>
+public sealed record CreateDepartmentWithRolesApiRequest(string Name, string? Description, IReadOnlyList<string>? Roles = null);
 
 /// <summary>Request payload for updating a department.</summary>
 public sealed record UpdateDepartmentApiRequest(string Name, string? Description);

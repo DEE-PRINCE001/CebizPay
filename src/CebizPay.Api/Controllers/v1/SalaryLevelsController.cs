@@ -96,10 +96,11 @@ public sealed class SalaryLevelsController : ControllerBase
     }
 
     /// <summary>
-    /// Creates a new salary level in the organization.
+    /// Creates a new salary level in the organization. If staff memberships are provided, assigns them atomically.
     /// </summary>
     [HttpPost]
     [ProducesResponseType(typeof(Guid), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(SalaryLevelWithMembersDto), StatusCodes.Status201Created)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> CreateSalaryLevel(
@@ -112,9 +113,50 @@ public sealed class SalaryLevelsController : ControllerBase
             return Forbid();
         }
 
+        if (request.StaffMembershipIds != null && request.StaffMembershipIds.Count > 0)
+        {
+            var compositeCommand = new CreateSalaryLevelWithMembersCommand(
+                orgId,
+                request.LevelName,
+                request.BaseAmount,
+                request.Currency ?? "NGN",
+                request.StaffMembershipIds);
+
+            var compositeResult = await _sender.Send(compositeCommand, cancellationToken);
+            return CreatedAtAction(nameof(GetSalaryLevelById), new { version = "1.0", id = compositeResult.Id }, compositeResult);
+        }
+
         var command = new CreateSalaryLevelCommand(orgId, request.LevelName, request.BaseAmount, request.Currency ?? "NGN");
         var id = await _sender.Send(command, cancellationToken);
         return CreatedAtAction(nameof(GetSalaryLevelById), new { version = "1.0", id }, new { id });
+    }
+
+    /// <summary>
+    /// Atomically creates a salary level tier and assigns initial staff members in a single transactional request.
+    /// </summary>
+    [HttpPost("with-members")]
+    [ProducesResponseType(typeof(SalaryLevelWithMembersDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> CreateSalaryLevelWithMembers(
+        [FromBody] CreateSalaryLevelWithMembersApiRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var orgId = GetOrganizationId();
+        if (!await _orgContext.HasPermissionAsync(orgId, Permissions.SalaryLevelsManage, cancellationToken))
+        {
+            return Forbid();
+        }
+
+        var command = new CreateSalaryLevelWithMembersCommand(
+            orgId,
+            request.LevelName,
+            request.BaseAmount,
+            request.Currency ?? "NGN",
+            request.StaffMembershipIds);
+
+        var result = await _sender.Send(command, cancellationToken);
+        return CreatedAtAction(nameof(GetSalaryLevelById), new { version = "1.0", id = result.Id }, result);
     }
 
     /// <summary>
@@ -165,8 +207,19 @@ public sealed class SalaryLevelsController : ControllerBase
     }
 }
 
-/// <summary>Request payload for creating a salary level.</summary>
-public sealed record CreateSalaryLevelApiRequest(string LevelName, decimal BaseAmount, string? Currency = "NGN");
+/// <summary>Request payload for creating a salary level, optionally assigning staff members.</summary>
+public sealed record CreateSalaryLevelApiRequest(
+    string LevelName,
+    decimal BaseAmount,
+    string? Currency = "NGN",
+    IReadOnlyList<Guid>? StaffMembershipIds = null);
+
+/// <summary>Request payload for atomically creating a salary level and assigning staff members.</summary>
+public sealed record CreateSalaryLevelWithMembersApiRequest(
+    string LevelName,
+    decimal BaseAmount,
+    string? Currency = "NGN",
+    IReadOnlyList<Guid>? StaffMembershipIds = null);
 
 /// <summary>Request payload for updating a salary level.</summary>
 public sealed record UpdateSalaryLevelApiRequest(string LevelName, decimal BaseAmount, string? Currency = "NGN");
