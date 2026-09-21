@@ -1156,4 +1156,47 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
 
     [LoggerMessage(EventId = 14, Level = LogLevel.Information, Message = "Monnify signature omitted in Sandbox environment for provider {Provider}. Permitting delivery for test mode.")]
     private static partial void LogWebhookSandboxBypass(ILogger logger, string provider);
+
+    private Task ExecuteInTransactionAsync(
+        Func<CancellationToken, Task> operation,
+        CancellationToken cancellationToken)
+    {
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        return strategy.ExecuteAsync(async ct =>
+        {
+            await using var tx = await _dbContext.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+            try
+            {
+                await operation(ct).ConfigureAwait(false);
+                await tx.CommitAsync(ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct).ConfigureAwait(false);
+                throw;
+            }
+        }, cancellationToken);
+    }
+
+    private Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken)
+    {
+        var strategy = _dbContext.Database.CreateExecutionStrategy();
+        return strategy.ExecuteAsync(async ct =>
+        {
+            await using var tx = await _dbContext.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+            try
+            {
+                var result = await operation(ct).ConfigureAwait(false);
+                await tx.CommitAsync(ct).ConfigureAwait(false);
+                return result;
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct).ConfigureAwait(false);
+                throw;
+            }
+        }, cancellationToken);
+    }
 }
