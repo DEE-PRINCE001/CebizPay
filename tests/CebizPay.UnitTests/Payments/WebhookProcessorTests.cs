@@ -369,4 +369,166 @@ public sealed class WebhookProcessorTests
         // Assert: Strictly rejected in Live environment
         Assert.Equal(WebhookProcessingStatus.InvalidSignature, result.Status);
     }
+
+    [Fact]
+    public async Task IngestWebhook_ExistingReceivedWithError_ReactivatesAndReturnsProcessed()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var processor = CreateProcessor(dbContext);
+
+        _signatureVerifier
+            .VerifySignature(PaymentProvider.Monnify, Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<string>())
+            .Returns(true);
+
+        var existingEvent = WebhookEvent.Create(
+            provider: PaymentProvider.Monnify,
+            providerEventId: "mnfy_evt_SUCCESSFUL_TRANSACTION_MNFY_100_PAID",
+            eventType: "SUCCESSFUL_TRANSACTION");
+        existingEvent.ReleaseClaim("Previous transient failure occurred", TimeSpan.FromSeconds(10));
+        dbContext.WebhookEvents.Add(existingEvent);
+        await dbContext.SaveChangesAsync();
+
+        const string rawPayload = """{"eventType":"SUCCESSFUL_TRANSACTION","eventData":{"transactionReference":"MNFY_100","amountPaid":1000,"paymentStatus":"PAID"}}""";
+        var headers = new Dictionary<string, string>();
+
+        // Act
+        var result = await processor.IngestWebhookAsync(PaymentProvider.Monnify, rawPayload, headers);
+
+        // Assert: Reactivated because of prior error
+        Assert.Equal(WebhookProcessingStatus.Processed, result.Status);
+        var refreshed = await dbContext.WebhookEvents.FindAsync(existingEvent.Id);
+        Assert.NotNull(refreshed);
+        Assert.Equal(WebhookEventStatus.Received, refreshed.Status);
+        Assert.Equal(0, refreshed.AttemptCount);
+    }
+
+    [Fact]
+    public async Task IngestWebhook_ExistingReceivedWithError_DoesNotReturnDuplicate()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var processor = CreateProcessor(dbContext);
+
+        _signatureVerifier
+            .VerifySignature(PaymentProvider.Monnify, Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<string>())
+            .Returns(true);
+
+        var existingEvent = WebhookEvent.Create(
+            provider: PaymentProvider.Monnify,
+            providerEventId: "mnfy_evt_SUCCESSFUL_TRANSACTION_MNFY_101_PAID",
+            eventType: "SUCCESSFUL_TRANSACTION");
+        existingEvent.ReleaseClaim("Npgsql retrying strategy failure", TimeSpan.FromSeconds(10));
+        dbContext.WebhookEvents.Add(existingEvent);
+        await dbContext.SaveChangesAsync();
+
+        const string rawPayload = """{"eventType":"SUCCESSFUL_TRANSACTION","eventData":{"transactionReference":"MNFY_101","amountPaid":2500,"paymentStatus":"PAID"}}""";
+        var headers = new Dictionary<string, string>();
+
+        // Act
+        var result = await processor.IngestWebhookAsync(PaymentProvider.Monnify, rawPayload, headers);
+
+        // Assert
+        Assert.NotEqual(WebhookProcessingStatus.Duplicate, result.Status);
+        Assert.Equal(WebhookProcessingStatus.Processed, result.Status);
+    }
+
+    [Fact]
+    public async Task IngestWebhook_ExistingReceivedWithoutError_ReturnsDuplicate()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var processor = CreateProcessor(dbContext);
+
+        _signatureVerifier
+            .VerifySignature(PaymentProvider.Monnify, Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<string>())
+            .Returns(true);
+
+        // Clean in-flight received event without any processing error
+        var existingEvent = WebhookEvent.Create(
+            provider: PaymentProvider.Monnify,
+            providerEventId: "mnfy_evt_SUCCESSFUL_TRANSACTION_MNFY_102_PAID",
+            eventType: "SUCCESSFUL_TRANSACTION");
+        dbContext.WebhookEvents.Add(existingEvent);
+        await dbContext.SaveChangesAsync();
+
+        const string rawPayload = """{"eventType":"SUCCESSFUL_TRANSACTION","eventData":{"transactionReference":"MNFY_102","amountPaid":2500,"paymentStatus":"PAID"}}""";
+        var headers = new Dictionary<string, string>();
+
+        // Act
+        var result = await processor.IngestWebhookAsync(PaymentProvider.Monnify, rawPayload, headers);
+
+        // Assert: Preserves duplicate detection for clean Received events
+        Assert.Equal(WebhookProcessingStatus.Duplicate, result.Status);
+    }
+
+    [Fact]
+    public async Task IngestWebhook_ExistingFailed_ReactivatesEvent()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var processor = CreateProcessor(dbContext);
+
+        _signatureVerifier
+            .VerifySignature(PaymentProvider.Monnify, Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<string>())
+            .Returns(true);
+
+        var existingEvent = WebhookEvent.Create(
+            provider: PaymentProvider.Monnify,
+            providerEventId: "mnfy_evt_SUCCESSFUL_TRANSACTION_MNFY_103_PAID",
+            eventType: "SUCCESSFUL_TRANSACTION");
+        existingEvent.MarkFailed("Terminal failure");
+        dbContext.WebhookEvents.Add(existingEvent);
+        await dbContext.SaveChangesAsync();
+
+        const string rawPayload = """{"eventType":"SUCCESSFUL_TRANSACTION","eventData":{"transactionReference":"MNFY_103","amountPaid":5000,"paymentStatus":"PAID"}}""";
+        var headers = new Dictionary<string, string>();
+
+        // Act
+        var result = await processor.IngestWebhookAsync(PaymentProvider.Monnify, rawPayload, headers);
+
+        // Assert
+        Assert.Equal(WebhookProcessingStatus.Processed, result.Status);
+        var refreshed = await dbContext.WebhookEvents.FindAsync(existingEvent.Id);
+        Assert.NotNull(refreshed);
+        Assert.Equal(WebhookEventStatus.Received, refreshed.Status);
+    }
+
+    [Fact]
+    public async Task IngestWebhook_ExistingDeadLetter_ReactivatesEvent()
+    {
+        // Arrange
+        await using var dbContext = CreateDbContext();
+        var processor = CreateProcessor(dbContext);
+
+        _signatureVerifier
+            .VerifySignature(PaymentProvider.Monnify, Arg.Any<string>(), Arg.Any<IReadOnlyDictionary<string, string>>(), Arg.Any<string>())
+            .Returns(true);
+
+        var existingEvent = WebhookEvent.Create(
+            provider: PaymentProvider.Monnify,
+            providerEventId: "mnfy_evt_SUCCESSFUL_TRANSACTION_MNFY_104_PAID",
+            eventType: "SUCCESSFUL_TRANSACTION");
+        for (int i = 0; i < WebhookEvent.DefaultMaxAttempts; i++)
+        {
+            existingEvent.Claim("worker", TimeSpan.FromMinutes(1));
+            existingEvent.ReleaseClaim("Exceeded attempts", TimeSpan.FromSeconds(1));
+        }
+        Assert.Equal(WebhookEventStatus.DeadLetter, existingEvent.Status);
+
+        dbContext.WebhookEvents.Add(existingEvent);
+        await dbContext.SaveChangesAsync();
+
+        const string rawPayload = """{"eventType":"SUCCESSFUL_TRANSACTION","eventData":{"transactionReference":"MNFY_104","amountPaid":5000,"paymentStatus":"PAID"}}""";
+        var headers = new Dictionary<string, string>();
+
+        // Act
+        var result = await processor.IngestWebhookAsync(PaymentProvider.Monnify, rawPayload, headers);
+
+        // Assert
+        Assert.Equal(WebhookProcessingStatus.Processed, result.Status);
+        var refreshed = await dbContext.WebhookEvents.FindAsync(existingEvent.Id);
+        Assert.NotNull(refreshed);
+        Assert.Equal(WebhookEventStatus.Received, refreshed.Status);
+    }
 }
