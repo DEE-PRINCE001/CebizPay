@@ -159,7 +159,9 @@ public sealed class LookupCacCommandHandler : IRequestHandler<LookupCacCommand, 
                     foreach (var dirElem in dirArray.EnumerateArray())
                     {
                         var dirName = dirElem.TryGetProperty("name", out var nameProp) ? nameProp.GetString() ?? string.Empty : string.Empty;
-                        var designation = dirElem.TryGetProperty("designation", out var desProp) ? desProp.GetString() : "Director";
+                        var designation = (dirElem.TryGetProperty("designation", out var desProp) ? desProp.GetString() : null);
+                        if (string.IsNullOrWhiteSpace(designation))
+                            designation = "Director";
 
                         var isVerifiedSignatory = IsCallerMatchingDirector(callerProfile, dirName);
                         directorsList.Add(new CacDirectorDto(dirName, designation, isVerifiedSignatory));

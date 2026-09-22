@@ -144,7 +144,7 @@ public sealed class DojahClientTests
             {
                 RcNumber = "RC-123456",
                 CompanyName = "Acme Global Limited",
-                Status = "ACT",
+                Status = "ACTIVE",
                 RegistrationDate = "2020-01-01"
             }
         });
@@ -153,10 +153,60 @@ public sealed class DojahClientTests
         using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.dojah.io") };
         var client = new DojahClient(httpClient, _validOptions, NullLogger<DojahClient>.Instance);
 
-        var result = await client.LookupCacAsync("RC-123456", "Acme Global Limited");
+        var result = await client.LookupCacAsync("RC-123456", "COMPANY");
 
         Assert.True(result.Succeeded);
         Assert.Equal(VerificationResultStatus.Match, result.ResultStatus);
+    }
+
+    [Fact]
+    public async Task LookupCacAsync_WithRealDojahAffiliatesPayload_MapsFirstLastNameAndAffiliateTypeCorrectly()
+    {
+        var jsonPayload = """
+        {
+          "entity": {
+            "company_name": "JOHN DOE LIMITED",
+            "rc_number": "14320749",
+            "address": "John doe street opposite dunamis church ",
+            "type_of_company": "BUSINESS_NAME",
+            "date_of_registration": "2024-07-19T08:00:06.224+00:00",
+            "status": "ACTIVE",
+            "affiliates": [
+              {
+                "first_name": "JOHN",
+                "last_name": "MUSA",
+                "affiliate_type": "PROPRIETOR",
+                "gender": "MALE",
+                "phone_number": "+2348132464910",
+                "nationality": "Nigeria",
+                "country": "NIGERIA"
+              }
+            ]
+          }
+        }
+        """;
+
+        var handler = new MockHttpMessageHandler(HttpStatusCode.OK, jsonPayload);
+        using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.dojah.io") };
+        var client = new DojahClient(httpClient, _validOptions, NullLogger<DojahClient>.Instance);
+
+        var result = await client.LookupCacAsync("14320749", "BUSINESS_NAME");
+
+        Assert.True(result.Succeeded);
+        Assert.NotNull(result.SafeMetadata);
+
+        using var doc = JsonDocument.Parse(result.SafeMetadata);
+        var root = doc.RootElement;
+        Assert.Equal("14320749", root.GetProperty("rc_number").GetString());
+        Assert.Equal("JOHN DOE LIMITED", root.GetProperty("company_name").GetString());
+        Assert.Equal("BUSINESS_NAME", root.GetProperty("company_type").GetString());
+        Assert.Equal("2024-07-19T08:00:06.224+00:00", root.GetProperty("registration_date").GetString());
+        Assert.Equal("ACTIVE", root.GetProperty("status").GetString());
+
+        var directors = root.GetProperty("directors").EnumerateArray().ToList();
+        var director = Assert.Single(directors);
+        Assert.Equal("JOHN MUSA", director.GetProperty("name").GetString());
+        Assert.Equal("PROPRIETOR", director.GetProperty("designation").GetString());
     }
 
     [Fact]

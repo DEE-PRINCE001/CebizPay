@@ -152,8 +152,14 @@ public sealed class DojahCacResponseBody
     [JsonPropertyName("company_type")]
     public string? CompanyType { get; set; }
 
+    [JsonPropertyName("type_of_company")]
+    public string? TypeOfCompany { get; set; }
+
     [JsonPropertyName("registration_date")]
     public string? RegistrationDate { get; set; }
+
+    [JsonPropertyName("date_of_registration")]
+    public string? DateOfRegistration { get; set; }
 
     [JsonPropertyName("status")]
     public string? Status { get; set; }
@@ -163,6 +169,16 @@ public sealed class DojahCacResponseBody
 
     [JsonPropertyName("affiliates")]
     public List<DojahDirector>? Affiliates { get; set; }
+
+    [JsonPropertyName("directors")]
+    public List<DojahDirector>? Directors { get; set; }
+
+    public string? ResolvedCompanyType => !string.IsNullOrWhiteSpace(CompanyType) ? CompanyType : TypeOfCompany;
+
+    public string? ResolvedRegistrationDate => !string.IsNullOrWhiteSpace(RegistrationDate) ? RegistrationDate : DateOfRegistration;
+
+    public IReadOnlyList<DojahDirector> ResolvedAffiliates =>
+        (Affiliates != null && Affiliates.Count > 0) ? Affiliates : (Directors ?? []);
 }
 
 public sealed class DojahDirector
@@ -170,6 +186,62 @@ public sealed class DojahDirector
     [JsonPropertyName("name")]
     public string? Name { get; set; }
 
+    [JsonPropertyName("full_name")]
+    public string? FullName { get; set; }
+
+    [JsonPropertyName("first_name")]
+    public string? FirstName { get; set; }
+
+    [JsonPropertyName("last_name")]
+    public string? LastName { get; set; }
+
+    [JsonPropertyName("surname")]
+    public string? Surname { get; set; }
+
+    [JsonPropertyName("middle_name")]
+    public string? MiddleName { get; set; }
+
+    [JsonPropertyName("other_name")]
+    public string? OtherName { get; set; }
+
     [JsonPropertyName("designation")]
     public string? Designation { get; set; }
+
+    [JsonPropertyName("affiliate_type")]
+    public string? AffiliateType { get; set; }
+
+    [JsonPropertyName("role")]
+    public string? Role { get; set; }
+
+    public string ResolvedName
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(FullName))
+                return FullName.Trim();
+            if (!string.IsNullOrWhiteSpace(Name))
+                return Name.Trim();
+
+            var parts = new[] { FirstName, MiddleName ?? OtherName, LastName ?? Surname }
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Select(p => p!.Trim());
+
+            var combined = string.Join(" ", parts);
+            return !string.IsNullOrWhiteSpace(combined) ? combined : string.Empty;
+        }
+    }
+
+    public string ResolvedDesignation
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(Designation))
+                return Designation.Trim();
+            if (!string.IsNullOrWhiteSpace(AffiliateType))
+                return AffiliateType.Trim();
+            if (!string.IsNullOrWhiteSpace(Role))
+                return Role.Trim();
+            return "Director";
+        }
+    }
 }

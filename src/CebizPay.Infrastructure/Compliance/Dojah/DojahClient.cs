@@ -496,16 +496,16 @@ public sealed class DojahClient : IDojahClient
             var apiResponse = JsonSerializer.Deserialize<DojahApiResponse<DojahCacResponseBody>>(content, JsonOptions);
             if (apiResponse?.Entity != null && !string.IsNullOrWhiteSpace(apiResponse.Entity.CompanyName))
             {
-                var affiliates = apiResponse.Entity.Affiliates ?? [];
+                var affiliates = apiResponse.Entity.ResolvedAffiliates;
                 var safeMeta = JsonSerializer.Serialize(new
                 {
                     rc_number         = apiResponse.Entity.RcNumber,
                     company_name      = apiResponse.Entity.CompanyName,
-                    company_type      = apiResponse.Entity.CompanyType,
-                    registration_date = apiResponse.Entity.RegistrationDate,
+                    company_type      = apiResponse.Entity.ResolvedCompanyType,
+                    registration_date = apiResponse.Entity.ResolvedRegistrationDate,
                     status            = apiResponse.Entity.Status,
                     address           = apiResponse.Entity.Address,
-                    directors         = affiliates.Select(a => new { name = a.Name, designation = a.Designation })
+                    directors         = affiliates.Select(a => new { name = a.ResolvedName, designation = a.ResolvedDesignation })
                 });
 
                 return VerificationProviderResult.Match(
