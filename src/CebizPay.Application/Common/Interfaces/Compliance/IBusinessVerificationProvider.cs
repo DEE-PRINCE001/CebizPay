@@ -15,7 +15,7 @@ public interface IBusinessVerificationProvider
     /// </summary>
     Task<VerificationProviderResult> VerifyBusinessAsync(
         string cacNumber,
-        string companyName,
+        string companyType,
         CancellationToken cancellationToken = default);
 
     /// <summary>

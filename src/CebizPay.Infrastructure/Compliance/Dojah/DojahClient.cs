@@ -445,22 +445,37 @@ public sealed class DojahClient : IDojahClient
 
     public async Task<VerificationProviderResult> LookupCacAsync(
         string rcNumber,
-        string companyName,
+        string companyType,
         CancellationToken cancellationToken = default)
     {
         if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.PrivateKey))
         {
-            _logger.LogInformation("Sandbox Simulation: Verified CAC business {RcNumber} - {CompanyName}", rcNumber, companyName);
+            _logger.LogInformation("Sandbox Simulation: Verified CAC business {RcNumber} - {CompanyType}", rcNumber, companyType);
+            var simulatedMeta = JsonSerializer.Serialize(new
+            {
+                simulated = true,
+                rc_number = rcNumber.Trim(),
+                company_name = "SIMULATED COMPANY LIMITED",
+                company_type = companyType,
+                registration_date = "2020-01-01",
+                status = "ACTIVE",
+                address = "1 Simulation Street, Lagos",
+                directors = new[]
+                {
+                    new { name = "SIMULATION DIRECTOR ONE", designation = "Director" },
+                    new { name = "SIMULATION DIRECTOR TWO", designation = "Secretary" }
+                }
+            });
             return VerificationProviderResult.Match(
                 providerReference: $"DOJAH-SIM-CAC-{rcNumber.Trim()}",
                 confidenceScore: 100m,
                 safeSummary: "Corporate CAC registry verified (Sandbox Simulation).",
-                safeMetadata: "{\"simulated\":true,\"cac_verified\":true,\"status\":\"ACTIVE\",\"directors_count\":2}");
+                safeMetadata: simulatedMeta);
         }
 
         try
         {
-            var uri = $"api/v1/kyb/cac?rc_number={Uri.EscapeDataString(rcNumber)}&company_name={Uri.EscapeDataString(companyName)}";
+            var uri = $"api/v1/kyc/cac/advance?rc_number={Uri.EscapeDataString(rcNumber)}&company_type={Uri.EscapeDataString(companyType)}";
             using var request = new HttpRequestMessage(HttpMethod.Get, uri);
             ApplyAuthHeaders(request);
 
@@ -481,13 +496,16 @@ public sealed class DojahClient : IDojahClient
             var apiResponse = JsonSerializer.Deserialize<DojahApiResponse<DojahCacResponseBody>>(content, JsonOptions);
             if (apiResponse?.Entity != null && !string.IsNullOrWhiteSpace(apiResponse.Entity.CompanyName))
             {
-                var directorCount = apiResponse.Entity.Directors?.Count ?? 0;
+                var affiliates = apiResponse.Entity.Affiliates ?? [];
                 var safeMeta = JsonSerializer.Serialize(new
                 {
-                    rc_number = apiResponse.Entity.RcNumber,
-                    company_type = apiResponse.Entity.CompanyType,
-                    status = apiResponse.Entity.Status,
-                    directors_count = directorCount
+                    rc_number         = apiResponse.Entity.RcNumber,
+                    company_name      = apiResponse.Entity.CompanyName,
+                    company_type      = apiResponse.Entity.CompanyType,
+                    registration_date = apiResponse.Entity.RegistrationDate,
+                    status            = apiResponse.Entity.Status,
+                    address           = apiResponse.Entity.Address,
+                    directors         = affiliates.Select(a => new { name = a.Name, designation = a.Designation })
                 });
 
                 return VerificationProviderResult.Match(

@@ -83,9 +83,9 @@ public sealed class SmileIdVerificationProvider :
 
     public Task<VerificationProviderResult> VerifyBusinessAsync(
         string cacNumber,
-        string companyName,
+        string companyType,
         CancellationToken cancellationToken = default) =>
-        _client.VerifyBusinessAsync(cacNumber, companyName, cancellationToken);
+        _client.VerifyBusinessAsync(cacNumber, companyType, cancellationToken);
 
     public Task<VerificationProviderResult> GetBeneficialOwnersAsync(
         string cacNumber,

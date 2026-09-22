@@ -62,7 +62,7 @@ public sealed class OrganizationKybController : ControllerBase
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> LookupCac([FromBody] LookupCacRequest request, CancellationToken cancellationToken)
     {
-        var command = new LookupCacCommand(request.OrganizationId, request.CacNumber, request.CompanyName);
+        var command = new LookupCacCommand(request.OrganizationId, request.CacNumber, request.CompanyType, request.CompanyName);
         var response = await _sender.Send(command, cancellationToken);
         return Ok(response);
     }
@@ -119,6 +119,7 @@ public sealed class OrganizationKybController : ControllerBase
 public sealed record LookupCacRequest(
     Guid OrganizationId,
     string CacNumber,
+    string CompanyType,
     string? CompanyName = null);
 
 /// <summary>

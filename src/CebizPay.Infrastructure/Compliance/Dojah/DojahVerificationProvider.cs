@@ -73,9 +73,9 @@ public sealed class DojahVerificationProvider :
 
     public Task<VerificationProviderResult> VerifyBusinessAsync(
         string cacNumber,
-        string companyName,
+        string companyType,
         CancellationToken cancellationToken = default) =>
-        _client.LookupCacAsync(cacNumber, companyName, cancellationToken);
+        _client.LookupCacAsync(cacNumber, companyType, cancellationToken);
 
     public Task<VerificationProviderResult> GetBeneficialOwnersAsync(
         string cacNumber,

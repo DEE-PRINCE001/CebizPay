@@ -86,6 +86,7 @@ public interface IVerificationOrchestrator
         Guid organizationId,
         string cacNumber,
         string companyName,
+        string? companyType = null,
         string? idempotencyKey = null,
         CancellationToken cancellationToken = default);
 

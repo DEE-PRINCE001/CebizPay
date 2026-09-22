@@ -54,9 +54,9 @@ public sealed class NinjaVerificationProvider :
 
     public Task<VerificationProviderResult> VerifyBusinessAsync(
         string cacNumber,
-        string companyName,
+        string companyType,
         CancellationToken cancellationToken = default) =>
-        _client.VerifyCacAsync(cacNumber, companyName, cancellationToken);
+        _client.VerifyCacAsync(cacNumber, companyType, cancellationToken);
 
     public Task<VerificationProviderResult> GetBeneficialOwnersAsync(
         string cacNumber,

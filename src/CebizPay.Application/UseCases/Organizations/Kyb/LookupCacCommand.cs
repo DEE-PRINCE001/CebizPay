@@ -17,6 +17,7 @@ namespace CebizPay.Application.UseCases.Organizations.Kyb;
 public sealed record LookupCacCommand(
     Guid OrganizationId,
     string CacNumber,
+    string CompanyType,
     string? CompanyName = null) : IRequest<CacLookupResultDto>;
 
 /// <summary>
@@ -60,6 +61,12 @@ public sealed class LookupCacCommandValidator : AbstractValidator<LookupCacComma
             .NotEmpty()
             .MaximumLength(32)
             .WithMessage("Valid CAC registration number is required.");
+
+        RuleFor(x => x.CompanyType)
+            .NotEmpty()
+            .Must(t => new[] { "COMPANY", "BUSINESS_NAME", "INCORPORATED_TRUSTEES", "LIMITED_PARTNERSHIP", "LIMITED_LIABILITY_PARTNERSHIP" }
+                .Contains(t, StringComparer.OrdinalIgnoreCase))
+            .WithMessage("CompanyType must be one of: COMPANY, BUSINESS_NAME, INCORPORATED_TRUSTEES, LIMITED_PARTNERSHIP, LIMITED_LIABILITY_PARTNERSHIP.");
     }
 }
 
@@ -104,11 +111,13 @@ public sealed class LookupCacCommandHandler : IRequestHandler<LookupCacCommand, 
 
         var cleanCacNumber = request.CacNumber.Trim();
         var companyName = request.CompanyName?.Trim() ?? string.Empty;
+        var companyType = request.CompanyType.Trim().ToUpperInvariant();
 
         var verificationResponse = await _orchestrator.VerifyBusinessAsync(
             request.OrganizationId,
             cleanCacNumber,
             companyName,
+            companyType: companyType,
             cancellationToken: cancellationToken);
 
         var isMatched = verificationResponse.LatestResultStatus == VerificationResultStatus.Match ||

@@ -41,10 +41,10 @@ public interface IDojahClient
         DateTime? dateOfBirth = null,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Performs CAC corporate registry business lookup.</summary>
+    /// <summary>Performs CAC corporate registry business lookup via the Advanced endpoint.</summary>
     Task<VerificationProviderResult> LookupCacAsync(
         string rcNumber,
-        string companyName,
+        string companyType,
         CancellationToken cancellationToken = default);
 
     /// <summary>Fetches the authoritative verification record by reference ID directly from Dojah.</summary>

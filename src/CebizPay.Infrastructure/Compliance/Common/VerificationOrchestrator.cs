@@ -205,6 +205,7 @@ public sealed class VerificationOrchestrator : IVerificationOrchestrator
         Guid organizationId,
         string cacNumber,
         string companyName,
+        string? companyType = null,
         string? idempotencyKey = null,
         CancellationToken cancellationToken = default)
     {
@@ -217,7 +218,7 @@ public sealed class VerificationOrchestrator : IVerificationOrchestrator
             executeProviderFunc: (provider, ct) =>
             {
                 var p = _providerFactory.GetBusinessVerificationProvider(provider);
-                return p.VerifyBusinessAsync(cacNumber, companyName, ct);
+                return p.VerifyBusinessAsync(cacNumber, companyType ?? "COMPANY", ct);
             },
             cancellationToken: cancellationToken);
     }

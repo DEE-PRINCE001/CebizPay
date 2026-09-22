@@ -492,8 +492,8 @@ public sealed class VerifyBusinessCommandHandler : IRequestHandler<VerifyBusines
             request.OrganizationId,
             request.CacNumber,
             request.CompanyName,
-            request.IdempotencyKey,
-            cancellationToken);
+            idempotencyKey: request.IdempotencyKey,
+            cancellationToken: cancellationToken);
     }
 }
 

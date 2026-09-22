@@ -31,7 +31,7 @@ public sealed class LookupCacCommandTests
     [Fact]
     public void Validator_WhenOrganizationIdEmpty_ShouldFail()
     {
-        var command = new LookupCacCommand(Guid.Empty, "RC123456");
+        var command = new LookupCacCommand(Guid.Empty, "RC123456", "COMPANY");
         var result = _validator.TestValidate(command);
         result.ShouldHaveValidationErrorFor(x => x.OrganizationId);
     }
@@ -39,7 +39,7 @@ public sealed class LookupCacCommandTests
     [Fact]
     public void Validator_WhenCacNumberEmpty_ShouldFail()
     {
-        var command = new LookupCacCommand(Guid.NewGuid(), string.Empty);
+        var command = new LookupCacCommand(Guid.NewGuid(), string.Empty, "COMPANY");
         var result = _validator.TestValidate(command);
         result.ShouldHaveValidationErrorFor(x => x.CacNumber);
     }
@@ -47,7 +47,7 @@ public sealed class LookupCacCommandTests
     [Fact]
     public void Validator_WhenValid_ShouldPass()
     {
-        var command = new LookupCacCommand(Guid.NewGuid(), "RC123456", "Acme Ltd");
+        var command = new LookupCacCommand(Guid.NewGuid(), "RC123456", "COMPANY", "Acme Ltd");
         var result = _validator.TestValidate(command);
         result.ShouldNotHaveAnyValidationErrors();
     }
@@ -59,7 +59,7 @@ public sealed class LookupCacCommandTests
         _currentUserService.UserId.Returns((string?)null);
 
         var handler = new LookupCacCommandHandler(_orchestrator, dbContext, _currentUserService);
-        var command = new LookupCacCommand(Guid.NewGuid(), "RC123456");
+        var command = new LookupCacCommand(Guid.NewGuid(), "RC123456", "COMPANY");
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => handler.Handle(command, CancellationToken.None));
     }
@@ -72,7 +72,7 @@ public sealed class LookupCacCommandTests
         _currentUserService.UserId.Returns("user_outsider");
 
         var handler = new LookupCacCommandHandler(_orchestrator, dbContext, _currentUserService);
-        var command = new LookupCacCommand(orgId, "RC123456");
+        var command = new LookupCacCommand(orgId, "RC123456", "COMPANY");
 
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => handler.Handle(command, CancellationToken.None));
     }
@@ -97,7 +97,7 @@ public sealed class LookupCacCommandTests
         {
             "rc_number": "RC123456",
             "company_name": "EMEKA & SONS VENTURES LTD",
-            "company_type": "PRIVATE_LIMITED_COMPANY",
+            "company_type": "COMPANY",
             "registration_date": "2021-04-12",
             "status": "ACTIVE",
             "address": "Plot 100 Victoria Island, Lagos",
@@ -140,11 +140,11 @@ public sealed class LookupCacCommandTests
             CompletedAtUtc: DateTime.UtcNow,
             Evidences: evidences);
 
-        _orchestrator.VerifyBusinessAsync(orgId, "RC123456", Arg.Any<string>(), null, Arg.Any<CancellationToken>())
+        _orchestrator.VerifyBusinessAsync(orgId, "RC123456", Arg.Any<string>(), companyType: Arg.Any<string>(), idempotencyKey: null, cancellationToken: Arg.Any<CancellationToken>())
             .Returns(verificationResponse);
 
         var handler = new LookupCacCommandHandler(_orchestrator, dbContext, _currentUserService);
-        var command = new LookupCacCommand(orgId, "RC123456");
+        var command = new LookupCacCommand(orgId, "RC123456", "COMPANY");
 
         var result = await handler.Handle(command, CancellationToken.None);
 

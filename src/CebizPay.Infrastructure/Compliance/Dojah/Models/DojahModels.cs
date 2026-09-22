@@ -161,8 +161,8 @@ public sealed class DojahCacResponseBody
     [JsonPropertyName("address")]
     public string? Address { get; set; }
 
-    [JsonPropertyName("directors")]
-    public List<DojahDirector>? Directors { get; set; }
+    [JsonPropertyName("affiliates")]
+    public List<DojahDirector>? Affiliates { get; set; }
 }
 
 public sealed class DojahDirector
