@@ -313,4 +313,199 @@ public sealed class InboundWebhookProcessorTests
             .ToListAsync();
         Assert.Single(audits);
     }
+
+    [Fact]
+    public async Task ProcessWebhookAsync_MonnifyDeposit_WithPaymentSourceInformation_PopulatesSenderDetails()
+    {
+        // Arrange
+        using var db = CreateDbContext();
+        var wallet = Wallet.CreateIndividualWallet("usr_mnfy_sender", Currency.NGN);
+        db.Wallets.Add(wallet);
+
+        var extAccount = ExternalFundingAccount.Create(
+            walletId: wallet.Id,
+            provider: PaymentProvider.Monnify,
+            accountNumber: "1020304050",
+            accountName: "John Doe",
+            bankCode: "035",
+            bankName: "Wema Bank",
+            currency: Currency.NGN,
+            isPrimary: true);
+        db.ExternalFundingAccounts.Add(extAccount);
+        await db.SaveChangesAsync();
+
+        var ledgerTxn = new LedgerTransaction(LedgerTransactionType.VirtualAccountDeposit, "FND-EXT-MNFY_SENDER_01", null, null);
+        var fundingTx = FundingTransaction.CreateWithExternalAccount(
+            wallet.Id, extAccount.Id, PaymentProvider.Monnify, "MNFY_SENDER_01", "mnfy_evt_s1", FundingChannel.VirtualAccount,
+            25000m, 0m, 25000m, 0m, null, null, null, Currency.NGN);
+
+        _ledgerPosting.PostExternalFundingAccountCreditCoreAsync(
+            wallet.Id, extAccount.Id, 25000m, Arg.Any<decimal>(), 25000m, Arg.Any<decimal>(), Currency.NGN, PaymentProvider.Monnify, "MNFY_SENDER_01",
+            Arg.Any<string?>(), Arg.Any<Guid?>(), Arg.Any<int?>(), Arg.Any<FeeBearer?>(), FundingChannel.VirtualAccount, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns((ledgerTxn, fundingTx));
+
+        var processor = CreateProcessor(db);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            eventType = "SUCCESSFUL_TRANSACTION",
+            eventData = new
+            {
+                transactionReference = "MNFY_SENDER_01",
+                amountPaid = 25000m,
+                paymentStatus = "PAID",
+                currencyCode = "NGN",
+                destinationAccountInformation = new
+                {
+                    bankCode = "035",
+                    bankName = "Wema Bank",
+                    accountNumber = "1020304050"
+                },
+                paymentSourceInformation = new[]
+                {
+                    new
+                    {
+                        bankCode = "058",
+                        bankName = "Guaranty Trust Bank",
+                        accountNumber = "0123456789",
+                        accountName = "ADEKUNLE SAMUEL ADENIRAN"
+                    }
+                }
+            }
+        });
+
+        var headers = new Dictionary<string, string> { { "monnify-signature", "mnfy_secret_123" } };
+
+        // Act
+        var result = await processor.ProcessWebhookAsync(PaymentProvider.Monnify, payload, headers);
+
+        // Assert
+        Assert.Equal(WebhookProcessingStatus.Processed, result.Status);
+        Assert.Equal("ADEKUNLE SAMUEL ADENIRAN", fundingTx.SenderAccountName);
+        Assert.Equal("0123456789", fundingTx.SenderAccountNumber);
+        Assert.Equal("058", fundingTx.SenderBankCode);
+        Assert.Equal("Guaranty Trust Bank", fundingTx.SenderBankName);
+    }
+
+    [Fact]
+    public async Task ProcessWebhookAsync_PaystackVirtualAccountDeposit_WithAuthorization_PopulatesSenderDetails()
+    {
+        // Arrange
+        using var db = CreateDbContext();
+        var wallet = Wallet.CreateIndividualWallet("usr_pstk_dva", Currency.NGN);
+        db.Wallets.Add(wallet);
+
+        var va = VirtualAccount.CreateIndividual(
+            individualId: "usr_pstk_dva",
+            provider: PaymentProvider.Paystack,
+            accountNumber: "2233445566",
+            accountName: "John Doe",
+            bankCode: "035",
+            bankName: "Wema Bank",
+            currency: Currency.NGN);
+        db.VirtualAccounts.Add(va);
+        await db.SaveChangesAsync();
+
+        var ledgerTxn = new LedgerTransaction(LedgerTransactionType.VirtualAccountDeposit, "FND-PSTK-DVA-01", null, null);
+        var fundingTx = FundingTransaction.Create(wallet.Id, va.Id, PaymentProvider.Paystack, "PSTK-DVA-01", FundingChannel.VirtualAccount, 15000m, Currency.NGN);
+
+        _ledgerPosting.PostInboundFundingCreditCoreAsync(
+            wallet.Id, va.Id, 15000m, Currency.NGN, PaymentProvider.Paystack, "PSTK-DVA-01", FundingChannel.VirtualAccount, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns((ledgerTxn, fundingTx));
+
+        var processor = CreateProcessor(db);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            @event = "charge.success",
+            data = new
+            {
+                reference = "PSTK-DVA-01",
+                amount = 1500000, // 15,000 NGN in kobo
+                currency = "NGN",
+                status = "success",
+                dedicated_account = new
+                {
+                    account_number = "2233445566"
+                },
+                authorization = new
+                {
+                    sender_name = "OLUWASEUN BELLO",
+                    sender_bank = "Access Bank",
+                    sender_bank_account_number = "0099887766"
+                }
+            }
+        });
+
+        var headers = new Dictionary<string, string> { { "x-paystack-signature", "pstk_secret_123" } };
+
+        // Act
+        var result = await processor.ProcessWebhookAsync(PaymentProvider.Paystack, payload, headers);
+
+        // Assert
+        Assert.Equal(WebhookProcessingStatus.Processed, result.Status);
+        Assert.Equal("OLUWASEUN BELLO", fundingTx.SenderAccountName);
+        Assert.Equal("0099887766", fundingTx.SenderAccountNumber);
+        Assert.Equal("Access Bank", fundingTx.SenderBankName);
+    }
+
+    [Fact]
+    public async Task ProcessWebhookAsync_FlutterwaveDeposit_WithMetaData_PopulatesSenderDetails()
+    {
+        // Arrange
+        using var db = CreateDbContext();
+        var wallet = Wallet.CreateIndividualWallet("usr_flw_dva", Currency.NGN);
+        db.Wallets.Add(wallet);
+
+        var va = VirtualAccount.CreateIndividual(
+            individualId: "usr_flw_dva",
+            provider: PaymentProvider.Flutterwave,
+            accountNumber: "3344556677",
+            accountName: "John Doe",
+            bankCode: "035",
+            bankName: "Wema Bank",
+            currency: Currency.NGN);
+        db.VirtualAccounts.Add(va);
+        await db.SaveChangesAsync();
+
+        var ledgerTxn = new LedgerTransaction(LedgerTransactionType.VirtualAccountDeposit, "FND-FLW-DVA-01", null, null);
+        var fundingTx = FundingTransaction.Create(wallet.Id, va.Id, PaymentProvider.Flutterwave, "FLW-DVA-01", FundingChannel.VirtualAccount, 30000m, Currency.NGN);
+
+        _ledgerPosting.PostInboundFundingCreditCoreAsync(
+            wallet.Id, va.Id, 30000m, Currency.NGN, PaymentProvider.Flutterwave, Arg.Any<string>(), FundingChannel.VirtualAccount, Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns((ledgerTxn, fundingTx));
+
+        var processor = CreateProcessor(db);
+
+        var payload = JsonSerializer.Serialize(new
+        {
+            @event = "charge.completed",
+            data = new
+            {
+                id = 887766,
+                tx_ref = "FLW-DVA-01",
+                account_number = "3344556677",
+                amount = 30000.00m,
+                currency = "NGN",
+                status = "SUCCESSFUL",
+                meta_data = new
+                {
+                    originatorname = "CHINEDU OKONKWO",
+                    originatoraccountnumber = "1122334455",
+                    bankname = "Zenith Bank"
+                }
+            }
+        });
+
+        var headers = new Dictionary<string, string> { { "verif-hash", "flw_secret_hash_123" } };
+
+        // Act
+        var result = await processor.ProcessWebhookAsync(PaymentProvider.Flutterwave, payload, headers);
+
+        // Assert
+        Assert.Equal(WebhookProcessingStatus.Processed, result.Status);
+        Assert.Equal("CHINEDU OKONKWO", fundingTx.SenderAccountName);
+        Assert.Equal("1122334455", fundingTx.SenderAccountNumber);
+        Assert.Equal("Zenith Bank", fundingTx.SenderBankName);
+    }
 }

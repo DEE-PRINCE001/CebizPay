@@ -621,6 +621,12 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
                     description: $"Inbound deposit via {provider} account {externalFundingAccount.AccountNumber}",
                     cancellationToken: ct).ConfigureAwait(false);
 
+                funding.SetSenderDetails(
+                    parsed.SenderAccountName,
+                    parsed.SenderAccountNumber,
+                    parsed.SenderBankCode,
+                    parsed.SenderBankName);
+
                 RecordAudit(AuditActions.FundingReceived, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
                     JsonSerializer.Serialize(new
                     {
@@ -722,6 +728,12 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
                     description: $"Inbound deposit via virtual account {virtualAccount.AccountNumber}",
                     cancellationToken: ct).ConfigureAwait(false);
 
+                funding.SetSenderDetails(
+                    parsed.SenderAccountName,
+                    parsed.SenderAccountNumber,
+                    parsed.SenderBankCode,
+                    parsed.SenderBankName);
+
                 RecordAudit(AuditActions.FundingReceived, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
                     JsonSerializer.Serialize(new { AccountNumber = virtualAccount.AccountNumber, Amount = parsed.Amount.Value, virtualAccount.Currency, Reference = depositReference }));
 
@@ -804,6 +816,12 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
                         feeBearer: feeBearer,
                         description: $"Card deposit via {provider} ({fundingTx.ProviderTransactionReference})",
                         cancellationToken: ct).ConfigureAwait(false);
+
+                    funding.SetSenderDetails(
+                        parsed.SenderAccountName,
+                        parsed.SenderAccountNumber,
+                        parsed.SenderBankCode,
+                        parsed.SenderBankName);
 
                     RecordAudit(AuditActions.CardFundingCompleted, AuditResourceTypes.FundingTransaction, funding.Id.ToString(),
                         JsonSerializer.Serialize(new
@@ -954,6 +972,51 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
                 ? string.Format(CultureInfo.InvariantCulture, "mnfy_evt_{0}_{1}_{2}", eventType, effectiveRef, paymentStatus ?? "unknown")
                 : ComputePayloadHash(rawPayload);
 
+        string? senderAccountName = null;
+        string? senderAccountNumber = null;
+        string? senderBankCode = null;
+        string? senderBankName = null;
+
+        if (data.TryGetProperty("paymentSourceInformation", out var psi))
+        {
+            JsonElement sourceElement = default;
+            if (psi.ValueKind == JsonValueKind.Array && psi.GetArrayLength() > 0)
+            {
+                sourceElement = psi[0];
+            }
+            else if (psi.ValueKind == JsonValueKind.Object)
+            {
+                sourceElement = psi;
+            }
+
+            if (sourceElement.ValueKind == JsonValueKind.Object)
+            {
+                if (sourceElement.TryGetProperty("accountName", out var san)) senderAccountName = san.GetString();
+                if (sourceElement.TryGetProperty("accountNumber", out var sac)) senderAccountNumber = sac.GetString();
+                if (sourceElement.TryGetProperty("bankCode", out var sbc)) senderBankCode = sbc.GetString();
+                if (sourceElement.TryGetProperty("bankName", out var sbn)) senderBankName = sbn.GetString();
+            }
+        }
+        else if (data.TryGetProperty("accountDetails", out var accDetails) && accDetails.ValueKind == JsonValueKind.Object)
+        {
+            if (accDetails.TryGetProperty("accountName", out var san)) senderAccountName = san.GetString();
+            if (accDetails.TryGetProperty("accountNumber", out var sac)) senderAccountNumber = sac.GetString();
+            if (accDetails.TryGetProperty("bankCode", out var sbc)) senderBankCode = sbc.GetString();
+            if (accDetails.TryGetProperty("bankName", out var sbn)) senderBankName = sbn.GetString();
+        }
+
+        if (string.IsNullOrWhiteSpace(senderAccountName))
+        {
+            if (data.TryGetProperty("payerName", out var pn) && pn.ValueKind == JsonValueKind.String)
+            {
+                senderAccountName = pn.GetString();
+            }
+            else if (data.TryGetProperty("customer", out var cust) && cust.ValueKind == JsonValueKind.Object && cust.TryGetProperty("name", out var cn))
+            {
+                senderAccountName = cn.GetString();
+            }
+        }
+
         var safeMeta = JsonSerializer.Serialize(new
         {
             transaction_reference = txRef,
@@ -962,7 +1025,11 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             payment_status = paymentStatus,
             event_type = eventType,
             account_number = accountNumber,
-            bank_code = bankCode
+            bank_code = bankCode,
+            sender_account_name = senderAccountName,
+            sender_account_number = senderAccountNumber,
+            sender_bank_code = senderBankCode,
+            sender_bank_name = senderBankName
         });
 
         return new ParsedWebhookPayload(
@@ -978,7 +1045,11 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             IsFailure: isFailure,
             FailureCode: isFailure ? "DISBURSEMENT_FAILED" : null,
             FailureReason: isFailure ? "Monnify reported disbursement as failed or reversed" : null,
-            SafeMetadata: safeMeta);
+            SafeMetadata: safeMeta,
+            SenderAccountName: senderAccountName,
+            SenderAccountNumber: senderAccountNumber,
+            SenderBankCode: senderBankCode,
+            SenderBankName: senderBankName);
     }
 
     private static ParsedWebhookPayload? ParseFlutterwave(JsonElement root, string rawPayload)
@@ -1013,12 +1084,52 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         var isSuccess = status == "SUCCESSFUL";
         var isFailure = status == "FAILED";
 
+        string? senderAccountName = null;
+        string? senderAccountNumber = null;
+        string? senderBankName = null;
+
+        JsonElement metaElem = default;
+        bool hasMeta = false;
+        if (data.TryGetProperty("meta_data", out var m1) && m1.ValueKind == JsonValueKind.Object)
+        {
+            metaElem = m1;
+            hasMeta = true;
+        }
+        else if (data.TryGetProperty("meta", out var m2) && m2.ValueKind == JsonValueKind.Object)
+        {
+            metaElem = m2;
+            hasMeta = true;
+        }
+        else if (root.TryGetProperty("meta_data", out var m3) && m3.ValueKind == JsonValueKind.Object)
+        {
+            metaElem = m3;
+            hasMeta = true;
+        }
+
+        if (hasMeta)
+        {
+            if (metaElem.TryGetProperty("originatorname", out var on) || metaElem.TryGetProperty("originator_name", out on))
+                senderAccountName = on.GetString();
+            if (metaElem.TryGetProperty("originatoraccountnumber", out var oan) || metaElem.TryGetProperty("originator_account_number", out oan))
+                senderAccountNumber = oan.GetString();
+            if (metaElem.TryGetProperty("bankname", out var bn) || metaElem.TryGetProperty("bank_name", out bn))
+                senderBankName = bn.GetString();
+        }
+
+        if (string.IsNullOrWhiteSpace(senderAccountName) && data.TryGetProperty("customer", out var cust) && cust.ValueKind == JsonValueKind.Object)
+        {
+            if (cust.TryGetProperty("name", out var cn)) senderAccountName = cn.GetString();
+        }
+
         var safeMeta = JsonSerializer.Serialize(new
         {
             provider_id = id,
             status = status,
             reference = effectiveRef,
-            account_number = accountNumber
+            account_number = accountNumber,
+            sender_account_name = senderAccountName,
+            sender_account_number = senderAccountNumber,
+            sender_bank_name = senderBankName
         });
 
         return new ParsedWebhookPayload(
@@ -1034,7 +1145,11 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             IsFailure: isFailure,
             FailureCode: isFailure ? "TRANSFER_FAILED" : null,
             FailureReason: completeMessage ?? (isFailure ? "Transfer rejected by gateway" : null),
-            SafeMetadata: safeMeta);
+            SafeMetadata: safeMeta,
+            SenderAccountName: senderAccountName,
+            SenderAccountNumber: senderAccountNumber,
+            SenderBankCode: null,
+            SenderBankName: senderBankName);
     }
 
     private static ParsedWebhookPayload? ParsePaystack(JsonElement root, string rawPayload)
@@ -1078,13 +1193,38 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
                 ? string.Format(CultureInfo.InvariantCulture, "pstk_evt_{0}_{1}_{2}", eventType, reference, status ?? "unknown")
                 : ComputePayloadHash(rawPayload);
 
+        string? senderAccountName = null;
+        string? senderAccountNumber = null;
+        string? senderBankName = null;
+
+        if (data.TryGetProperty("authorization", out var authObj) && authObj.ValueKind == JsonValueKind.Object)
+        {
+            if (authObj.TryGetProperty("sender_name", out var sn)) senderAccountName = sn.GetString();
+            if (authObj.TryGetProperty("sender_bank_account_number", out var sban)) senderAccountNumber = sban.GetString();
+            if (authObj.TryGetProperty("sender_bank", out var sb)) senderBankName = sb.GetString();
+        }
+
+        if (string.IsNullOrWhiteSpace(senderAccountName) && data.TryGetProperty("customer", out var cust) && cust.ValueKind == JsonValueKind.Object)
+        {
+            var fn = cust.TryGetProperty("first_name", out var fnp) ? fnp.GetString() : null;
+            var ln = cust.TryGetProperty("last_name", out var lnp) ? lnp.GetString() : null;
+            var fullName = $"{fn} {ln}".Trim();
+            if (!string.IsNullOrWhiteSpace(fullName))
+            {
+                senderAccountName = fullName;
+            }
+        }
+
         var safeMeta = JsonSerializer.Serialize(new
         {
             transfer_code = transferCode,
             reference = reference,
             status = status,
             event_type = eventType,
-            account_number = accountNumber
+            account_number = accountNumber,
+            sender_account_name = senderAccountName,
+            sender_account_number = senderAccountNumber,
+            sender_bank_name = senderBankName
         });
 
         return new ParsedWebhookPayload(
@@ -1100,7 +1240,11 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
             IsFailure: isFailure,
             FailureCode: isFailure ? "TRANSFER_FAILED" : null,
             FailureReason: isFailure ? string.Format(CultureInfo.InvariantCulture, "Transfer status is '{0}'", status) : null,
-            SafeMetadata: safeMeta);
+            SafeMetadata: safeMeta,
+            SenderAccountName: senderAccountName,
+            SenderAccountNumber: senderAccountNumber,
+            SenderBankCode: null,
+            SenderBankName: senderBankName);
     }
 
     private sealed record ParsedWebhookPayload(
@@ -1116,7 +1260,11 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         bool IsFailure,
         string? FailureCode,
         string? FailureReason,
-        string? SafeMetadata);
+        string? SafeMetadata,
+        string? SenderAccountName = null,
+        string? SenderAccountNumber = null,
+        string? SenderBankCode = null,
+        string? SenderBankName = null);
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Warning, Message = "Webhook signature verification failed for provider {Provider}")]
     private static partial void LogWebhookSignatureFailed(ILogger logger, string provider);
