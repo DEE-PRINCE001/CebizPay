@@ -3,6 +3,7 @@ using CebizPay.Application.Common.Interfaces.Persistence;
 using CebizPay.Application.Common.Models;
 using CebizPay.Domain.Finance.Entities;
 using CebizPay.Domain.Finance.Enums;
+using CebizPay.Domain.Payments.Entities;
 using FluentValidation;
 using MediatR;
 
@@ -90,18 +91,53 @@ public sealed class GetAdminIndividualTransactionsQueryHandler : IRequestHandler
         var entriesQuery = _dbContext.LedgerEntries
             .Where(e => e.LedgerAccountId == ledgerAccount.Id);
 
-        // Filter by Transaction Type (Send = Debit, Receives = Credit)
+        // Filter by Transaction Type
         if (!string.IsNullOrWhiteSpace(request.Type))
         {
             var typeStr = request.Type.Trim();
-            if (typeStr.Equals("Send", StringComparison.OrdinalIgnoreCase))
+            if (typeStr.Equals("Send", StringComparison.OrdinalIgnoreCase) ||
+                typeStr.Equals("Debit", StringComparison.OrdinalIgnoreCase))
             {
                 entriesQuery = entriesQuery.Where(e => e.Direction == LedgerEntryDirection.Debit);
             }
             else if (typeStr.Equals("Receives", StringComparison.OrdinalIgnoreCase) ||
-                     typeStr.Equals("Receive", StringComparison.OrdinalIgnoreCase))
+                     typeStr.Equals("Receive", StringComparison.OrdinalIgnoreCase) ||
+                     typeStr.Equals("Credit", StringComparison.OrdinalIgnoreCase))
             {
                 entriesQuery = entriesQuery.Where(e => e.Direction == LedgerEntryDirection.Credit);
+            }
+            else if (typeStr.Equals("Bank Deposit", StringComparison.OrdinalIgnoreCase) ||
+                     typeStr.Equals("VirtualAccountDeposit", StringComparison.OrdinalIgnoreCase))
+            {
+                entriesQuery = entriesQuery.Where(e =>
+                    _dbContext.LedgerTransactions.Any(t => t.Id == e.LedgerTransactionId && t.TransactionType == LedgerTransactionType.VirtualAccountDeposit));
+            }
+            else if (typeStr.Equals("Card Funding", StringComparison.OrdinalIgnoreCase) ||
+                     typeStr.Equals("CardFunding", StringComparison.OrdinalIgnoreCase))
+            {
+                entriesQuery = entriesQuery.Where(e =>
+                    _dbContext.LedgerTransactions.Any(t => t.Id == e.LedgerTransactionId && t.TransactionType == LedgerTransactionType.CardFunding));
+            }
+            else if (typeStr.Equals("Transfer Out", StringComparison.OrdinalIgnoreCase))
+            {
+                entriesQuery = entriesQuery.Where(e => e.Direction == LedgerEntryDirection.Debit &&
+                    _dbContext.LedgerTransactions.Any(t => t.Id == e.LedgerTransactionId && t.TransactionType == LedgerTransactionType.PeerTransfer));
+            }
+            else if (typeStr.Equals("Transfer In", StringComparison.OrdinalIgnoreCase))
+            {
+                entriesQuery = entriesQuery.Where(e => e.Direction == LedgerEntryDirection.Credit &&
+                    _dbContext.LedgerTransactions.Any(t => t.Id == e.LedgerTransactionId && t.TransactionType == LedgerTransactionType.PeerTransfer));
+            }
+            else if (typeStr.Equals("Bank Transfer", StringComparison.OrdinalIgnoreCase) ||
+                     typeStr.Equals("BankTransfer", StringComparison.OrdinalIgnoreCase))
+            {
+                entriesQuery = entriesQuery.Where(e =>
+                    _dbContext.LedgerTransactions.Any(t => t.Id == e.LedgerTransactionId && t.TransactionType == LedgerTransactionType.BankTransfer));
+            }
+            else if (Enum.TryParse<LedgerTransactionType>(typeStr, true, out var parsedTxType))
+            {
+                entriesQuery = entriesQuery.Where(e =>
+                    _dbContext.LedgerTransactions.Any(t => t.Id == e.LedgerTransactionId && t.TransactionType == parsedTxType));
             }
         }
 
@@ -177,6 +213,34 @@ public sealed class GetAdminIndividualTransactionsQueryHandler : IRequestHandler
             .ToListAsync(cancellationToken);
         var bankTransferMap = bankTransfers.ToDictionary(b => b.Reference, b => b);
 
+        // 7. Fetch FundingTransactions linked to these ledger transactions
+        var fundingTxns = await _dbContext.FundingTransactions
+            .Where(f => f.LedgerTransactionId.HasValue && txnIds.Contains(f.LedgerTransactionId.Value))
+            .ToListAsync(cancellationToken);
+        var fundingTxMap = fundingTxns
+            .Where(f => f.LedgerTransactionId.HasValue)
+            .ToDictionary(f => f.LedgerTransactionId!.Value, f => f);
+
+        var extAccountIds = fundingTxns
+            .Where(f => f.ExternalFundingAccountId.HasValue)
+            .Select(f => f.ExternalFundingAccountId!.Value)
+            .Distinct()
+            .ToList();
+        var extAccounts = await _dbContext.ExternalFundingAccounts
+            .Where(e => extAccountIds.Contains(e.Id))
+            .ToListAsync(cancellationToken);
+        var extAccountMap = extAccounts.ToDictionary(e => e.Id, e => e);
+
+        var virtualAccountIds = fundingTxns
+            .Where(f => f.VirtualAccountId.HasValue)
+            .Select(f => f.VirtualAccountId!.Value)
+            .Distinct()
+            .ToList();
+        var virtualAccounts = await _dbContext.VirtualAccounts
+            .Where(v => virtualAccountIds.Contains(v.Id))
+            .ToListAsync(cancellationToken);
+        var virtualAccountMap = virtualAccounts.ToDictionary(v => v.Id, v => v);
+
         var items = new List<AdminIndividualTransactionItemDto>(entries.Count);
 
         foreach (var entry in entries)
@@ -186,7 +250,29 @@ public sealed class GetAdminIndividualTransactionsQueryHandler : IRequestHandler
                 continue;
             }
 
-            var transactionType = entry.Direction == LedgerEntryDirection.Debit ? "Send" : "Receives";
+            var transactionType = txn.TransactionType switch
+            {
+                LedgerTransactionType.VirtualAccountDeposit => "Bank Deposit",
+                LedgerTransactionType.CardFunding => "Card Funding",
+                LedgerTransactionType.PeerTransfer => entry.Direction == LedgerEntryDirection.Debit ? "Transfer Out" : "Transfer In",
+                LedgerTransactionType.BankTransfer => "Bank Transfer",
+                LedgerTransactionType.Payroll => "Payroll",
+                LedgerTransactionType.LoanDisbursement => "Loan Disbursement",
+                LedgerTransactionType.LoanRepayment => "Loan Repayment",
+                LedgerTransactionType.SavingsContribution => "Savings Deposit",
+                LedgerTransactionType.SavingsWithdrawal => "Savings Withdrawal",
+                LedgerTransactionType.ThriftContribution => "Thrift Contribution",
+                LedgerTransactionType.ThriftPayout => "Thrift Payout",
+                LedgerTransactionType.VasPurchase => "VAS Purchase",
+                LedgerTransactionType.Fee => "Platform Fee",
+                LedgerTransactionType.Refund => "Refund",
+                LedgerTransactionType.Reversal => "Reversal",
+                LedgerTransactionType.ErpExpense => "ERP Expense",
+                LedgerTransactionType.ErpInvoicePayment => "Invoice Payment",
+                LedgerTransactionType.CompanyVoucherDisbursement => "Voucher",
+                _ => txn.TransactionType.ToString()
+            };
+
             var displayStatus = txn.Status switch
             {
                 LedgerTransactionStatus.Completed => "Successfull",
@@ -240,6 +326,56 @@ public sealed class GetAdminIndividualTransactionsQueryHandler : IRequestHandler
                 method = "Bank Account";
                 accountOrWalletId = bankTx.DestinationAccountNumber;
                 receiverSenderId = bankTx.DestinationBankCode;
+            }
+            else if (fundingTxMap.TryGetValue(txn.Id, out var fundingTx))
+            {
+                if (txn.TransactionType == LedgerTransactionType.VirtualAccountDeposit)
+                {
+                    method = "Bank Transfer";
+                    counterpartyName = !string.IsNullOrWhiteSpace(fundingTx.SenderAccountName)
+                        ? fundingTx.SenderAccountName
+                        : "External Bank Deposit";
+
+                    if (!string.IsNullOrWhiteSpace(fundingTx.SenderAccountNumber))
+                    {
+                        accountOrWalletId = fundingTx.SenderAccountNumber;
+                    }
+                    else if (fundingTx.ExternalFundingAccountId.HasValue && extAccountMap.TryGetValue(fundingTx.ExternalFundingAccountId.Value, out var extAcc))
+                    {
+                        accountOrWalletId = extAcc.AccountNumber;
+                    }
+                    else if (fundingTx.VirtualAccountId.HasValue && virtualAccountMap.TryGetValue(fundingTx.VirtualAccountId.Value, out var va))
+                    {
+                        accountOrWalletId = va.AccountNumber;
+                    }
+                    else
+                    {
+                        accountOrWalletId = string.Empty;
+                    }
+                }
+                else if (txn.TransactionType == LedgerTransactionType.CardFunding)
+                {
+                    method = "Card";
+                    counterpartyName = !string.IsNullOrWhiteSpace(fundingTx.SenderAccountName)
+                        ? fundingTx.SenderAccountName
+                        : "Card Funding";
+                    accountOrWalletId = !string.IsNullOrWhiteSpace(fundingTx.SenderAccountNumber)
+                        ? fundingTx.SenderAccountNumber
+                        : string.Empty;
+                }
+            }
+            else
+            {
+                if (txn.TransactionType == LedgerTransactionType.VasPurchase)
+                {
+                    method = "VAS";
+                    counterpartyName = "VAS Purchase";
+                }
+                else if (txn.TransactionType == LedgerTransactionType.Fee)
+                {
+                    method = "Platform Fee";
+                    counterpartyName = "Platform Fee";
+                }
             }
 
             if (!string.IsNullOrWhiteSpace(request.Search))

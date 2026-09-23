@@ -131,7 +131,7 @@ public sealed class AdminIndividualsApiTests
         var pageResult = new PagedResult<AdminIndividualTransactionItemDto>(
             new List<AdminIndividualTransactionItemDto>
             {
-                new("tx-1029384756", "Johnson Mike", null, 25000.00m, "Send", "7817971681ID", "Wallet ID", "156191667631", DateTime.UtcNow, "Successfull")
+                new("tx-1029384756", "Johnson Mike", null, 25000.00m, "Transfer Out", "7817971681ID", "Wallet ID", "156191667631", DateTime.UtcNow, "Successfull")
             }, 1, 1, 10);
 
         mediator.Send(Arg.Any<GetAdminIndividualTransactionsQuery>(), Arg.Any<CancellationToken>())

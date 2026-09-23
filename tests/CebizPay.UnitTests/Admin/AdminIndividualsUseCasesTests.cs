@@ -568,4 +568,95 @@ public sealed class AdminIndividualsUseCasesTests
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => handler.Handle(command, CancellationToken.None));
     }
+
+    [Fact]
+    public async Task GetAdminIndividualTransactions_VirtualAccountDepositWithSenderDetails_ReturnsAccurateDisplayFields()
+    {
+        await using var db = CreateDbContext();
+
+        var profile = new IndividualProfile("user-dep-01", "Sunday", "Bello");
+        db.IndividualProfiles.Add(profile);
+
+        var wallet = Wallet.CreateIndividualWallet("user-dep-01", Currency.NGN);
+        db.Wallets.Add(wallet);
+
+        var ledgerAcc = LedgerAccount.CreateWalletAccount(wallet.Id, "Sunday Bello Wallet", Currency.NGN);
+        db.LedgerAccounts.Add(ledgerAcc);
+
+        var extAcc = ExternalFundingAccount.Create(wallet.Id, PaymentProvider.Monnify, "7820987654", "Sunday Bello", "035", "Wema Bank", Currency.NGN, isPrimary: true);
+        db.ExternalFundingAccounts.Add(extAcc);
+
+        var ledgerTx = new LedgerTransaction(LedgerTransactionType.VirtualAccountDeposit, "FND-MNFY|11|20260921174022|000603", null, "Inbound deposit");
+        ledgerTx.Complete(DateTime.UtcNow);
+        db.LedgerTransactions.Add(ledgerTx);
+
+        var entry = new LedgerEntry(ledgerTx.Id, ledgerAcc.Id, LedgerEntryDirection.Credit, 4000m, Currency.NGN, 1);
+        db.LedgerEntries.Add(entry);
+
+        var fundingTx = FundingTransaction.CreateWithExternalAccount(
+            wallet.Id, extAcc.Id, PaymentProvider.Monnify, "MNFY|11|20260921174022|000603", "evt_100", FundingChannel.VirtualAccount,
+            4000m, 0m, 4000m, 0m, null, null, null, Currency.NGN);
+        fundingTx.MarkCompleted(ledgerTx.Id);
+        fundingTx.SetSenderDetails("ADEKUNLE SAMUEL ADENIRAN", "0123456789", "058", "Guaranty Trust Bank");
+        db.FundingTransactions.Add(fundingTx);
+
+        await db.SaveChangesAsync();
+
+        var handler = new GetAdminIndividualTransactionsQueryHandler(db);
+        var query = new GetAdminIndividualTransactionsQuery(profile.Id.ToString());
+
+        var result = await handler.Handle(query, CancellationToken.None);
+
+        Assert.Equal(1, result.TotalCount);
+        var item = Assert.Single(result.Items);
+        Assert.Equal("FND-MNFY|11|20260921174022|000603", item.Id);
+        Assert.Equal("Bank Deposit", item.TransactionType);
+        Assert.Equal("ADEKUNLE SAMUEL ADENIRAN", item.CounterpartyName);
+        Assert.Equal("Bank Transfer", item.Method);
+        Assert.Equal("0123456789", item.AccountOrWalletId);
+        Assert.Equal("FND-MNFY|11|20260921174022|000603", item.ReceiverSenderId);
+        Assert.Equal("Successfull", item.Status);
+    }
+
+    [Fact]
+    public async Task GetAdminIndividualTransactions_PeerTransfer_ReturnsAccurateTransferDirectionAndCounterparty()
+    {
+        await using var db = CreateDbContext();
+
+        var senderProf = new IndividualProfile("sender-user", "Alice", "Smith");
+        var receiverProf = new IndividualProfile("receiver-user", "Bob", "Jones");
+        db.IndividualProfiles.AddRange(senderProf, receiverProf);
+
+        var senderWallet = Wallet.CreateIndividualWallet("sender-user", Currency.NGN);
+        var receiverWallet = Wallet.CreateIndividualWallet("receiver-user", Currency.NGN);
+        db.Wallets.AddRange(senderWallet, receiverWallet);
+
+        var senderAcc = LedgerAccount.CreateWalletAccount(senderWallet.Id, "Alice Wallet", Currency.NGN);
+        var receiverAcc = LedgerAccount.CreateWalletAccount(receiverWallet.Id, "Bob Wallet", Currency.NGN);
+        db.LedgerAccounts.AddRange(senderAcc, receiverAcc);
+
+        var ledgerTx = new LedgerTransaction(LedgerTransactionType.PeerTransfer, "TX-P2P-12345", null, "P2P transfer");
+        ledgerTx.Complete(DateTime.UtcNow);
+        db.LedgerTransactions.Add(ledgerTx);
+
+        var debitEntry = new LedgerEntry(ledgerTx.Id, senderAcc.Id, LedgerEntryDirection.Debit, 5000m, Currency.NGN, 1);
+        var creditEntry = new LedgerEntry(ledgerTx.Id, receiverAcc.Id, LedgerEntryDirection.Credit, 5000m, Currency.NGN, 2);
+        db.LedgerEntries.AddRange(debitEntry, creditEntry);
+
+        await db.SaveChangesAsync();
+
+        var handler = new GetAdminIndividualTransactionsQueryHandler(db);
+        var query = new GetAdminIndividualTransactionsQuery(senderProf.Id.ToString());
+
+        var result = await handler.Handle(query, CancellationToken.None);
+
+        Assert.Equal(1, result.TotalCount);
+        var item = Assert.Single(result.Items);
+        Assert.Equal("Transfer Out", item.TransactionType);
+        Assert.Equal("Bob Jones", item.CounterpartyName);
+        Assert.Equal("Wallet ID", item.Method);
+        Assert.Equal(receiverWallet.Id.ToString("N")[..12], item.AccountOrWalletId);
+        Assert.Equal("receiver-user", item.ReceiverSenderId);
+        Assert.Equal("Successfull", item.Status);
+    }
 }
