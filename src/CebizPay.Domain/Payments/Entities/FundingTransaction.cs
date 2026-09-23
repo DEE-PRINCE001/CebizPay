@@ -66,6 +66,18 @@ public class FundingTransaction
     /// <summary>Failure reason if the funding transaction failed.</summary>
     public string? FailureReason { get; private set; }
 
+    /// <summary>Originating sender account name for inbound transfers.</summary>
+    public string? SenderAccountName { get; private set; }
+
+    /// <summary>Originating sender account number for inbound transfers.</summary>
+    public string? SenderAccountNumber { get; private set; }
+
+    /// <summary>Originating sender bank code for inbound transfers.</summary>
+    public string? SenderBankCode { get; private set; }
+
+    /// <summary>Originating sender bank name for inbound transfers.</summary>
+    public string? SenderBankName { get; private set; }
+
     /// <summary>Creation timestamp (UTC).</summary>
     public DateTime CreatedAtUtc { get; private set; }
 
@@ -233,5 +245,16 @@ public class FundingTransaction
     {
         Status = FundingTransactionStatus.Reversed;
         FailureReason = reason;
+    }
+
+    /// <summary>
+    /// Updates originating sender banking details captured from provider webhook.
+    /// </summary>
+    public void SetSenderDetails(string? accountName, string? accountNumber, string? bankCode, string? bankName)
+    {
+        SenderAccountName = string.IsNullOrWhiteSpace(accountName) ? null : accountName.Trim();
+        SenderAccountNumber = string.IsNullOrWhiteSpace(accountNumber) ? null : accountNumber.Trim();
+        SenderBankCode = string.IsNullOrWhiteSpace(bankCode) ? null : bankCode.Trim();
+        SenderBankName = string.IsNullOrWhiteSpace(bankName) ? null : bankName.Trim();
     }
 }

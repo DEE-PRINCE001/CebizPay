@@ -94,4 +94,45 @@ public sealed class FundingTransactionDomainTests
         Assert.Equal("Insufficient cardholder funds", funding.FailureReason);
         Assert.NotNull(funding.FailedAtUtc);
     }
+
+    [Fact]
+    public void SetSenderDetails_WithValidValues_SetsTrimmedProperties()
+    {
+        var funding = FundingTransaction.Create(
+            walletId: Guid.NewGuid(),
+            virtualAccountId: null,
+            provider: PaymentProvider.Monnify,
+            providerTransactionReference: "MNFY-12345",
+            fundingChannel: FundingChannel.VirtualAccount,
+            amount: 50000m,
+            currency: Currency.NGN);
+
+        funding.SetSenderDetails("  Adekunle Samuel  ", " 0123456789 ", " 058 ", " Guaranty Trust Bank ");
+
+        Assert.Equal("Adekunle Samuel", funding.SenderAccountName);
+        Assert.Equal("0123456789", funding.SenderAccountNumber);
+        Assert.Equal("058", funding.SenderBankCode);
+        Assert.Equal("Guaranty Trust Bank", funding.SenderBankName);
+    }
+
+    [Fact]
+    public void SetSenderDetails_WithNullOrWhitespace_SetsNullProperties()
+    {
+        var funding = FundingTransaction.Create(
+            walletId: Guid.NewGuid(),
+            virtualAccountId: null,
+            provider: PaymentProvider.Monnify,
+            providerTransactionReference: "MNFY-12345",
+            fundingChannel: FundingChannel.VirtualAccount,
+            amount: 50000m,
+            currency: Currency.NGN);
+
+        funding.SetSenderDetails("Adekunle", "0123456789", "058", "GTBank");
+        funding.SetSenderDetails("   ", null, "", "   ");
+
+        Assert.Null(funding.SenderAccountName);
+        Assert.Null(funding.SenderAccountNumber);
+        Assert.Null(funding.SenderBankCode);
+        Assert.Null(funding.SenderBankName);
+    }
 }

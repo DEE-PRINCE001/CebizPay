@@ -77,6 +77,18 @@ public sealed class FundingTransactionConfiguration : IEntityTypeConfiguration<F
         builder.Property(f => f.FailureReason)
             .HasMaxLength(500);
 
+        builder.Property(f => f.SenderAccountName)
+            .HasMaxLength(256);
+
+        builder.Property(f => f.SenderAccountNumber)
+            .HasMaxLength(20);
+
+        builder.Property(f => f.SenderBankCode)
+            .HasMaxLength(10);
+
+        builder.Property(f => f.SenderBankName)
+            .HasMaxLength(100);
+
         builder.Property(f => f.CreatedAtUtc)
             .IsRequired()
             .HasColumnType("timestamp with time zone");
