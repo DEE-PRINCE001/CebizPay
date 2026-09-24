@@ -411,6 +411,7 @@ public class ApplicationDbContext
     IEntitySet<CebizPay.Domain.Support.Entities.TicketMessage> IApplicationDbContext.TicketMessages => new EntitySet<CebizPay.Domain.Support.Entities.TicketMessage>(TicketMessages);
 
     /// <inheritdoc/>
+    [Obsolete("Use ExecuteInTransactionAsync to ensure compatibility with NpgsqlRetryingExecutionStrategy.")]
     async Task<IDbTransaction> IApplicationDbContext.BeginTransactionAsync(CancellationToken cancellationToken)
     {
         var tx = await Database.BeginTransactionAsync(cancellationToken);

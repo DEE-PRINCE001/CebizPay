@@ -48,7 +48,9 @@ public sealed class TransferExecutionStrategyIntegrationTests : IClassFixture<In
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(async () =>
         {
+#pragma warning disable CS0618
             await using var tx = await ((IApplicationDbContext)dbContext).BeginTransactionAsync();
+#pragma warning restore CS0618
             await dbContext.Wallets.FirstOrDefaultAsync();
             await tx.CommitAsync();
         });

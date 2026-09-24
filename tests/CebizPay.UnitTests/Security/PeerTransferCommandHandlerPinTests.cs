@@ -98,7 +98,9 @@ public sealed class PeerTransferCommandHandlerPinTests
         Assert.Contains("Invalid transaction PIN", ex.Message);
 
         // Verify no financial transactions were begun, posted, or outboxed
-        await _dbContext.DidNotReceive().BeginTransactionAsync(Arg.Any<CancellationToken>());
+        await _dbContext.DidNotReceive().ExecuteInTransactionAsync(
+            Arg.Any<Func<CancellationToken, Task<PeerTransferResponseDto>>>(),
+            Arg.Any<CancellationToken>());
         await _ledgerService.DidNotReceive().PostPeerTransferCoreAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<decimal>(),
             Arg.Any<decimal>(), Arg.Any<Currency>(), Arg.Any<string>(), Arg.Any<string>(),
@@ -150,7 +152,9 @@ public sealed class PeerTransferCommandHandlerPinTests
         Assert.Contains("lock", ex.Message, StringComparison.OrdinalIgnoreCase);
 
         // Verify zero financial operations
-        await _dbContext.DidNotReceive().BeginTransactionAsync(Arg.Any<CancellationToken>());
+        await _dbContext.DidNotReceive().ExecuteInTransactionAsync(
+            Arg.Any<Func<CancellationToken, Task<PeerTransferResponseDto>>>(),
+            Arg.Any<CancellationToken>());
         await _ledgerService.DidNotReceive().PostPeerTransferCoreAsync(
             Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<Guid>(), Arg.Any<decimal>(),
             Arg.Any<decimal>(), Arg.Any<Currency>(), Arg.Any<string>(), Arg.Any<string>(),

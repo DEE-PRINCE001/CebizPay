@@ -304,6 +304,7 @@ public interface IApplicationDbContext
     /// <summary>
     /// Begins an explicit database transaction. The caller is responsible for committing or rolling back.
     /// </summary>
+    [Obsolete("Use ExecuteInTransactionAsync to ensure compatibility with NpgsqlRetryingExecutionStrategy.")]
     Task<IDbTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
 
     /// <summary>

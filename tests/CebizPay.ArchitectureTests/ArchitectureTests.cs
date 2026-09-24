@@ -294,6 +294,45 @@ public sealed class ArchitectureTests
 
         Assert.Empty(supportAgentTypes);
     }
+
+    [Fact]
+    public void Application_UseCases_ShouldNotCall_BeginTransactionAsync()
+    {
+        var assembly = typeof(Application.AssemblyReference).Assembly;
+        var assemblyDefinition = Mono.Cecil.AssemblyDefinition.ReadAssembly(assembly.Location);
+
+        var violations = new List<string>();
+        foreach (var type in assemblyDefinition.MainModule.Types)
+        {
+            CheckTypeForBeginTransactionCalls(type, violations);
+        }
+
+        Assert.True(violations.Count == 0,
+            $"Found {violations.Count} calls to obsolete BeginTransactionAsync in Application layer. Use ExecuteInTransactionAsync instead:\n" +
+            string.Join("\n", violations));
+    }
+
+    private static void CheckTypeForBeginTransactionCalls(Mono.Cecil.TypeDefinition type, List<string> violations)
+    {
+        foreach (var method in type.Methods)
+        {
+            if (!method.HasBody) continue;
+            foreach (var instruction in method.Body.Instructions)
+            {
+                if (instruction.Operand is Mono.Cecil.MethodReference methodRef &&
+                    methodRef.Name == "BeginTransactionAsync" &&
+                    methodRef.DeclaringType.FullName.Contains("IApplicationDbContext"))
+                {
+                    violations.Add($"{type.FullName}.{method.Name}");
+                }
+            }
+        }
+
+        foreach (var nestedType in type.NestedTypes)
+        {
+            CheckTypeForBeginTransactionCalls(nestedType, violations);
+        }
+    }
 }
 
 
