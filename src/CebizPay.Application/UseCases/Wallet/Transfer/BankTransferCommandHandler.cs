@@ -211,158 +211,159 @@ public sealed class BankTransferCommandHandler : IRequestHandler<BankTransferCom
         if (sourceWallet.AvailableBalance < totalDebit)
             throw new InsufficientFundsException(sourceWallet.AvailableBalance, totalDebit);
 
-        // ─── 9. Begin Database Transaction ────────────────────────────────────
-        await using var dbTx = await _dbContext.BeginTransactionAsync(cancellationToken);
+        // ─── 9. Execute transfer inside retrying transaction boundary ────────
+        BankTransfer? bankTransferToExecute = null;
+        BankTransferResponseDto response;
+        bool shouldExecuteExternalProvider;
 
         try
         {
-            // ─── 10. Idempotency Check & Insert ───────────────────────────────
-            var requestPayload = JsonSerializer.Serialize(new
+            (response, shouldExecuteExternalProvider) = await _dbContext.ExecuteInTransactionAsync(async ct =>
             {
-                request.DestinationBankCode,
-                DestinationAccountNumber = request.DestinationAccountNumber.Trim(),
-                request.Amount,
-                Currency = currency.ToString(),
-                SourceWalletId = sourceWallet.Id,
-                FeePolicyVersion = feePolicyVersion
-            });
-
-            var idempotencyRecord = await _idempotencyService.CreateRecordAsync(
-                request.IdempotencyKey,
-                OperationName,
-                requestPayload,
-                userId,
-                orgId,
-                autoSave: true,
-                cancellationToken: cancellationToken);
-
-            if (idempotencyRecord.Status == IdempotencyStatus.Completed && idempotencyRecord.ResponseJson != null)
-            {
-                await dbTx.RollbackAsync(cancellationToken);
-                return JsonSerializer.Deserialize<BankTransferResponseDto>(idempotencyRecord.ResponseJson)
-                    ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
-            }
-
-            if (idempotencyRecord.Status == IdempotencyStatus.Processing)
-            {
-                await dbTx.RollbackAsync(cancellationToken);
-                throw new IdempotencyConflictException(
-                    request.IdempotencyKey,
-                    $"A bank transfer request with idempotency key '{request.IdempotencyKey}' is currently being processed.");
-            }
-
-            // ─── 11. Ensure Clearing Account & Fee Account exist ──────────────
-            var clearingAccount = await _ledgerService.GetOrCreateBankTransferClearingAccountAsync(currency, cancellationToken);
-            var feeAccount = await _ledgerService.GetOrCreatePlatformFeeAccountAsync(currency, cancellationToken);
-
-            // ─── 12. Generate Transfer Reference & Execute Debit Posting ──────
-            var reference = GenerateBankTransferReference();
-
-            var (ledgerTxn, bankTransfer) = await _ledgerService.PostBankTransferDebitCoreAsync(
-                senderWalletId: sourceWallet.Id,
-                clearingAccountId: clearingAccount.Id,
-                platformFeeAccountId: feeAccount.Id,
-                transferAmount: request.Amount,
-                feeAmount: feeAmount,
-                currency: currency,
-                destinationBankCode: request.DestinationBankCode,
-                destinationAccountNumber: request.DestinationAccountNumber,
-                destinationAccountName: destinationRes.AccountName,
-                feePolicyId: feePolicyId,
-                feePolicyVersion: feePolicyVersion,
-                reference: reference,
-                idempotencyKey: request.IdempotencyKey,
-                description: $"Bank transfer: {request.Amount} {currency} to bank {request.DestinationBankCode}",
-                cancellationToken: cancellationToken);
-
-            // ─── 13. Audit Log (Masked Account Number) ────────────────────────
-            var maskedAccount = bankTransfer.GetMaskedAccountNumber();
-
-            var auditLog = Domain.Entities.AuditLog.Create(
-                actorId: userId,
-                action: Domain.Auditing.AuditActions.BankTransferCreated,
-                resourceType: Domain.Auditing.AuditResourceTypes.BankTransfer,
-                resourceId: bankTransfer.Id.ToString(),
-                organizationId: orgId,
-                afterJson: JsonSerializer.Serialize(new
+                // ─── 10. Idempotency Check & Insert ───────────────────────────────
+                var requestPayload = JsonSerializer.Serialize(new
                 {
-                    Reference = bankTransfer.Reference,
-                    Amount = request.Amount,
+                    request.DestinationBankCode,
+                    DestinationAccountNumber = request.DestinationAccountNumber.Trim(),
+                    request.Amount,
                     Currency = currency.ToString(),
-                    FeeAmount = feeAmount,
-                    TotalDebited = totalDebit,
-                    SenderWalletId = sourceWallet.Id,
-                    DestinationBankCode = request.DestinationBankCode,
-                    DestinationAccountNumber = maskedAccount,
-                    DestinationAccountName = destinationRes.AccountName,
-                    AppliedFeePolicyVersion = feePolicyVersion,
-                    Status = BankTransferStatus.Pending.ToString()
-                }));
+                    SourceWalletId = sourceWallet.Id,
+                    FeePolicyVersion = feePolicyVersion
+                });
 
-            _dbContext.AuditLogs.Add(auditLog);
+                var idempotencyRecord = await _idempotencyService.CreateRecordAsync(
+                    request.IdempotencyKey,
+                    OperationName,
+                    requestPayload,
+                    userId,
+                    orgId,
+                    autoSave: true,
+                    cancellationToken: ct);
 
-            // ─── 14. Publish Outbox Event ─────────────────────────────────────
-            var domainEvent = new BankTransferCreatedEvent(
-                TransferId: bankTransfer.Id,
-                TransactionReference: bankTransfer.Reference,
-                SenderWalletId: sourceWallet.Id,
-                DestinationBankCode: request.DestinationBankCode,
-                MaskedDestinationAccountNumber: maskedAccount,
-                Amount: request.Amount,
-                Currency: currency.ToString(),
-                FeeAmount: feeAmount,
-                FeeCurrency: currency.ToString(),
-                FeePolicyVersion: feePolicyVersion,
-                OccurredOnUtc: DateTime.UtcNow);
-
-            _outboxService.Write(domainEvent);
-
-            // ─── 15. Build Response DTO & Complete Idempotency ────────────────
-            var response = new BankTransferResponseDto(
-                TransactionReference: bankTransfer.Reference,
-                Status: BankTransferStatus.Pending.ToString().ToUpperInvariant(),
-                Amount: request.Amount,
-                Currency: currency.ToString(),
-                FeeAmount: feeAmount,
-                TotalDebited: totalDebit,
-                DestinationBankCode: request.DestinationBankCode,
-                DestinationAccountNumber: maskedAccount,
-                DestinationAccountName: destinationRes.AccountName,
-                AppliedFeePolicyVersion: feePolicyVersion,
-                CreatedAtUtc: bankTransfer.CreatedAtUtc);
-
-            idempotencyRecord.Complete(JsonSerializer.Serialize(response));
-
-            // ─── 16. Save & Commit Transaction ────────────────────────────────
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await dbTx.CommitAsync(cancellationToken);
-
-            // ─── 17. Dispatch External Provider Execution (Outside DB Lock Boundary) ─
-            if (_transferExecutor != null)
-            {
-                try
+                if (idempotencyRecord.Status == IdempotencyStatus.Completed && idempotencyRecord.ResponseJson != null)
                 {
-                    await _transferExecutor.ExecuteAsync(bankTransfer, cancellationToken).ConfigureAwait(false);
+                    var cachedResponse = JsonSerializer.Deserialize<BankTransferResponseDto>(idempotencyRecord.ResponseJson)
+                        ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
+                    return (cachedResponse, false);
                 }
-                catch
-                {
-                    // PaymentAttempt tracks provider outcome/error; transfer creation commit remains valid
-                }
-            }
 
-            return response;
+                if (idempotencyRecord.Status == IdempotencyStatus.Processing)
+                {
+                    throw new IdempotencyConflictException(
+                        request.IdempotencyKey,
+                        $"A bank transfer request with idempotency key '{request.IdempotencyKey}' is currently being processed.");
+                }
+
+                // ─── 11. Ensure Clearing Account & Fee Account exist ──────────────
+                var clearingAccount = await _ledgerService.GetOrCreateBankTransferClearingAccountAsync(currency, ct);
+                var feeAccount = await _ledgerService.GetOrCreatePlatformFeeAccountAsync(currency, ct);
+
+                // ─── 12. Generate Transfer Reference & Execute Debit Posting ──────
+                var reference = GenerateBankTransferReference();
+
+                var (ledgerTxn, bankTransfer) = await _ledgerService.PostBankTransferDebitCoreAsync(
+                    senderWalletId: sourceWallet.Id,
+                    clearingAccountId: clearingAccount.Id,
+                    platformFeeAccountId: feeAccount.Id,
+                    transferAmount: request.Amount,
+                    feeAmount: feeAmount,
+                    currency: currency,
+                    destinationBankCode: request.DestinationBankCode,
+                    destinationAccountNumber: request.DestinationAccountNumber,
+                    destinationAccountName: destinationRes.AccountName,
+                    feePolicyId: feePolicyId,
+                    feePolicyVersion: feePolicyVersion,
+                    reference: reference,
+                    idempotencyKey: request.IdempotencyKey,
+                    description: $"Bank transfer: {request.Amount} {currency} to bank {request.DestinationBankCode}",
+                    cancellationToken: ct);
+
+                bankTransferToExecute = bankTransfer;
+
+                // ─── 13. Audit Log (Masked Account Number) ────────────────────────
+                var maskedAccount = bankTransfer.GetMaskedAccountNumber();
+
+                var auditLog = Domain.Entities.AuditLog.Create(
+                    actorId: userId,
+                    action: Domain.Auditing.AuditActions.BankTransferCreated,
+                    resourceType: Domain.Auditing.AuditResourceTypes.BankTransfer,
+                    resourceId: bankTransfer.Id.ToString(),
+                    organizationId: orgId,
+                    afterJson: JsonSerializer.Serialize(new
+                    {
+                        Reference = bankTransfer.Reference,
+                        Amount = request.Amount,
+                        Currency = currency.ToString(),
+                        FeeAmount = feeAmount,
+                        TotalDebited = totalDebit,
+                        SenderWalletId = sourceWallet.Id,
+                        DestinationBankCode = request.DestinationBankCode,
+                        DestinationAccountNumber = maskedAccount,
+                        DestinationAccountName = destinationRes.AccountName,
+                        AppliedFeePolicyVersion = feePolicyVersion,
+                        Status = BankTransferStatus.Pending.ToString()
+                    }));
+
+                _dbContext.AuditLogs.Add(auditLog);
+
+                // ─── 14. Publish Outbox Event ─────────────────────────────────────
+                var domainEvent = new BankTransferCreatedEvent(
+                    TransferId: bankTransfer.Id,
+                    TransactionReference: bankTransfer.Reference,
+                    SenderWalletId: sourceWallet.Id,
+                    DestinationBankCode: request.DestinationBankCode,
+                    MaskedDestinationAccountNumber: maskedAccount,
+                    Amount: request.Amount,
+                    Currency: currency.ToString(),
+                    FeeAmount: feeAmount,
+                    FeeCurrency: currency.ToString(),
+                    FeePolicyVersion: feePolicyVersion,
+                    OccurredOnUtc: DateTime.UtcNow);
+
+                _outboxService.Write(domainEvent);
+
+                // ─── 15. Build Response DTO & Complete Idempotency ────────────────
+                var transferResponse = new BankTransferResponseDto(
+                    TransactionReference: bankTransfer.Reference,
+                    Status: BankTransferStatus.Pending.ToString().ToUpperInvariant(),
+                    Amount: request.Amount,
+                    Currency: currency.ToString(),
+                    FeeAmount: feeAmount,
+                    TotalDebited: totalDebit,
+                    DestinationBankCode: request.DestinationBankCode,
+                    DestinationAccountNumber: maskedAccount,
+                    DestinationAccountName: destinationRes.AccountName,
+                    AppliedFeePolicyVersion: feePolicyVersion,
+                    CreatedAtUtc: bankTransfer.CreatedAtUtc);
+
+                idempotencyRecord.Complete(JsonSerializer.Serialize(transferResponse));
+
+                // ─── 16. Save Changes before commit ───────────────────────────────
+                await _dbContext.SaveChangesAsync(ct);
+
+                return (transferResponse, true);
+            }, cancellationToken);
         }
         catch (InvalidOperationException ex) when (
             ex.Message.StartsWith("Insufficient funds after lock", StringComparison.OrdinalIgnoreCase))
         {
-            await dbTx.RollbackAsync(cancellationToken);
             throw new InsufficientFundsException(sourceWallet.AvailableBalance, totalDebit);
         }
-        catch
+
+        // ─── 17. Dispatch External Provider Execution (Outside DB Lock Boundary) ─
+        if (shouldExecuteExternalProvider && _transferExecutor != null && bankTransferToExecute != null)
         {
-            await dbTx.RollbackAsync(cancellationToken);
-            throw;
+            try
+            {
+                await _transferExecutor.ExecuteAsync(bankTransferToExecute, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                // PaymentAttempt tracks provider outcome/error; transfer creation commit remains valid
+            }
         }
+
+        return response;
     }
 
     private static string GenerateBankTransferReference()

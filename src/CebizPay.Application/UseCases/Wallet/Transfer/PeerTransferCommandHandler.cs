@@ -220,132 +220,123 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
         if (sourceWallet.AvailableBalance < totalDebit)
             throw new InsufficientFundsException(sourceWallet.AvailableBalance, totalDebit);
 
-        // ─── 14. Handler owns the single database transaction for the transfer ───
-        await using var dbTx = await _dbContext.BeginTransactionAsync(cancellationToken);
-
+        // ─── 14. Execute transfer inside retrying transaction boundary ───
         try
         {
-
-            // ─── 14. Early Idempotency Check & Processing Record Insert ──────
-            var requestPayload = JsonSerializer.Serialize(new
+            return await _dbContext.ExecuteInTransactionAsync(async ct =>
             {
-                RecipientId = recipientUser.UserId,
-                request.Amount,
-                Currency = currency.ToString(),
-                SourceWalletId = sourceWallet.Id,
-                FeePolicyVersion = feePolicyVersion
-            });
-
-            // CreateRecordAsync (with autoSave: true) inserts the Processing idempotency record
-            // and flushes it immediately to PostgreSQL inside dbTx. Under high concurrency,
-            // losing duplicate requests block at PostgreSQL unique index constraint (SQLSTATE 23505)
-            // BEFORE executing any wallet locking, fee calculation, or ledger postings.
-            var idempotencyRecord = await _idempotencyService.CreateRecordAsync(
-                request.IdempotencyKey, OperationName, requestPayload, userId, orgId, autoSave: true, cancellationToken);
-
-            if (idempotencyRecord.Status == IdempotencyStatus.Completed && idempotencyRecord.ResponseJson != null)
-            {
-                await dbTx.RollbackAsync(cancellationToken);
-                return JsonSerializer.Deserialize<PeerTransferResponseDto>(idempotencyRecord.ResponseJson)
-                    ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
-            }
-
-            if (idempotencyRecord.Status == IdempotencyStatus.Processing)
-            {
-                await dbTx.RollbackAsync(cancellationToken);
-                throw new IdempotencyConflictException(request.IdempotencyKey,
-                    $"A request with idempotency key '{request.IdempotencyKey}' is currently being processed.");
-            }
-
-            // ─── 15. Ensure platform fee ledger account exists ─────────────────
-            var feeAccount = await _ledgerService.GetOrCreatePlatformFeeAccountAsync(currency, cancellationToken);
-
-            // ─── 16. Generate stable financial reference & execute core transfer ─
-            var reference = GenerateTransferReference();
-
-            var ledgerTxn = await _ledgerService.PostPeerTransferCoreAsync(
-                senderWalletId: sourceWallet.Id,
-                recipientWalletId: recipientWallet.Id,
-                platformFeeAccountId: feeAccount.Id,
-                transferAmount: request.Amount,
-                feeAmount: feeAmount,
-                currency: currency,
-                reference: reference,
-                idempotencyKey: request.IdempotencyKey,
-                description: $"Peer transfer: {request.Amount} {currency}",
-                cancellationToken: cancellationToken);
-
-            // ─── 17. Create AuditLog (who performed the action) ───────────────
-            var auditLog = Domain.Entities.AuditLog.Create(
-                actorId: userId,
-                action: Domain.Auditing.AuditActions.PeerTransferCompleted,
-                resourceType: Domain.Auditing.AuditResourceTypes.PeerTransfer,
-                resourceId: ledgerTxn.Id.ToString(),
-                organizationId: orgId,
-                afterJson: JsonSerializer.Serialize(new
+                // ─── Early Idempotency Check & Processing Record Insert ──────
+                var requestPayload = JsonSerializer.Serialize(new
                 {
-                    Reference = ledgerTxn.Reference,
-                    Amount = request.Amount,
+                    RecipientId = recipientUser.UserId,
+                    request.Amount,
                     Currency = currency.ToString(),
-                    FeeAmount = feeAmount,
-                    TotalDebited = totalDebit,
-                    SenderWalletId = sourceWallet.Id,
-                    RecipientWalletId = recipientWallet.Id,
-                    AppliedFeePolicyVersion = feePolicyVersion,
-                    OrganizationId = orgId
-                }));
+                    SourceWalletId = sourceWallet.Id,
+                    FeePolicyVersion = feePolicyVersion
+                });
 
-            _dbContext.AuditLogs.Add(auditLog);
+                // CreateRecordAsync (with autoSave: true) inserts the Processing idempotency record
+                // and flushes it immediately to PostgreSQL inside the transaction. Under high concurrency,
+                // losing duplicate requests block at PostgreSQL unique index constraint (SQLSTATE 23505)
+                // BEFORE executing any wallet locking, fee calculation, or ledger postings.
+                var idempotencyRecord = await _idempotencyService.CreateRecordAsync(
+                    request.IdempotencyKey, OperationName, requestPayload, userId, orgId, autoSave: true, cancellationToken: ct);
 
-            // ─── 18. Publish PeerTransferCompletedEvent via Outbox ────────────
-            var domainEvent = new PeerTransferCompletedEvent(
-                TransactionId: ledgerTxn.Id,
-                TransactionReference: ledgerTxn.Reference,
-                SenderWalletId: sourceWallet.Id,
-                RecipientWalletId: recipientWallet.Id,
-                Amount: request.Amount,
-                Currency: currency.ToString(),
-                FeeAmount: feeAmount,
-                FeeCurrency: currency.ToString(),
-                FeePolicyVersion: feePolicyVersion,
-                OccurredOnUtc: DateTime.UtcNow);
+                if (idempotencyRecord.Status == IdempotencyStatus.Completed && idempotencyRecord.ResponseJson != null)
+                {
+                    return JsonSerializer.Deserialize<PeerTransferResponseDto>(idempotencyRecord.ResponseJson)
+                        ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
+                }
 
-            _outboxService.Write(domainEvent);
+                if (idempotencyRecord.Status == IdempotencyStatus.Processing)
+                {
+                    throw new IdempotencyConflictException(request.IdempotencyKey,
+                        $"A request with idempotency key '{request.IdempotencyKey}' is currently being processed.");
+                }
 
-            // ─── 19. Build response DTO & Mark IdempotencyRecord complete ─────
-            var recipientDisplay = !string.IsNullOrWhiteSpace(recipientUser.Email)
-                ? recipientUser.Email
-                : request.RecipientIdentifier;
+                // ─── 15. Ensure platform fee ledger account exists ─────────────────
+                var feeAccount = await _ledgerService.GetOrCreatePlatformFeeAccountAsync(currency, ct);
 
-            var response = new PeerTransferResponseDto(
-                TransactionReference: ledgerTxn.Reference,
-                Status: "COMPLETED",
-                Amount: request.Amount,
-                Currency: currency.ToString(),
-                FeeAmount: feeAmount,
-                TotalDebited: totalDebit,
-                RecipientDisplay: recipientDisplay,
-                AppliedFeePolicyVersion: feePolicyVersion,
-                CreatedAtUtc: ledgerTxn.CreatedAtUtc);
+                // ─── 16. Generate stable financial reference & execute core transfer ─
+                var reference = GenerateTransferReference();
 
-            idempotencyRecord.Complete(JsonSerializer.Serialize(response));
+                var ledgerTxn = await _ledgerService.PostPeerTransferCoreAsync(
+                    senderWalletId: sourceWallet.Id,
+                    recipientWalletId: recipientWallet.Id,
+                    platformFeeAccountId: feeAccount.Id,
+                    transferAmount: request.Amount,
+                    feeAmount: feeAmount,
+                    currency: currency,
+                    reference: reference,
+                    idempotencyKey: request.IdempotencyKey,
+                    description: $"Peer transfer: {request.Amount} {currency}",
+                    cancellationToken: ct);
 
-            // ─── 20. Save & Commit transaction ───────────────────────────────
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await dbTx.CommitAsync(cancellationToken);
+                // ─── 17. Create AuditLog (who performed the action) ───────────────
+                var auditLog = Domain.Entities.AuditLog.Create(
+                    actorId: userId,
+                    action: Domain.Auditing.AuditActions.PeerTransferCompleted,
+                    resourceType: Domain.Auditing.AuditResourceTypes.PeerTransfer,
+                    resourceId: ledgerTxn.Id.ToString(),
+                    organizationId: orgId,
+                    afterJson: JsonSerializer.Serialize(new
+                    {
+                        Reference = ledgerTxn.Reference,
+                        Amount = request.Amount,
+                        Currency = currency.ToString(),
+                        FeeAmount = feeAmount,
+                        TotalDebited = totalDebit,
+                        SenderWalletId = sourceWallet.Id,
+                        RecipientWalletId = recipientWallet.Id,
+                        AppliedFeePolicyVersion = feePolicyVersion,
+                        OrganizationId = orgId
+                    }));
 
-            return response;
+                _dbContext.AuditLogs.Add(auditLog);
+
+                // ─── 18. Publish PeerTransferCompletedEvent via Outbox ────────────
+                var domainEvent = new PeerTransferCompletedEvent(
+                    TransactionId: ledgerTxn.Id,
+                    TransactionReference: ledgerTxn.Reference,
+                    SenderWalletId: sourceWallet.Id,
+                    RecipientWalletId: recipientWallet.Id,
+                    Amount: request.Amount,
+                    Currency: currency.ToString(),
+                    FeeAmount: feeAmount,
+                    FeeCurrency: currency.ToString(),
+                    FeePolicyVersion: feePolicyVersion,
+                    OccurredOnUtc: DateTime.UtcNow);
+
+                _outboxService.Write(domainEvent);
+
+                // ─── 19. Build response DTO & Mark IdempotencyRecord complete ─────
+                var recipientDisplay = !string.IsNullOrWhiteSpace(recipientUser.Email)
+                    ? recipientUser.Email
+                    : request.RecipientIdentifier;
+
+                var response = new PeerTransferResponseDto(
+                    TransactionReference: ledgerTxn.Reference,
+                    Status: "COMPLETED",
+                    Amount: request.Amount,
+                    Currency: currency.ToString(),
+                    FeeAmount: feeAmount,
+                    TotalDebited: totalDebit,
+                    RecipientDisplay: recipientDisplay,
+                    AppliedFeePolicyVersion: feePolicyVersion,
+                    CreatedAtUtc: ledgerTxn.CreatedAtUtc);
+
+                idempotencyRecord.Complete(JsonSerializer.Serialize(response));
+
+                // ─── 20. Save pending changes before commit ───────────────────────
+                await _dbContext.SaveChangesAsync(ct);
+
+                return response;
+            }, cancellationToken);
         }
         catch (InvalidOperationException ex) when (
             ex.Message.StartsWith("Insufficient funds after lock", StringComparison.OrdinalIgnoreCase))
         {
-            await dbTx.RollbackAsync(cancellationToken);
             throw new InsufficientFundsException(sourceWallet.AvailableBalance, totalDebit);
-        }
-        catch
-        {
-            await dbTx.RollbackAsync(cancellationToken);
-            throw;
         }
     }
 

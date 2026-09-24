@@ -40,17 +40,15 @@ public sealed class ReverseBankTransferCommandHandler : IRequestHandler<ReverseB
             .FirstOrDefaultAsync(t => t.Id == request.BankTransferId, cancellationToken)
             ?? throw new KeyNotFoundException($"Bank transfer '{request.BankTransferId}' was not found.");
 
-        await using var dbTx = await _dbContext.BeginTransactionAsync(cancellationToken);
+        var maskedAccount = transfer.GetMaskedAccountNumber();
 
-        try
+        return await _dbContext.ExecuteInTransactionAsync(async ct =>
         {
             // Execute reversal in ledger posting service (locks sender wallet, restores balance, creates reversal txn & entries, marks transfer FAILED)
             var reversalTxn = await _ledgerService.PostBankTransferReversalCoreAsync(
                 request.BankTransferId,
                 request.Reason,
-                cancellationToken);
-
-            var maskedAccount = transfer.GetMaskedAccountNumber();
+                ct);
 
             // Create AuditLog
             var auditLog = Domain.Entities.AuditLog.Create(
@@ -93,8 +91,7 @@ public sealed class ReverseBankTransferCommandHandler : IRequestHandler<ReverseB
             _outboxService.Write(failedEvent);
             _outboxService.Write(reversedEvent);
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await dbTx.CommitAsync(cancellationToken);
+            await _dbContext.SaveChangesAsync(ct);
 
             return new BankTransferResponseDto(
                 TransactionReference: transfer.Reference,
@@ -108,11 +105,6 @@ public sealed class ReverseBankTransferCommandHandler : IRequestHandler<ReverseB
                 DestinationAccountName: transfer.DestinationAccountName,
                 AppliedFeePolicyVersion: transfer.FeePolicyVersion,
                 CreatedAtUtc: transfer.CreatedAtUtc);
-        }
-        catch
-        {
-            await dbTx.RollbackAsync(cancellationToken);
-            throw;
-        }
+        }, cancellationToken);
     }
 }
