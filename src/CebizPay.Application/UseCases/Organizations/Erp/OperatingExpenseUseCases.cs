@@ -294,123 +294,115 @@ public sealed class PayOperatingExpenseCommandHandler : IRequestHandler<PayOpera
         Guid? walletId = null;
         Guid? ledgerTxId = null;
 
-        await using var tx = await _dbContext.BeginTransactionAsync(cancellationToken);
-        try
+        return await _dbContext.ExecuteInTransactionAsync(async ct =>
         {
-
-        if (request.PaymentMethod == ExpensePaymentMethod.Wallet)
-        {
-            if (string.IsNullOrWhiteSpace(request.Pin))
+            if (request.PaymentMethod == ExpensePaymentMethod.Wallet)
             {
-                throw new ArgumentException("Transaction PIN is required for wallet payments.", nameof(request));
-            }
-
-            var (pinSuccess, isLocked, pinError) = await _pinService.VerifyPinAsync(userId, request.Pin, cancellationToken);
-            if (!pinSuccess)
-            {
-                if (isLocked)
+                if (string.IsNullOrWhiteSpace(request.Pin))
                 {
-                    throw new InvalidOperationException("Account PIN is temporarily locked due to too many failed attempts.");
+                    throw new ArgumentException("Transaction PIN is required for wallet payments.", nameof(request));
                 }
-                throw new InvalidOperationException(pinError ?? "Invalid transaction PIN.");
-            }
 
-            // Check Idempotency if key provided
-            if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
-            {
-                var existingRecord = await _idempotencyService.GetRecordAsync(
-                    request.IdempotencyKey,
-                    "PayOperatingExpense",
-                    userId,
-                    request.OrganizationId,
-                    cancellationToken);
-
-                if (existingRecord != null && existingRecord.Status == IdempotencyStatus.Completed)
+                var (pinSuccess, isLocked, pinError) = await _pinService.VerifyPinAsync(userId, request.Pin, ct);
+                if (!pinSuccess)
                 {
-                    return Unit.Value;
+                    if (isLocked)
+                    {
+                        throw new InvalidOperationException("Account PIN is temporarily locked due to too many failed attempts.");
+                    }
+                    throw new InvalidOperationException(pinError ?? "Invalid transaction PIN.");
+                }
+
+                // Check Idempotency if key provided
+                if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
+                {
+                    var existingRecord = await _idempotencyService.GetRecordAsync(
+                        request.IdempotencyKey,
+                        "PayOperatingExpense",
+                        userId,
+                        request.OrganizationId,
+                        ct);
+
+                    if (existingRecord != null && existingRecord.Status == IdempotencyStatus.Completed)
+                    {
+                        return Unit.Value;
+                    }
+                }
+
+                // Resolve organization wallet
+                var orgWallet = await _dbContext.Wallets
+                    .FirstOrDefaultAsync(w => w.OrganizationId == request.OrganizationId && w.Currency == expense.Currency, ct)
+                    ?? throw new InvalidOperationException($"No wallet found for organization '{request.OrganizationId}' in currency '{expense.Currency}'.");
+
+                if (orgWallet.Status != WalletStatus.Active)
+                {
+                    throw new InvalidOperationException($"Organization wallet is {orgWallet.Status}.");
+                }
+
+                if (orgWallet.AvailableBalance < expense.Amount)
+                {
+                    throw new InsufficientFundsException(orgWallet.AvailableBalance, expense.Amount);
+                }
+
+                // Resolve organization ledger account and platform settlement account
+                var sourceLedgerAccount = await _dbContext.LedgerAccounts
+                    .FirstOrDefaultAsync(l => l.WalletId == orgWallet.Id, ct)
+                    ?? throw new InvalidOperationException("Source ledger account for organization wallet not found.");
+
+                var systemExpenseAccount = await _ledgerService.GetOrCreateSystemSettlementAccountAsync(expense.Currency, ct);
+
+                // Post double-entry transaction
+                var ledgerTx = await _ledgerService.PostSingleCurrencyTransactionAsync(
+                    sourceLedgerAccount.Id,
+                    systemExpenseAccount.Id,
+                    expense.Amount,
+                    expense.Currency,
+                    LedgerTransactionType.ErpExpense,
+                    reference: expense.ExpenseNumber,
+                    idempotencyKey: request.IdempotencyKey,
+                    description: $"Operating expense: {expense.Description}",
+                    cancellationToken: ct);
+
+                walletId = orgWallet.Id;
+                ledgerTxId = ledgerTx.Id;
+
+                if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
+                {
+                    var record = await _idempotencyService.CreateRecordAsync(
+                        request.IdempotencyKey,
+                        "PayOperatingExpense",
+                        $"{expense.Id}:{expense.Amount}",
+                        userId,
+                        request.OrganizationId,
+                        autoSave: false,
+                        cancellationToken: ct);
+                    await _idempotencyService.CompleteRecordAsync(record.Id, "{\"status\":\"success\"}", ct);
                 }
             }
 
-            // Resolve organization wallet
-            var orgWallet = await _dbContext.Wallets
-                .FirstOrDefaultAsync(w => w.OrganizationId == request.OrganizationId && w.Currency == expense.Currency, cancellationToken)
-                ?? throw new InvalidOperationException($"No wallet found for organization '{request.OrganizationId}' in currency '{expense.Currency}'.");
+            expense.MarkPaid(now, walletId, ledgerTxId, request.Reference);
 
-            if (orgWallet.Status != WalletStatus.Active)
-            {
-                throw new InvalidOperationException($"Organization wallet is {orgWallet.Status}.");
-            }
+            var auditLog = AuditLog.Create(
+                userId,
+                AuditActions.ExpensePaid,
+                AuditResourceTypes.OperatingExpense,
+                expense.Id.ToString(),
+                request.OrganizationId,
+                afterJson: $"Paid expense '{expense.ExpenseNumber}' for {expense.Amount} {expense.Currency} via {request.PaymentMethod}.");
+            _dbContext.AuditLogs.Add(auditLog);
 
-            if (orgWallet.AvailableBalance < expense.Amount)
-            {
-                throw new InsufficientFundsException(orgWallet.AvailableBalance, expense.Amount);
-            }
-
-            // Resolve organization ledger account and platform settlement account
-            var sourceLedgerAccount = await _dbContext.LedgerAccounts
-                .FirstOrDefaultAsync(l => l.WalletId == orgWallet.Id, cancellationToken)
-                ?? throw new InvalidOperationException("Source ledger account for organization wallet not found.");
-
-            var systemExpenseAccount = await _ledgerService.GetOrCreateSystemSettlementAccountAsync(expense.Currency, cancellationToken);
-
-            // Post double-entry transaction
-            var ledgerTx = await _ledgerService.PostSingleCurrencyTransactionAsync(
-                sourceLedgerAccount.Id,
-                systemExpenseAccount.Id,
+            _outbox.Write(new ExpensePaidDomainEvent(
+                expense.Id,
+                expense.OrganizationId,
+                expense.ExpenseNumber,
                 expense.Amount,
-                expense.Currency,
-                LedgerTransactionType.ErpExpense,
-                reference: expense.ExpenseNumber,
-                idempotencyKey: request.IdempotencyKey,
-                description: $"Operating expense: {expense.Description}",
-                cancellationToken: cancellationToken);
+                request.PaymentMethod,
+                ledgerTxId,
+                now));
 
-            walletId = orgWallet.Id;
-            ledgerTxId = ledgerTx.Id;
-
-            if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
-            {
-                var record = await _idempotencyService.CreateRecordAsync(
-                    request.IdempotencyKey,
-                    "PayOperatingExpense",
-                    $"{expense.Id}:{expense.Amount}",
-                    userId,
-                    request.OrganizationId,
-                    autoSave: false,
-                    cancellationToken: cancellationToken);
-                await _idempotencyService.CompleteRecordAsync(record.Id, "{\"status\":\"success\"}", cancellationToken);
-            }
-        }
-
-        expense.MarkPaid(now, walletId, ledgerTxId, request.Reference);
-
-        var auditLog = AuditLog.Create(
-            userId,
-            AuditActions.ExpensePaid,
-            AuditResourceTypes.OperatingExpense,
-            expense.Id.ToString(),
-            request.OrganizationId,
-            afterJson: $"Paid expense '{expense.ExpenseNumber}' for {expense.Amount} {expense.Currency} via {request.PaymentMethod}.");
-        _dbContext.AuditLogs.Add(auditLog);
-
-        _outbox.Write(new ExpensePaidDomainEvent(
-            expense.Id,
-            expense.OrganizationId,
-            expense.ExpenseNumber,
-            expense.Amount,
-            request.PaymentMethod,
-            ledgerTxId,
-            now));
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        await tx.CommitAsync(cancellationToken);
-        return Unit.Value;
-    }
-    catch
-    {
-        await tx.RollbackAsync(cancellationToken);
-        throw;
-    }
+            await _dbContext.SaveChangesAsync(ct);
+            return Unit.Value;
+        }, cancellationToken);
 }
 }
 

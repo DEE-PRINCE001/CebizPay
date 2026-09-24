@@ -284,171 +284,164 @@ public sealed class RecordInvoicePaymentCommandHandler : IRequestHandler<RecordI
 
         var now = DateTime.UtcNow;
 
-        await using var tx = await _dbContext.BeginTransactionAsync(cancellationToken);
-        try
+        return await _dbContext.ExecuteInTransactionAsync(async ct =>
         {
             if (request.SettlementMethod == InvoiceSettlementMethod.Wallet)
-        {
-            if (string.IsNullOrWhiteSpace(request.Pin))
             {
-                throw new ArgumentException("Transaction PIN is required for wallet payments.", nameof(request));
-            }
-
-            var (pinSuccess, isLocked, pinError) = await _pinService.VerifyPinAsync(userId, request.Pin, cancellationToken);
-            if (!pinSuccess)
-            {
-                if (isLocked)
+                if (string.IsNullOrWhiteSpace(request.Pin))
                 {
-                    throw new InvalidOperationException("Account PIN is temporarily locked due to too many failed attempts.");
+                    throw new ArgumentException("Transaction PIN is required for wallet payments.", nameof(request));
                 }
-                throw new InvalidOperationException(pinError ?? "Invalid transaction PIN.");
-            }
 
-            // Check Idempotency if provided
-            if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
-            {
-                var existingRecord = await _idempotencyService.GetRecordAsync(
-                    request.IdempotencyKey,
-                    "RecordInvoicePayment",
-                    userId,
-                    request.OrganizationId,
-                    cancellationToken);
-
-                if (existingRecord != null && existingRecord.Status == IdempotencyStatus.Completed)
+                var (pinSuccess, isLocked, pinError) = await _pinService.VerifyPinAsync(userId, request.Pin, ct);
+                if (!pinSuccess)
                 {
-                    return null;
+                    if (isLocked)
+                    {
+                        throw new InvalidOperationException("Account PIN is temporarily locked due to too many failed attempts.");
+                    }
+                    throw new InvalidOperationException(pinError ?? "Invalid transaction PIN.");
                 }
-            }
 
-            // Payer wallet (user's individual or organization wallet)
-            var userWallet = await _dbContext.Wallets
-                .FirstOrDefaultAsync(w => w.IndividualId == userId && w.Currency == invoice.Currency, cancellationToken)
-                ?? await _dbContext.Wallets
-                    .FirstOrDefaultAsync(w => w.OrganizationId == request.OrganizationId && w.Currency == invoice.Currency, cancellationToken)
-                ?? throw new InvalidOperationException($"No active wallet found for currency '{invoice.Currency}'.");
+                // Check Idempotency if provided
+                if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
+                {
+                    var existingRecord = await _idempotencyService.GetRecordAsync(
+                        request.IdempotencyKey,
+                        "RecordInvoicePayment",
+                        userId,
+                        request.OrganizationId,
+                        ct);
 
-            if (userWallet.AvailableBalance < request.Amount)
-            {
-                throw new InsufficientFundsException(userWallet.AvailableBalance, request.Amount);
-            }
+                    if (existingRecord != null && existingRecord.Status == IdempotencyStatus.Completed)
+                    {
+                        return null;
+                    }
+                }
 
-            // Target organization wallet
-            var orgWallet = await _dbContext.Wallets
-                .FirstOrDefaultAsync(w => w.OrganizationId == request.OrganizationId && w.Currency == invoice.Currency, cancellationToken)
-                ?? throw new InvalidOperationException($"No wallet found for organization '{request.OrganizationId}' in currency '{invoice.Currency}'.");
+                // Payer wallet (user's individual or organization wallet)
+                var userWallet = await _dbContext.Wallets
+                    .FirstOrDefaultAsync(w => w.IndividualId == userId && w.Currency == invoice.Currency, ct)
+                    ?? await _dbContext.Wallets
+                        .FirstOrDefaultAsync(w => w.OrganizationId == request.OrganizationId && w.Currency == invoice.Currency, ct)
+                    ?? throw new InvalidOperationException($"No active wallet found for currency '{invoice.Currency}'.");
 
-            var sourceLedgerAccount = await _dbContext.LedgerAccounts
-                .FirstOrDefaultAsync(l => l.WalletId == userWallet.Id, cancellationToken)
-                ?? throw new InvalidOperationException("Source ledger account for payer wallet not found.");
+                if (userWallet.AvailableBalance < request.Amount)
+                {
+                    throw new InsufficientFundsException(userWallet.AvailableBalance, request.Amount);
+                }
 
-            var targetLedgerAccount = await _dbContext.LedgerAccounts
-                .FirstOrDefaultAsync(l => l.WalletId == orgWallet.Id, cancellationToken)
-                ?? throw new InvalidOperationException("Target ledger account for organization wallet not found.");
+                // Target organization wallet
+                var orgWallet = await _dbContext.Wallets
+                    .FirstOrDefaultAsync(w => w.OrganizationId == request.OrganizationId && w.Currency == invoice.Currency, ct)
+                    ?? throw new InvalidOperationException($"No wallet found for organization '{request.OrganizationId}' in currency '{invoice.Currency}'.");
 
-            // Post double entry transaction: User Wallet -> Org Wallet
-            await _ledgerService.PostSingleCurrencyTransactionAsync(
-                sourceLedgerAccount.Id,
-                targetLedgerAccount.Id,
-                request.Amount,
-                invoice.Currency,
-                LedgerTransactionType.ErpInvoicePayment,
-                reference: invoice.InvoiceNumber,
-                idempotencyKey: request.IdempotencyKey,
-                description: $"Payment for invoice {invoice.InvoiceNumber}",
-                cancellationToken: cancellationToken);
+                var sourceLedgerAccount = await _dbContext.LedgerAccounts
+                    .FirstOrDefaultAsync(l => l.WalletId == userWallet.Id, ct)
+                    ?? throw new InvalidOperationException("Source ledger account for payer wallet not found.");
 
-            if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
-            {
-                var record = await _idempotencyService.CreateRecordAsync(
-                    request.IdempotencyKey,
-                    "RecordInvoicePayment",
-                    $"{invoice.Id}:{request.Amount}",
-                    userId,
-                    request.OrganizationId,
-                    autoSave: false,
-                    cancellationToken: cancellationToken);
-                await _idempotencyService.CompleteRecordAsync(record.Id, "{\"status\":\"success\"}", cancellationToken);
-            }
-        }
+                var targetLedgerAccount = await _dbContext.LedgerAccounts
+                    .FirstOrDefaultAsync(l => l.WalletId == orgWallet.Id, ct)
+                    ?? throw new InvalidOperationException("Target ledger account for organization wallet not found.");
 
-        invoice.RecordPayment(request.Amount, request.SettlementMethod, now);
-
-        var auditLog = AuditLog.Create(
-            userId,
-            AuditActions.InvoicePaid,
-            AuditResourceTypes.Invoice,
-            invoice.Id.ToString(),
-            request.OrganizationId,
-            afterJson: $"Recorded payment of {request.Amount} {invoice.Currency} on invoice '{invoice.InvoiceNumber}' via {request.SettlementMethod}. Status is now '{invoice.Status}'.");
-        _dbContext.AuditLogs.Add(auditLog);
-
-        _outbox.Write(new InvoicePaidDomainEvent(
-            invoice.Id,
-            invoice.OrganizationId,
-            invoice.InvoiceNumber,
-            request.Amount,
-            request.SettlementMethod,
-            now));
-
-        Guid? receiptId = null;
-
-        // Atomically generate receipt exactly once when invoice reaches Paid status
-        if (invoice.Status == InvoiceStatus.Paid)
-        {
-            var existingReceipt = await _dbContext.ErpReceipts
-                .FirstOrDefaultAsync(r => r.InvoiceId == invoice.Id, cancellationToken);
-
-            if (existingReceipt == null)
-            {
-                var receiptNumber = $"REC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid():N}"[..18].ToUpperInvariant();
-                var receipt = new ErpReceipt(
-                    request.OrganizationId,
-                    receiptNumber,
-                    invoice.Id,
-                    invoice.CustomerId,
-                    invoice.TotalAmount,
-                    now,
-                    request.SettlementMethod,
-                    request.Reference,
-                    userId,
+                // Post double entry transaction: User Wallet -> Org Wallet
+                await _ledgerService.PostSingleCurrencyTransactionAsync(
+                    sourceLedgerAccount.Id,
+                    targetLedgerAccount.Id,
+                    request.Amount,
                     invoice.Currency,
-                    invoice.Notes);
+                    LedgerTransactionType.ErpInvoicePayment,
+                    reference: invoice.InvoiceNumber,
+                    idempotencyKey: request.IdempotencyKey,
+                    description: $"Payment for invoice {invoice.InvoiceNumber}",
+                    cancellationToken: ct);
 
-                _dbContext.ErpReceipts.Add(receipt);
-                receiptId = receipt.Id;
-
-                var receiptAuditLog = AuditLog.Create(
-                    userId,
-                    AuditActions.ReceiptGenerated,
-                    AuditResourceTypes.Receipt,
-                    receipt.Id.ToString(),
-                    request.OrganizationId,
-                    afterJson: $"Generated receipt '{receipt.ReceiptNumber}' for invoice '{invoice.InvoiceNumber}' for amount {receipt.Amount} {receipt.Currency}.");
-                _dbContext.AuditLogs.Add(receiptAuditLog);
-
-                _outbox.Write(new ReceiptGeneratedDomainEvent(
-                    receipt.Id,
-                    receipt.OrganizationId,
-                    receipt.ReceiptNumber,
-                    receipt.InvoiceId,
-                    receipt.Amount,
-                    now));
+                if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
+                {
+                    var record = await _idempotencyService.CreateRecordAsync(
+                        request.IdempotencyKey,
+                        "RecordInvoicePayment",
+                        $"{invoice.Id}:{request.Amount}",
+                        userId,
+                        request.OrganizationId,
+                        autoSave: false,
+                        cancellationToken: ct);
+                    await _idempotencyService.CompleteRecordAsync(record.Id, "{\"status\":\"success\"}", ct);
+                }
             }
-            else
+
+            invoice.RecordPayment(request.Amount, request.SettlementMethod, now);
+
+            var auditLog = AuditLog.Create(
+                userId,
+                AuditActions.InvoicePaid,
+                AuditResourceTypes.Invoice,
+                invoice.Id.ToString(),
+                request.OrganizationId,
+                afterJson: $"Recorded payment of {request.Amount} {invoice.Currency} on invoice '{invoice.InvoiceNumber}' via {request.SettlementMethod}. Status is now '{invoice.Status}'.");
+            _dbContext.AuditLogs.Add(auditLog);
+
+            _outbox.Write(new InvoicePaidDomainEvent(
+                invoice.Id,
+                invoice.OrganizationId,
+                invoice.InvoiceNumber,
+                request.Amount,
+                request.SettlementMethod,
+                now));
+
+            Guid? receiptId = null;
+
+            // Atomically generate receipt exactly once when invoice reaches Paid status
+            if (invoice.Status == InvoiceStatus.Paid)
             {
-                receiptId = existingReceipt.Id;
-            }
-        }
+                var existingReceipt = await _dbContext.ErpReceipts
+                    .FirstOrDefaultAsync(r => r.InvoiceId == invoice.Id, ct);
 
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        await tx.CommitAsync(cancellationToken);
-        return receiptId;
-    }
-    catch
-    {
-        await tx.RollbackAsync(cancellationToken);
-        throw;
-    }
+                if (existingReceipt == null)
+                {
+                    var receiptNumber = $"REC-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid():N}"[..18].ToUpperInvariant();
+                    var receipt = new ErpReceipt(
+                        request.OrganizationId,
+                        receiptNumber,
+                        invoice.Id,
+                        invoice.CustomerId,
+                        invoice.TotalAmount,
+                        now,
+                        request.SettlementMethod,
+                        request.Reference,
+                        userId,
+                        invoice.Currency,
+                        invoice.Notes);
+
+                    _dbContext.ErpReceipts.Add(receipt);
+                    receiptId = receipt.Id;
+
+                    var receiptAuditLog = AuditLog.Create(
+                        userId,
+                        AuditActions.ReceiptGenerated,
+                        AuditResourceTypes.Receipt,
+                        receipt.Id.ToString(),
+                        request.OrganizationId,
+                        afterJson: $"Generated receipt '{receipt.ReceiptNumber}' for invoice '{invoice.InvoiceNumber}' for amount {receipt.Amount} {receipt.Currency}.");
+                    _dbContext.AuditLogs.Add(receiptAuditLog);
+
+                    _outbox.Write(new ReceiptGeneratedDomainEvent(
+                        receipt.Id,
+                        receipt.OrganizationId,
+                        receipt.ReceiptNumber,
+                        receipt.InvoiceId,
+                        receipt.Amount,
+                        now));
+                }
+                else
+                {
+                    receiptId = existingReceipt.Id;
+                }
+            }
+
+            await _dbContext.SaveChangesAsync(ct);
+            return receiptId;
+        }, cancellationToken);
 }
 }
 

@@ -285,132 +285,124 @@ public sealed class PayCompanyVoucherCommandHandler : IRequestHandler<PayCompany
         Guid? walletId = null;
         Guid? ledgerTxId = null;
 
-        await using var tx = await _dbContext.BeginTransactionAsync(cancellationToken);
-        try
+        return await _dbContext.ExecuteInTransactionAsync(async ct =>
         {
-
-        if (request.PaymentMethod == CompanyVoucherPaymentMethod.Wallet)
-        {
-            if (string.IsNullOrWhiteSpace(request.Pin))
+            if (request.PaymentMethod == CompanyVoucherPaymentMethod.Wallet)
             {
-                throw new ArgumentException("Transaction PIN is required for wallet disbursements.", nameof(request));
-            }
-
-            var (pinSuccess, isLocked, pinError) = await _pinService.VerifyPinAsync(userId, request.Pin, cancellationToken);
-            if (!pinSuccess)
-            {
-                if (isLocked)
+                if (string.IsNullOrWhiteSpace(request.Pin))
                 {
-                    throw new InvalidOperationException("Account PIN is temporarily locked due to too many failed attempts.");
+                    throw new ArgumentException("Transaction PIN is required for wallet disbursements.", nameof(request));
                 }
-                throw new InvalidOperationException(pinError ?? "Invalid transaction PIN.");
-            }
 
-            // Check Idempotency if key provided
-            if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
-            {
-                var existingRecord = await _idempotencyService.GetRecordAsync(
+                var (pinSuccess, isLocked, pinError) = await _pinService.VerifyPinAsync(userId, request.Pin, ct);
+                if (!pinSuccess)
+                {
+                    if (isLocked)
+                    {
+                        throw new InvalidOperationException("Account PIN is temporarily locked due to too many failed attempts.");
+                    }
+                    throw new InvalidOperationException(pinError ?? "Invalid transaction PIN.");
+                }
+
+                // Check Idempotency if key provided
+                if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
+                {
+                    var existingRecord = await _idempotencyService.GetRecordAsync(
+                        request.IdempotencyKey,
+                        "PayCompanyVoucher",
+                        userId,
+                        request.OrganizationId,
+                        ct);
+
+                    if (existingRecord != null && existingRecord.Status == IdempotencyStatus.Completed)
+                    {
+                        return Unit.Value;
+                    }
+                }
+
+                // Resolve organization wallet
+                var orgWallet = await _dbContext.Wallets
+                    .FirstOrDefaultAsync(w => w.OrganizationId == request.OrganizationId && w.Currency == voucher.Currency, ct)
+                    ?? throw new InvalidOperationException($"No wallet found for organization '{request.OrganizationId}' in currency '{voucher.Currency}'.");
+
+                if (orgWallet.Status != WalletStatus.Active)
+                {
+                    throw new InvalidOperationException($"Organization wallet is {orgWallet.Status}.");
+                }
+
+                if (orgWallet.AvailableBalance < voucher.Amount)
+                {
+                    throw new InsufficientFundsException(orgWallet.AvailableBalance, voucher.Amount);
+                }
+
+                // Resolve organization ledger account and platform settlement account
+                var sourceLedgerAccount = await _dbContext.LedgerAccounts
+                    .FirstOrDefaultAsync(l => l.WalletId == orgWallet.Id, ct)
+                    ?? throw new InvalidOperationException("Source ledger account for organization wallet not found.");
+
+                var systemDisbursementAccount = await _ledgerService.GetOrCreateSystemSettlementAccountAsync(voucher.Currency, ct);
+
+                // Post double-entry transaction
+                var reference = !string.IsNullOrWhiteSpace(request.Reference) ? request.Reference : voucher.VoucherNumber;
+                var ledgerTx = await _ledgerService.PostSingleCurrencyTransactionAsync(
+                    sourceLedgerAccount.Id,
+                    systemDisbursementAccount.Id,
+                    voucher.Amount,
+                    voucher.Currency,
+                    LedgerTransactionType.CompanyVoucherDisbursement,
+                    reference,
                     request.IdempotencyKey,
-                    "PayCompanyVoucher",
-                    userId,
-                    request.OrganizationId,
-                    cancellationToken);
+                    voucher.Purpose,
+                    ct);
 
-                if (existingRecord != null && existingRecord.Status == IdempotencyStatus.Completed)
+                walletId = orgWallet.Id;
+                ledgerTxId = ledgerTx.Id;
+
+                voucher.MarkPaid(now, walletId, ledgerTxId, ledgerTx.Reference);
+
+                // Complete Idempotency record if key provided
+                if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
                 {
-                    return Unit.Value;
+                    var record = await _idempotencyService.CreateRecordAsync(
+                        request.IdempotencyKey,
+                        "PayCompanyVoucher",
+                        $"{voucher.Id}:{voucher.Amount}",
+                        userId,
+                        request.OrganizationId,
+                        autoSave: false,
+                        cancellationToken: ct);
+                    await _idempotencyService.CompleteRecordAsync(record.Id, "{\"status\":\"success\"}", ct);
                 }
             }
-
-            // Resolve organization wallet
-            var orgWallet = await _dbContext.Wallets
-                .FirstOrDefaultAsync(w => w.OrganizationId == request.OrganizationId && w.Currency == voucher.Currency, cancellationToken)
-                ?? throw new InvalidOperationException($"No wallet found for organization '{request.OrganizationId}' in currency '{voucher.Currency}'.");
-
-            if (orgWallet.Status != WalletStatus.Active)
+            else
             {
-                throw new InvalidOperationException($"Organization wallet is {orgWallet.Status}.");
+                // Manual external payment
+                var reference = !string.IsNullOrWhiteSpace(request.Reference) ? request.Reference : voucher.Reference;
+                voucher.MarkPaid(now, reference: reference);
             }
 
-            if (orgWallet.AvailableBalance < voucher.Amount)
-            {
-                throw new InsufficientFundsException(orgWallet.AvailableBalance, voucher.Amount);
-            }
+            var auditLog = AuditLog.Create(
+                userId,
+                AuditActions.CompanyVoucherPaid,
+                AuditResourceTypes.CompanyVoucher,
+                voucher.Id.ToString(),
+                request.OrganizationId,
+                afterJson: $"Settled company voucher '{voucher.VoucherNumber}' for {voucher.Amount} {voucher.Currency} via {request.PaymentMethod}.");
+            _dbContext.AuditLogs.Add(auditLog);
 
-            // Resolve organization ledger account and platform settlement account
-            var sourceLedgerAccount = await _dbContext.LedgerAccounts
-                .FirstOrDefaultAsync(l => l.WalletId == orgWallet.Id, cancellationToken)
-                ?? throw new InvalidOperationException("Source ledger account for organization wallet not found.");
-
-            var systemDisbursementAccount = await _ledgerService.GetOrCreateSystemSettlementAccountAsync(voucher.Currency, cancellationToken);
-
-            // Post double-entry transaction
-            var reference = !string.IsNullOrWhiteSpace(request.Reference) ? request.Reference : voucher.VoucherNumber;
-            var ledgerTx = await _ledgerService.PostSingleCurrencyTransactionAsync(
-                sourceLedgerAccount.Id,
-                systemDisbursementAccount.Id,
+            _outbox.Write(new CompanyVoucherPaidDomainEvent(
+                voucher.Id,
+                voucher.OrganizationId,
+                voucher.VoucherNumber,
                 voucher.Amount,
                 voucher.Currency,
-                LedgerTransactionType.CompanyVoucherDisbursement,
-                reference,
-                request.IdempotencyKey,
-                voucher.Purpose,
-                cancellationToken);
+                request.PaymentMethod,
+                ledgerTxId,
+                now));
 
-            walletId = orgWallet.Id;
-            ledgerTxId = ledgerTx.Id;
-
-            voucher.MarkPaid(now, walletId, ledgerTxId, ledgerTx.Reference);
-
-            // Complete Idempotency record if key provided
-            if (!string.IsNullOrWhiteSpace(request.IdempotencyKey))
-            {
-                var record = await _idempotencyService.CreateRecordAsync(
-                    request.IdempotencyKey,
-                    "PayCompanyVoucher",
-                    $"{voucher.Id}:{voucher.Amount}",
-                    userId,
-                    request.OrganizationId,
-                    autoSave: false,
-                    cancellationToken: cancellationToken);
-                await _idempotencyService.CompleteRecordAsync(record.Id, "{\"status\":\"success\"}", cancellationToken);
-            }
-        }
-        else
-        {
-            // Manual external payment
-            var reference = !string.IsNullOrWhiteSpace(request.Reference) ? request.Reference : voucher.Reference;
-            voucher.MarkPaid(now, reference: reference);
-        }
-
-        var auditLog = AuditLog.Create(
-            userId,
-            AuditActions.CompanyVoucherPaid,
-            AuditResourceTypes.CompanyVoucher,
-            voucher.Id.ToString(),
-            request.OrganizationId,
-            afterJson: $"Settled company voucher '{voucher.VoucherNumber}' for {voucher.Amount} {voucher.Currency} via {request.PaymentMethod}.");
-        _dbContext.AuditLogs.Add(auditLog);
-
-        _outbox.Write(new CompanyVoucherPaidDomainEvent(
-            voucher.Id,
-            voucher.OrganizationId,
-            voucher.VoucherNumber,
-            voucher.Amount,
-            voucher.Currency,
-            request.PaymentMethod,
-            ledgerTxId,
-            now));
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        await tx.CommitAsync(cancellationToken);
-        return Unit.Value;
-    }
-    catch
-    {
-        await tx.RollbackAsync(cancellationToken);
-        throw;
-    }
+            await _dbContext.SaveChangesAsync(ct);
+            return Unit.Value;
+        }, cancellationToken);
 }
 }
 
