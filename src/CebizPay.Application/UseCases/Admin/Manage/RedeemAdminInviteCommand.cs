@@ -64,8 +64,6 @@ public sealed class RedeemAdminInviteCommandHandler : IRequestHandler<RedeemAdmi
         var rawToken = request.InvitationToken.Trim();
         var tokenHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawToken))).ToLowerInvariant();
 
-        await using var transaction = await _dbContext.BeginTransactionAsync(cancellationToken);
-
         // Retrieve invitation by token hash
         var invitation = await _dbContext.AdminInvitations
             .FirstOrDefaultAsync(i => i.TokenHash == tokenHash, cancellationToken);
@@ -80,81 +78,89 @@ public sealed class RedeemAdminInviteCommandHandler : IRequestHandler<RedeemAdmi
         {
             invitation.MarkExpired();
             await _dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
             throw new InvalidOperationException("Invitation token has expired. Please request a new invitation from a Super Admin.");
         }
 
-        // Check if identity user already exists or register a new identity user
-        var (found, existingUserId, _, _) = await _identityService.FindUserByEmailAsync(invitation.Email, cancellationToken);
-        string userId;
-
-        if (found && !string.IsNullOrWhiteSpace(existingUserId))
+        var (succeeded, userId, failureDto) = await _dbContext.ExecuteInTransactionAsync(async ct =>
         {
-            userId = existingUserId;
-        }
-        else
-        {
-            var (succeeded, newUserId, errors) = await _identityService.RegisterUserAsync(
-                invitation.Email,
-                request.Password,
-                request.PhoneNumber,
-                cancellationToken);
+            // Check if identity user already exists or register a new identity user
+            var (found, existingUserId, _, _) = await _identityService.FindUserByEmailAsync(invitation.Email, ct);
+            string resolvedUserId;
 
-            if (!succeeded)
+            if (found && !string.IsNullOrWhiteSpace(existingUserId))
             {
-                return new RedeemAdminInviteResponseDto(
-                    false,
-                    null,
+                resolvedUserId = existingUserId;
+            }
+            else
+            {
+                var (regSucceeded, newUserId, errors) = await _identityService.RegisterUserAsync(
                     invitation.Email,
-                    invitation.Role.ToString(),
-                    null,
-                    null,
-                    errors);
+                    request.Password,
+                    request.PhoneNumber,
+                    ct);
+
+                if (!regSucceeded)
+                {
+                    var failDto = new RedeemAdminInviteResponseDto(
+                        false,
+                        null,
+                        invitation.Email,
+                        invitation.Role.ToString(),
+                        null,
+                        null,
+                        errors);
+                    return (false, string.Empty, failDto);
+                }
+
+                resolvedUserId = newUserId;
             }
 
-            userId = newUserId;
-        }
+            // Check if AdminProfile already exists for this user ID
+            var existingProfile = await _dbContext.AdminProfiles
+                .FirstOrDefaultAsync(a => a.UserId == resolvedUserId, ct);
 
-        // Check if AdminProfile already exists for this user ID
-        var existingProfile = await _dbContext.AdminProfiles
-            .FirstOrDefaultAsync(a => a.UserId == userId, cancellationToken);
-
-        if (existingProfile != null)
-        {
-            if (!existingProfile.IsDeleted)
+            if (existingProfile != null)
             {
-                throw new InvalidOperationException("An active administrative profile already exists for this identity user.");
+                if (!existingProfile.IsDeleted)
+                {
+                    throw new InvalidOperationException("An active administrative profile already exists for this identity user.");
+                }
+
+                // If previously soft-deleted, reactivate and update role to the invited role
+                existingProfile.ChangeRole(invitation.Role);
+                existingProfile.Activate();
+            }
+            else
+            {
+                var newProfile = new AdminProfile(resolvedUserId, invitation.Role, isMfaEnabled: false);
+                _dbContext.AdminProfiles.Add(newProfile);
             }
 
-            // If previously soft-deleted, reactivate and update role to the invited role
-            existingProfile.ChangeRole(invitation.Role);
-            existingProfile.Activate();
-        }
-        else
+            // Mark invitation redeemed
+            invitation.Redeem(resolvedUserId, now);
+
+            // Record audit log entry
+            _dbContext.AuditLogs.Add(AuditLog.Create(
+                actorId: resolvedUserId,
+                action: AuditActions.AdminInviteRedeemed,
+                resourceType: AuditResourceTypes.AdminInvitation,
+                resourceId: invitation.Id.ToString(),
+                afterJson: JsonSerializer.Serialize(new
+                {
+                    UserId = resolvedUserId,
+                    Email = invitation.Email,
+                    Role = invitation.Role.ToString(),
+                    RedeemedAtUtc = now
+                })));
+
+            await _dbContext.SaveChangesAsync(ct);
+            return (true, resolvedUserId, (RedeemAdminInviteResponseDto?)null);
+        }, cancellationToken);
+
+        if (!succeeded || failureDto != null)
         {
-            var newProfile = new AdminProfile(userId, invitation.Role, isMfaEnabled: false);
-            _dbContext.AdminProfiles.Add(newProfile);
+            return failureDto!;
         }
-
-        // Mark invitation redeemed
-        invitation.Redeem(userId, now);
-
-        // Record audit log entry
-        _dbContext.AuditLogs.Add(AuditLog.Create(
-            actorId: userId,
-            action: AuditActions.AdminInviteRedeemed,
-            resourceType: AuditResourceTypes.AdminInvitation,
-            resourceId: invitation.Id.ToString(),
-            afterJson: JsonSerializer.Serialize(new
-            {
-                UserId = userId,
-                Email = invitation.Email,
-                Role = invitation.Role.ToString(),
-                RedeemedAtUtc = now
-            })));
-
-        await _dbContext.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
 
         // Issue authentication tokens for immediate login
         var (accessToken, refreshToken) = await _identityService.IssueTokensForUserAsync(userId, cancellationToken);

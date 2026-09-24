@@ -167,146 +167,149 @@ public sealed class PurchaseAirtimeCommandHandler : IRequestHandler<PurchaseAirt
             throw new InsufficientFundsException(sourceWallet.AvailableBalance, request.Amount);
         }
 
-        // ─── 7. Begin Database Transaction ────────────────────────────────────
-        await using var dbTx = await _dbContext.BeginTransactionAsync(cancellationToken);
-
-        Guid vasTransactionId;
-        string reference;
-        DateTime createdAtUtc;
+        // ─── 7. Execute Financial Database Transaction ────────────────────
         var maskedPhone = normalizedPhone.Length >= 7 ? $"{normalizedPhone[..4]}***{normalizedPhone[^4..]}" : normalizedPhone;
+
+        Guid vasTransactionId = Guid.Empty;
+        string reference = string.Empty;
+        DateTime createdAtUtc = default;
+        VasPurchaseResponseDto? cachedResponse = null;
 
         try
         {
-            // ─── 8. Idempotency Check & Insert ────────────────────────────────
-            var requestPayload = JsonSerializer.Serialize(new
+            (vasTransactionId, reference, createdAtUtc, cachedResponse) = await _dbContext.ExecuteInTransactionAsync(async ct =>
             {
-                PhoneNumber = normalizedPhone,
-                Network = network.ToString(),
-                request.Amount,
-                Currency = Currency.NGN.ToString(),
-                SourceWalletId = sourceWallet.Id,
-                Type = VasType.Airtime.ToString()
-            });
-
-            var idempotencyRecord = await _idempotencyService.CreateRecordAsync(
-                request.IdempotencyKey,
-                OperationName,
-                requestPayload,
-                userId,
-                orgId,
-                autoSave: true,
-                cancellationToken: cancellationToken);
-
-            if (idempotencyRecord.Status == IdempotencyStatus.Completed && idempotencyRecord.ResponseJson != null)
-            {
-                await dbTx.RollbackAsync(cancellationToken);
-                return JsonSerializer.Deserialize<VasPurchaseResponseDto>(idempotencyRecord.ResponseJson)
-                    ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
-            }
-
-            if (idempotencyRecord.Status == IdempotencyStatus.Processing)
-            {
-                await dbTx.RollbackAsync(cancellationToken);
-                throw new IdempotencyConflictException(
-                    request.IdempotencyKey,
-                    $"A VAS purchase request with idempotency key '{request.IdempotencyKey}' is currently being processed.");
-            }
-
-            // ─── 9. Ensure VAS Clearing Account Exists ────────────────────────
-            var clearingAccount = await _ledgerService.GetOrCreateVasClearingAccountAsync(Currency.NGN, cancellationToken);
-
-            // ─── 10. Generate Reference & Execute Atomic Debit ─────────────────
-            reference = GenerateVasReference();
-
-            var (ledgerTxn, vasTxn) = await _ledgerService.PostVasPurchaseDebitCoreAsync(
-                customerWalletId: sourceWallet.Id,
-                vasClearingAccountId: clearingAccount.Id,
-                amount: request.Amount,
-                currency: Currency.NGN,
-                userId: userId,
-                organizationId: orgId,
-                phoneNumber: normalizedPhone,
-                network: network,
-                type: VasType.Airtime,
-                productCode: null,
-                productName: "Airtime Top-Up",
-                reference: reference,
-                idempotencyKey: request.IdempotencyKey,
-                description: $"Airtime purchase: {request.Amount} NGN for {maskedPhone} ({network})",
-                cancellationToken: cancellationToken);
-
-            vasTransactionId = vasTxn.Id;
-            createdAtUtc = vasTxn.CreatedAtUtc;
-
-            // ─── 11. Audit Log ────────────────────────────────────────────────
-            var auditLog = AuditLog.Create(
-                actorId: userId,
-                action: Domain.Auditing.AuditActions.VasPurchaseCreated,
-                resourceType: Domain.Auditing.AuditResourceTypes.VasTransaction,
-                resourceId: vasTxn.Id.ToString(),
-                organizationId: orgId,
-                afterJson: JsonSerializer.Serialize(new
+                // ─── 8. Idempotency Check & Insert ────────────────────────────────
+                var requestPayload = JsonSerializer.Serialize(new
                 {
-                    vasTxn.Reference,
-                    vasTxn.Amount,
-                    Currency = Currency.NGN.ToString(),
-                    Type = VasType.Airtime.ToString(),
+                    PhoneNumber = normalizedPhone,
                     Network = network.ToString(),
-                    PhoneNumber = maskedPhone,
-                    Status = VasTransactionStatus.Pending.ToString()
-                }));
+                    request.Amount,
+                    Currency = Currency.NGN.ToString(),
+                    SourceWalletId = sourceWallet.Id,
+                    Type = VasType.Airtime.ToString()
+                });
 
-            _dbContext.AuditLogs.Add(auditLog);
+                var idempotencyRecord = await _idempotencyService.CreateRecordAsync(
+                    request.IdempotencyKey,
+                    OperationName,
+                    requestPayload,
+                    userId,
+                    orgId,
+                    autoSave: true,
+                    cancellationToken: ct);
 
-            // ─── 12. Publish Outbox Event ─────────────────────────────────────
-            var outboxEvent = new VasPurchaseCreatedEvent(
-                VasTransactionId: vasTxn.Id,
-                Reference: vasTxn.Reference,
-                UserId: userId,
-                OrganizationId: orgId,
-                WalletId: sourceWallet.Id,
-                LedgerTransactionId: ledgerTxn.Id,
-                Type: VasType.Airtime,
-                Network: network,
-                MaskedPhoneNumber: maskedPhone,
-                Amount: request.Amount,
-                Currency: Currency.NGN.ToString(),
-                ProductCode: null,
-                OccurredOnUtc: DateTime.UtcNow);
+                if (idempotencyRecord.Status == IdempotencyStatus.Completed && idempotencyRecord.ResponseJson != null)
+                {
+                    var cached = JsonSerializer.Deserialize<VasPurchaseResponseDto>(idempotencyRecord.ResponseJson)
+                        ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
+                    return (Guid.Empty, string.Empty, default(DateTime), cached);
+                }
 
-            _outboxService.Write(outboxEvent);
+                if (idempotencyRecord.Status == IdempotencyStatus.Processing)
+                {
+                    throw new IdempotencyConflictException(
+                        request.IdempotencyKey,
+                        $"A VAS purchase request with idempotency key '{request.IdempotencyKey}' is currently being processed.");
+                }
 
-            // ─── 13. Build Initial Response DTO & Complete Idempotency ────────
-            var initialResponse = new VasPurchaseResponseDto(
-                Reference: vasTxn.Reference,
-                Type: VasType.Airtime.ToString().ToUpperInvariant(),
-                Status: VasTransactionStatus.Processing.ToString().ToUpperInvariant(),
-                Amount: request.Amount,
-                Currency: Currency.NGN.ToString(),
-                Network: network.ToString().ToUpperInvariant(),
-                MaskedPhoneNumber: maskedPhone,
-                ProductCode: null,
-                ProductName: "Airtime Top-Up",
-                CreatedAtUtc: createdAtUtc);
+                // ─── 9. Ensure VAS Clearing Account Exists ────────────────────────
+                var clearingAccount = await _ledgerService.GetOrCreateVasClearingAccountAsync(Currency.NGN, ct);
 
-            idempotencyRecord.Complete(JsonSerializer.Serialize(initialResponse));
+                // ─── 10. Generate Reference & Execute Atomic Debit ─────────────────
+                var generatedReference = GenerateVasReference();
 
-            // ─── 14. Commit Financial Database Transaction ────────────────────
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await dbTx.CommitAsync(cancellationToken);
+                var (ledgerTxn, vasTxn) = await _ledgerService.PostVasPurchaseDebitCoreAsync(
+                    customerWalletId: sourceWallet.Id,
+                    vasClearingAccountId: clearingAccount.Id,
+                    amount: request.Amount,
+                    currency: Currency.NGN,
+                    userId: userId,
+                    organizationId: orgId,
+                    phoneNumber: normalizedPhone,
+                    network: network,
+                    type: VasType.Airtime,
+                    productCode: null,
+                    productName: "Airtime Top-Up",
+                    reference: generatedReference,
+                    idempotencyKey: request.IdempotencyKey,
+                    description: $"Airtime purchase: {request.Amount} NGN for {maskedPhone} ({network})",
+                    cancellationToken: ct);
+
+                // ─── 11. Audit Log ────────────────────────────────────────────────
+                var auditLog = AuditLog.Create(
+                    actorId: userId,
+                    action: Domain.Auditing.AuditActions.VasPurchaseCreated,
+                    resourceType: Domain.Auditing.AuditResourceTypes.VasTransaction,
+                    resourceId: vasTxn.Id.ToString(),
+                    organizationId: orgId,
+                    afterJson: JsonSerializer.Serialize(new
+                    {
+                        vasTxn.Reference,
+                        vasTxn.Amount,
+                        Currency = Currency.NGN.ToString(),
+                        Type = VasType.Airtime.ToString(),
+                        Network = network.ToString(),
+                        PhoneNumber = maskedPhone,
+                        Status = VasTransactionStatus.Pending.ToString()
+                    }));
+
+                _dbContext.AuditLogs.Add(auditLog);
+
+                // ─── 12. Publish Outbox Event ─────────────────────────────────────
+                var outboxEvent = new VasPurchaseCreatedEvent(
+                    VasTransactionId: vasTxn.Id,
+                    Reference: vasTxn.Reference,
+                    UserId: userId,
+                    OrganizationId: orgId,
+                    WalletId: sourceWallet.Id,
+                    LedgerTransactionId: ledgerTxn.Id,
+                    Type: VasType.Airtime,
+                    Network: network,
+                    MaskedPhoneNumber: maskedPhone,
+                    Amount: request.Amount,
+                    Currency: Currency.NGN.ToString(),
+                    ProductCode: null,
+                    OccurredOnUtc: DateTime.UtcNow);
+
+                _outboxService.Write(outboxEvent);
+
+                // ─── 13. Build Initial Response DTO & Complete Idempotency ────────
+                var initialResponse = new VasPurchaseResponseDto(
+                    Reference: vasTxn.Reference,
+                    Type: VasType.Airtime.ToString().ToUpperInvariant(),
+                    Status: VasTransactionStatus.Processing.ToString().ToUpperInvariant(),
+                    Amount: request.Amount,
+                    Currency: Currency.NGN.ToString(),
+                    Network: network.ToString().ToUpperInvariant(),
+                    MaskedPhoneNumber: maskedPhone,
+                    ProductCode: null,
+                    ProductName: "Airtime Top-Up",
+                    CreatedAtUtc: vasTxn.CreatedAtUtc);
+
+                idempotencyRecord.Complete(JsonSerializer.Serialize(initialResponse));
+
+                // ─── 14. Commit Financial Database Transaction ────────────────────
+                await _dbContext.SaveChangesAsync(ct);
+
+                return (vasTxn.Id, generatedReference, vasTxn.CreatedAtUtc, (VasPurchaseResponseDto?)null);
+            }, cancellationToken);
         }
         catch (InvalidOperationException ex) when (
             ex.Message.StartsWith("Insufficient funds after lock", StringComparison.OrdinalIgnoreCase))
         {
-            await dbTx.RollbackAsync(cancellationToken);
             await _duplicateGuard.ReleaseDuplicateLockAsync(VasType.Airtime, normalizedPhone, request.Amount, network, null, cancellationToken);
             throw new InsufficientFundsException(sourceWallet.AvailableBalance, request.Amount);
         }
         catch
         {
-            await dbTx.RollbackAsync(cancellationToken);
             await _duplicateGuard.ReleaseDuplicateLockAsync(VasType.Airtime, normalizedPhone, request.Amount, network, null, cancellationToken);
             throw;
+        }
+
+        if (cachedResponse != null)
+        {
+            return cachedResponse;
         }
 
         // ─── 15. Dispatch External Fulfillment to VTUGATE outside DB Transaction
