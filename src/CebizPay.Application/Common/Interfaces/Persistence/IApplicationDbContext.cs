@@ -305,4 +305,27 @@ public interface IApplicationDbContext
     /// Begins an explicit database transaction. The caller is responsible for committing or rolling back.
     /// </summary>
     Task<IDbTransaction> BeginTransactionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes the specified asynchronous operation within a database transaction managed by the configured execution strategy.
+    /// If there are pending changes in the change tracker upon successful completion, saves changes before committing.
+    /// </summary>
+    /// <param name="operation">The asynchronous operation to execute within the transaction scope.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A task representing the asynchronous transaction operation.</returns>
+    Task ExecuteInTransactionAsync(
+        Func<CancellationToken, Task> operation,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Executes the specified asynchronous operation returning a result within a database transaction managed by the configured execution strategy.
+    /// If there are pending changes in the change tracker upon successful completion, saves changes before committing.
+    /// </summary>
+    /// <typeparam name="TResult">The type of the result returned by the operation.</typeparam>
+    /// <param name="operation">The asynchronous operation returning a result to execute within the transaction scope.</param>
+    /// <param name="cancellationToken">The cancellation token.</param>
+    /// <returns>A task representing the result of the asynchronous transaction operation.</returns>
+    Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken = default);
 }

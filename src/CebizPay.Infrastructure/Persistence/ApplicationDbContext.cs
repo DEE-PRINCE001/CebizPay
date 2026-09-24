@@ -418,6 +418,59 @@ public class ApplicationDbContext
     }
 
     /// <inheritdoc/>
+    public async Task ExecuteInTransactionAsync(
+        Func<CancellationToken, Task> operation,
+        CancellationToken cancellationToken = default)
+    {
+        var strategy = Database.CreateExecutionStrategy();
+        await strategy.ExecuteAsync(async ct =>
+        {
+            await using var tx = await Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+            try
+            {
+                await operation(ct).ConfigureAwait(false);
+                if (ChangeTracker.HasChanges())
+                {
+                    await SaveChangesAsync(ct).ConfigureAwait(false);
+                }
+                await tx.CommitAsync(ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct).ConfigureAwait(false);
+                throw;
+            }
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
+    public async Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken = default)
+    {
+        var strategy = Database.CreateExecutionStrategy();
+        return await strategy.ExecuteAsync(async ct =>
+        {
+            await using var tx = await Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+            try
+            {
+                var result = await operation(ct).ConfigureAwait(false);
+                if (ChangeTracker.HasChanges())
+                {
+                    await SaveChangesAsync(ct).ConfigureAwait(false);
+                }
+                await tx.CommitAsync(ct).ConfigureAwait(false);
+                return result;
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct).ConfigureAwait(false);
+                throw;
+            }
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc/>
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         EnforceAuditLogImmutability();
