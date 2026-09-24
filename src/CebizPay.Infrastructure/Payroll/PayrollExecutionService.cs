@@ -64,196 +64,195 @@ public sealed partial class PayrollExecutionService : IPayrollExecutionService
             return new PayrollItemExecutionResult(true, item.LedgerTransactionId, item.PaymentVoucherId, null, null);
         }
 
-        // Begin isolated PostgreSQL transaction for this single item
-        await using var dbTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // 1. Verify batch and organization status
-            var batch = await _dbContext.PayrollBatches
-                .FirstOrDefaultAsync(b => b.Id == item.PayrollBatchId, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (batch == null || batch.Status == PayrollBatchStatus.Cancelled)
+            return await _dbContext.ExecuteInTransactionAsync(async ct =>
             {
-                throw new InvalidOperationException($"PayrollBatch '{item.PayrollBatchId}' is missing or cancelled.");
-            }
+                // 1. Verify batch and organization status
+                var batch = await _dbContext.PayrollBatches
+                    .FirstOrDefaultAsync(b => b.Id == item.PayrollBatchId, ct)
+                    .ConfigureAwait(false);
 
-            var org = await _dbContext.Organizations
-                .FirstOrDefaultAsync(o => o.Id == item.OrganizationId, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (org == null || org.Status == OrganizationStatus.Suspended || org.IsDeleted)
-            {
-                throw new InvalidOperationException("Organization is suspended or inactive.");
-            }
-
-            // 2. Resolve organization wallet in batch currency
-            var orgWallet = await _dbContext.Wallets
-                .FirstOrDefaultAsync(w => w.OrganizationId == item.OrganizationId && w.Currency == item.Currency, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (orgWallet == null)
-            {
-                throw new InvalidOperationException($"Organization wallet for currency '{item.Currency}' not found.");
-            }
-
-            if (orgWallet.Status != WalletStatus.Active)
-            {
-                throw new InvalidOperationException($"Organization wallet is '{orgWallet.Status}'.");
-            }
-
-            // 3. Resolve or create employee personal wallet in batch currency
-            var empWallet = await _dbContext.Wallets
-                .FirstOrDefaultAsync(w => w.IndividualId == item.EmployeeUserId && w.Currency == item.Currency, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (empWallet == null)
-            {
-                empWallet = Wallet.CreateIndividualWallet(item.EmployeeUserId, item.Currency);
-                _dbContext.Wallets.Add(empWallet);
-                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            }
-
-            if (empWallet.Status != WalletStatus.Active)
-            {
-                throw new InvalidOperationException($"Employee wallet is '{empWallet.Status}'.");
-            }
-
-            // 4. Post double-entry disbursement through Central Ledger (Debit Org Wallet, Credit Employee Wallet)
-            var reference = $"PRL-{item.Id:N}";
-            var description = $"Salary disbursement for {item.EmployeeName} ({item.Currency})";
-
-            var ledgerTxn = await _ledgerPostingService.PostPayrollDisbursementCoreAsync(
-                organizationWalletId: orgWallet.Id,
-                employeeWalletId: empWallet.Id,
-                amount: item.NetPay,
-                currency: item.Currency,
-                reference: reference,
-                description: description,
-                cancellationToken: cancellationToken).ConfigureAwait(false);
-
-            // 5. Generate immutable Payment Voucher
-            var voucher = PaymentVoucher.Create(
-                payrollBatchId: batch.Id,
-                payrollItemId: item.Id,
-                ledgerTransactionId: ledgerTxn.Id,
-                organizationId: item.OrganizationId,
-                employeeUserId: item.EmployeeUserId,
-                employeeName: item.EmployeeName,
-                grossPay: item.GrossPay,
-                deductions: item.TotalDeductions,
-                netPay: item.NetPay,
-                currency: item.Currency,
-                bankName: "CebizPay Internal Settlement",
-                description: $"Payment Voucher for {item.EmployeeName} ({batch.BatchReference})");
-
-            _dbContext.PaymentVouchers.Add(voucher);
-
-            // 6. Settle any attached Corporate Loan Repayment Deductions atomically
-            if (!string.IsNullOrWhiteSpace(item.DeductionsDetailJson))
-            {
-                try
+                if (batch == null || batch.Status == PayrollBatchStatus.Cancelled)
                 {
-                    var deductionList = JsonSerializer.Deserialize<List<PayrollDeductionDetailDto>>(item.DeductionsDetailJson);
-                    if (deductionList != null)
-                    {
-                        foreach (var deduction in deductionList.Where(d => d.DeductionType == "CORPORATE_LOAN_REPAYMENT" && !string.IsNullOrEmpty(d.Reference)))
-                        {
-                            if (Guid.TryParse(deduction.Reference, out var installmentId))
-                            {
-                                var installment = await _dbContext.LoanRepaymentScheduleItems
-                                    .FirstOrDefaultAsync(s => s.Id == installmentId, cancellationToken)
-                                    .ConfigureAwait(false);
+                    throw new InvalidOperationException($"PayrollBatch '{item.PayrollBatchId}' is missing or cancelled.");
+                }
 
-                                if (installment != null && installment.Status != Domain.Loans.Enums.LoanRepaymentStatus.Paid)
+                var org = await _dbContext.Organizations
+                    .FirstOrDefaultAsync(o => o.Id == item.OrganizationId, ct)
+                    .ConfigureAwait(false);
+
+                if (org == null || org.Status == OrganizationStatus.Suspended || org.IsDeleted)
+                {
+                    throw new InvalidOperationException("Organization is suspended or inactive.");
+                }
+
+                // 2. Resolve organization wallet in batch currency
+                var orgWallet = await _dbContext.Wallets
+                    .FirstOrDefaultAsync(w => w.OrganizationId == item.OrganizationId && w.Currency == item.Currency, ct)
+                    .ConfigureAwait(false);
+
+                if (orgWallet == null)
+                {
+                    throw new InvalidOperationException($"Organization wallet for currency '{item.Currency}' not found.");
+                }
+
+                if (orgWallet.Status != WalletStatus.Active)
+                {
+                    throw new InvalidOperationException($"Organization wallet is '{orgWallet.Status}'.");
+                }
+
+                // 3. Resolve or create employee personal wallet in batch currency
+                var empWallet = await _dbContext.Wallets
+                    .FirstOrDefaultAsync(w => w.IndividualId == item.EmployeeUserId && w.Currency == item.Currency, ct)
+                    .ConfigureAwait(false);
+
+                if (empWallet == null)
+                {
+                    empWallet = Wallet.CreateIndividualWallet(item.EmployeeUserId, item.Currency);
+                    _dbContext.Wallets.Add(empWallet);
+                    await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
+                }
+
+                if (empWallet.Status != WalletStatus.Active)
+                {
+                    throw new InvalidOperationException($"Employee wallet is '{empWallet.Status}'.");
+                }
+
+                // 4. Post double-entry disbursement through Central Ledger (Debit Org Wallet, Credit Employee Wallet)
+                var reference = $"PRL-{item.Id:N}";
+                var description = $"Salary disbursement for {item.EmployeeName} ({item.Currency})";
+
+                var ledgerTxn = await _ledgerPostingService.PostPayrollDisbursementCoreAsync(
+                    organizationWalletId: orgWallet.Id,
+                    employeeWalletId: empWallet.Id,
+                    amount: item.NetPay,
+                    currency: item.Currency,
+                    reference: reference,
+                    description: description,
+                    cancellationToken: ct).ConfigureAwait(false);
+
+                // 5. Generate immutable Payment Voucher
+                var voucher = PaymentVoucher.Create(
+                    payrollBatchId: batch.Id,
+                    payrollItemId: item.Id,
+                    ledgerTransactionId: ledgerTxn.Id,
+                    organizationId: item.OrganizationId,
+                    employeeUserId: item.EmployeeUserId,
+                    employeeName: item.EmployeeName,
+                    grossPay: item.GrossPay,
+                    deductions: item.TotalDeductions,
+                    netPay: item.NetPay,
+                    currency: item.Currency,
+                    bankName: "CebizPay Internal Settlement",
+                    description: $"Payment Voucher for {item.EmployeeName} ({batch.BatchReference})");
+
+                _dbContext.PaymentVouchers.Add(voucher);
+
+                // 6. Settle any attached Corporate Loan Repayment Deductions atomically
+                if (!string.IsNullOrWhiteSpace(item.DeductionsDetailJson))
+                {
+                    try
+                    {
+                        var deductionList = JsonSerializer.Deserialize<List<PayrollDeductionDetailDto>>(item.DeductionsDetailJson);
+                        if (deductionList != null)
+                        {
+                            foreach (var deduction in deductionList.Where(d => d.DeductionType == "CORPORATE_LOAN_REPAYMENT" && !string.IsNullOrEmpty(d.Reference)))
+                            {
+                                if (Guid.TryParse(deduction.Reference, out var installmentId))
                                 {
-                                    var loanContract = await _dbContext.LoanContracts
-                                        .Include(c => c.RepaymentSchedule)
-                                        .FirstOrDefaultAsync(c => c.Id == installment.LoanContractId, cancellationToken)
+                                    var installment = await _dbContext.LoanRepaymentScheduleItems
+                                        .FirstOrDefaultAsync(s => s.Id == installmentId, ct)
                                         .ConfigureAwait(false);
 
-                                    if (loanContract != null)
+                                    if (installment != null && installment.Status != Domain.Loans.Enums.LoanRepaymentStatus.Paid)
                                     {
-                                        loanContract.ApplyRepayment(installment.InstallmentNumber, deduction.Amount, item.Id, ledgerTxn.Id);
-                                        LogLoanInstallmentSettled(_logger, installment.InstallmentNumber, deduction.Amount, loanContract.Id, item.Id);
+                                        var loanContract = await _dbContext.LoanContracts
+                                            .Include(c => c.RepaymentSchedule)
+                                            .FirstOrDefaultAsync(c => c.Id == installment.LoanContractId, ct)
+                                            .ConfigureAwait(false);
+
+                                        if (loanContract != null)
+                                        {
+                                            loanContract.ApplyRepayment(installment.InstallmentNumber, deduction.Amount, item.Id, ledgerTxn.Id);
+                                            LogLoanInstallmentSettled(_logger, installment.InstallmentNumber, deduction.Amount, loanContract.Id, item.Id);
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                    catch (Exception ex)
+                    {
+                        LogLoanDeductionParseError(_logger, item.Id, ex);
+                    }
                 }
-                catch (Exception ex)
+
+                // 7. Mark PayrollItem Completed
+                item.MarkCompleted(ledgerTxn.Id, voucher.Id);
+
+                // 7. Write Audit and Outbox events
+                var auditPayload = JsonSerializer.Serialize(new
                 {
-                    LogLoanDeductionParseError(_logger, item.Id, ex);
-                }
-            }
+                    BatchReference = batch.BatchReference,
+                    item.EmployeeUserId,
+                    item.EmployeeName,
+                    item.GrossPay,
+                    item.TotalDeductions,
+                    item.NetPay,
+                    item.Currency,
+                    LedgerTransactionId = ledgerTxn.Id,
+                    VoucherReference = voucher.VoucherReference
+                });
 
-            // 7. Mark PayrollItem Completed
-            item.MarkCompleted(ledgerTxn.Id, voucher.Id);
+                var audit = AuditLog.Create(
+                    actorId: workerId,
+                    action: AuditActions.PayrollItemCompleted,
+                    resourceType: AuditResourceTypes.PayrollItem,
+                    resourceId: item.Id.ToString(),
+                    afterJson: auditPayload,
+                    organizationId: item.OrganizationId);
+                _dbContext.AuditLogs.Add(audit);
 
-            // 7. Write Audit and Outbox events
-            var auditPayload = JsonSerializer.Serialize(new
-            {
-                BatchReference = batch.BatchReference,
-                item.EmployeeUserId,
-                item.EmployeeName,
-                item.GrossPay,
-                item.TotalDeductions,
-                item.NetPay,
-                item.Currency,
-                LedgerTransactionId = ledgerTxn.Id,
-                VoucherReference = voucher.VoucherReference
-            });
+                var voucherAudit = AuditLog.Create(
+                    actorId: workerId,
+                    action: AuditActions.PaymentVoucherCreated,
+                    resourceType: AuditResourceTypes.PaymentVoucher,
+                    resourceId: voucher.Id.ToString(),
+                    afterJson: auditPayload,
+                    organizationId: item.OrganizationId);
+                _dbContext.AuditLogs.Add(voucherAudit);
 
-            var audit = AuditLog.Create(
-                actorId: workerId,
-                action: AuditActions.PayrollItemCompleted,
-                resourceType: AuditResourceTypes.PayrollItem,
-                resourceId: item.Id.ToString(),
-                afterJson: auditPayload,
-                organizationId: item.OrganizationId);
-            _dbContext.AuditLogs.Add(audit);
+                _outbox.Write(new PayrollItemCompletedDomainEvent(
+                    PayrollBatchId: batch.Id,
+                    PayrollItemId: item.Id,
+                    OrganizationId: item.OrganizationId,
+                    EmployeeUserId: item.EmployeeUserId,
+                    NetPay: item.NetPay,
+                    Currency: item.Currency,
+                    LedgerTransactionId: ledgerTxn.Id,
+                    PaymentVoucherId: voucher.Id,
+                    OccurredOnUtc: DateTime.UtcNow));
 
-            var voucherAudit = AuditLog.Create(
-                actorId: workerId,
-                action: AuditActions.PaymentVoucherCreated,
-                resourceType: AuditResourceTypes.PaymentVoucher,
-                resourceId: voucher.Id.ToString(),
-                afterJson: auditPayload,
-                organizationId: item.OrganizationId);
-            _dbContext.AuditLogs.Add(voucherAudit);
+                _outbox.Write(new PaymentVoucherCreatedDomainEvent(
+                    PaymentVoucherId: voucher.Id,
+                    VoucherReference: voucher.VoucherReference,
+                    PayrollBatchId: batch.Id,
+                    PayrollItemId: item.Id,
+                    OrganizationId: item.OrganizationId,
+                    EmployeeUserId: item.EmployeeUserId,
+                    NetPay: item.NetPay,
+                    Currency: item.Currency,
+                    OccurredOnUtc: DateTime.UtcNow));
 
-            _outbox.Write(new PayrollItemCompletedDomainEvent(
-                PayrollBatchId: batch.Id,
-                PayrollItemId: item.Id,
-                OrganizationId: item.OrganizationId,
-                EmployeeUserId: item.EmployeeUserId,
-                NetPay: item.NetPay,
-                Currency: item.Currency,
-                LedgerTransactionId: ledgerTxn.Id,
-                PaymentVoucherId: voucher.Id,
-                OccurredOnUtc: DateTime.UtcNow));
+                await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
 
-            _outbox.Write(new PaymentVoucherCreatedDomainEvent(
-                PaymentVoucherId: voucher.Id,
-                VoucherReference: voucher.VoucherReference,
-                PayrollBatchId: batch.Id,
-                PayrollItemId: item.Id,
-                OrganizationId: item.OrganizationId,
-                EmployeeUserId: item.EmployeeUserId,
-                NetPay: item.NetPay,
-                Currency: item.Currency,
-                OccurredOnUtc: DateTime.UtcNow));
-
-            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await dbTx.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-            LogPayrollItemCompletedSuccess(_logger, item.Id, item.NetPay, item.Currency, item.EmployeeUserId);
-            return new PayrollItemExecutionResult(true, ledgerTxn.Id, voucher.Id, null, null);
+                LogPayrollItemCompletedSuccess(_logger, item.Id, item.NetPay, item.Currency, item.EmployeeUserId);
+                return new PayrollItemExecutionResult(true, ledgerTxn.Id, voucher.Id, null, null);
+            }, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
             LogPayrollItemExecutionFailure(_logger, item.Id, ex.Message, ex);
 
             // Record failure in a clean transaction

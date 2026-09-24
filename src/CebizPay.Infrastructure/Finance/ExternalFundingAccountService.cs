@@ -65,101 +65,83 @@ public sealed partial class ExternalFundingAccountService : IExternalFundingAcco
             throw new InvalidOperationException($"Wallet '{walletId}' does not exist.");
         }
 
-        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
-        if (_dbContext.Database.IsRelational())
-        {
-            transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        }
-
         try
         {
-            if (isPrimary)
+            return await _dbContext.ExecuteInTransactionAsync(async ct =>
             {
-                // Unset any existing primary accounts for this wallet
-                var existingPrimaries = await _dbContext.ExternalFundingAccounts
-                    .Where(a => a.WalletId == walletId && a.IsPrimary)
-                    .ToListAsync(cancellationToken)
-                    .ConfigureAwait(false);
-
-                if (existingPrimaries.Count > 0)
+                if (isPrimary)
                 {
-                    foreach (var primary in existingPrimaries)
+                    // Unset any existing primary accounts for this wallet
+                    var existingPrimaries = await _dbContext.ExternalFundingAccounts
+                        .Where(a => a.WalletId == walletId && a.IsPrimary)
+                        .ToListAsync(ct)
+                        .ConfigureAwait(false);
+
+                    if (existingPrimaries.Count > 0)
                     {
-                        primary.ClearPrimary();
+                        foreach (var primary in existingPrimaries)
+                        {
+                            primary.ClearPrimary();
+                        }
+                        await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
                     }
-                    await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 }
-            }
 
-            var account = ExternalFundingAccount.Create(
-                walletId: walletId,
-                provider: provider,
-                accountNumber: accountNumber,
-                accountName: accountName,
-                bankCode: bankCode,
-                bankName: bankName,
-                currency: currency,
-                providerCustomerReference: providerCustomerReference,
-                providerAccountReference: providerAccountReference,
-                isPrimary: isPrimary);
+                var account = ExternalFundingAccount.Create(
+                    walletId: walletId,
+                    provider: provider,
+                    accountNumber: accountNumber,
+                    accountName: accountName,
+                    bankCode: bankCode,
+                    bankName: bankName,
+                    currency: currency,
+                    providerCustomerReference: providerCustomerReference,
+                    providerAccountReference: providerAccountReference,
+                    isPrimary: isPrimary);
 
-            _dbContext.ExternalFundingAccounts.Add(account);
+                _dbContext.ExternalFundingAccounts.Add(account);
 
-            // Audit
-            var actorId = wallet.IndividualId ?? wallet.OrganizationId?.ToString() ?? "SYSTEM";
-            var audit = AuditLog.Create(
-                actorId: actorId,
-                action: AuditActions.ExternalFundingAccountCreated,
-                resourceType: AuditResourceTypes.ExternalFundingAccount,
-                resourceId: account.Id.ToString(),
-                afterJson: JsonSerializer.Serialize(new
-                {
-                    WalletId = walletId,
-                    Provider = provider.ToString(),
-                    AccountNumber = MaskAccountNumber(accountNumber),
-                    AccountName = accountName,
-                    BankCode = bankCode,
-                    BankName = bankName,
-                    Currency = currency.ToString(),
-                    IsPrimary = isPrimary
-                }),
-                organizationId: wallet.OrganizationId);
+                // Audit
+                var actorId = wallet.IndividualId ?? wallet.OrganizationId?.ToString() ?? "SYSTEM";
+                var audit = AuditLog.Create(
+                    actorId: actorId,
+                    action: AuditActions.ExternalFundingAccountCreated,
+                    resourceType: AuditResourceTypes.ExternalFundingAccount,
+                    resourceId: account.Id.ToString(),
+                    afterJson: JsonSerializer.Serialize(new
+                    {
+                        WalletId = walletId,
+                        Provider = provider.ToString(),
+                        AccountNumber = MaskAccountNumber(accountNumber),
+                        AccountName = accountName,
+                        BankCode = bankCode,
+                        BankName = bankName,
+                        Currency = currency.ToString(),
+                        IsPrimary = isPrimary
+                    }),
+                    organizationId: wallet.OrganizationId);
 
-            _dbContext.AuditLogs.Add(audit);
+                _dbContext.AuditLogs.Add(audit);
 
-            _outboxService.Write(new ExternalFundingAccountCreatedDomainEvent(
-                AccountId: account.Id,
-                WalletId: account.WalletId,
-                Provider: account.Provider,
-                AccountNumber: account.AccountNumber,
-                BankCode: account.BankCode,
-                IsPrimary: account.IsPrimary,
-                OccurredOnUtc: DateTime.UtcNow));
+                _outboxService.Write(new ExternalFundingAccountCreatedDomainEvent(
+                    AccountId: account.Id,
+                    WalletId: account.WalletId,
+                    Provider: account.Provider,
+                    AccountNumber: account.AccountNumber,
+                    BankCode: account.BankCode,
+                    IsPrimary: account.IsPrimary,
+                    OccurredOnUtc: DateTime.UtcNow));
 
-            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            if (transaction != null)
-            {
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
+                await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
 
-            LogAccountCreated(_logger, account.Id, walletId, provider);
-            return MapToDto(account);
+                LogAccountCreated(_logger, account.Id, walletId, provider);
+                return MapToDto(account);
+            }, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            if (transaction != null)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
             LogAccountCreationFailure(_logger, walletId, ex);
             throw;
-        }
-        finally
-        {
-            if (transaction != null)
-            {
-                await transaction.DisposeAsync().ConfigureAwait(false);
-            }
         }
     }
 
@@ -323,107 +305,89 @@ public sealed partial class ExternalFundingAccountService : IExternalFundingAcco
         if (string.IsNullOrWhiteSpace(actorUserId))
             throw new ArgumentException("ActorUserId is required.", nameof(actorUserId));
 
-        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
-        if (_dbContext.Database.IsRelational())
-        {
-            transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        }
-
         try
         {
-            var account = await _dbContext.ExternalFundingAccounts
-                .Include(a => a.Wallet)
-                .FirstOrDefaultAsync(a => a.Id == accountId, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (account == null)
+            return await _dbContext.ExecuteInTransactionAsync(async ct =>
             {
-                throw new InvalidOperationException($"External funding account '{accountId}' not found.");
-            }
+                var account = await _dbContext.ExternalFundingAccounts
+                    .Include(a => a.Wallet)
+                    .FirstOrDefaultAsync(a => a.Id == accountId, ct)
+                    .ConfigureAwait(false);
 
-            var wallet = account.Wallet;
-            if (wallet == null)
-            {
-                wallet = await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == account.WalletId, cancellationToken).ConfigureAwait(false);
+                if (account == null)
+                {
+                    throw new InvalidOperationException($"External funding account '{accountId}' not found.");
+                }
+
+                var wallet = account.Wallet;
                 if (wallet == null)
                 {
-                    throw new InvalidOperationException($"Associated wallet '{account.WalletId}' not found.");
+                    wallet = await _dbContext.Wallets.FirstOrDefaultAsync(w => w.Id == account.WalletId, ct).ConfigureAwait(false);
+                    if (wallet == null)
+                    {
+                        throw new InvalidOperationException($"Associated wallet '{account.WalletId}' not found.");
+                    }
                 }
-            }
 
-            // Tenant authorization validation
-            await ValidateWalletOwnershipAsync(wallet, actorUserId, organizationId, cancellationToken).ConfigureAwait(false);
+                // Tenant authorization validation
+                await ValidateWalletOwnershipAsync(wallet, actorUserId, organizationId, ct).ConfigureAwait(false);
 
-            if (account.Status != ExternalFundingAccountStatus.Active)
-            {
-                throw new InvalidOperationException(
-                    $"Cannot set external funding account as primary when status is '{account.Status}'. Only Active accounts can be primary.");
-            }
-
-            // Step 1: Unset any other primary accounts first and flush to avoid transient unique constraint collision
-            var existingPrimaries = await _dbContext.ExternalFundingAccounts
-                .Where(a => a.WalletId == account.WalletId && a.IsPrimary && a.Id != accountId)
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            if (existingPrimaries.Count > 0)
-            {
-                foreach (var existing in existingPrimaries)
+                if (account.Status != ExternalFundingAccountStatus.Active)
                 {
-                    existing.ClearPrimary();
+                    throw new InvalidOperationException(
+                        $"Cannot set external funding account as primary when status is '{account.Status}'. Only Active accounts can be primary.");
                 }
-                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            }
 
-            // Step 2: Set target account as primary
-            account.SetPrimary(true);
+                // Step 1: Unset any other primary accounts first and flush to avoid transient unique constraint collision
+                var existingPrimaries = await _dbContext.ExternalFundingAccounts
+                    .Where(a => a.WalletId == account.WalletId && a.IsPrimary && a.Id != accountId)
+                    .ToListAsync(ct)
+                    .ConfigureAwait(false);
 
-            var audit = AuditLog.Create(
-                actorId: actorUserId,
-                action: AuditActions.ExternalFundingAccountPrimaryChanged,
-                resourceType: AuditResourceTypes.ExternalFundingAccount,
-                resourceId: account.Id.ToString(),
-                afterJson: JsonSerializer.Serialize(new
+                if (existingPrimaries.Count > 0)
                 {
-                    AccountId = account.Id,
-                    WalletId = account.WalletId,
-                    IsPrimary = true
-                }),
-                organizationId: wallet.OrganizationId);
+                    foreach (var existing in existingPrimaries)
+                    {
+                        existing.ClearPrimary();
+                    }
+                    await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
+                }
 
-            _dbContext.AuditLogs.Add(audit);
+                // Step 2: Set target account as primary
+                account.SetPrimary(true);
 
-            _outboxService.Write(new ExternalFundingAccountPrimaryChangedDomainEvent(
-                AccountId: account.Id,
-                WalletId: account.WalletId,
-                Provider: account.Provider,
-                IsPrimary: true,
-                OccurredOnUtc: DateTime.UtcNow));
+                var audit = AuditLog.Create(
+                    actorId: actorUserId,
+                    action: AuditActions.ExternalFundingAccountPrimaryChanged,
+                    resourceType: AuditResourceTypes.ExternalFundingAccount,
+                    resourceId: account.Id.ToString(),
+                    afterJson: JsonSerializer.Serialize(new
+                    {
+                        AccountId = account.Id,
+                        WalletId = account.WalletId,
+                        IsPrimary = true
+                    }),
+                    organizationId: wallet.OrganizationId);
 
-            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            if (transaction != null)
-            {
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
+                _dbContext.AuditLogs.Add(audit);
 
-            LogPrimaryChanged(_logger, account.Id, account.WalletId);
-            return MapToDto(account);
+                _outboxService.Write(new ExternalFundingAccountPrimaryChangedDomainEvent(
+                    AccountId: account.Id,
+                    WalletId: account.WalletId,
+                    Provider: account.Provider,
+                    IsPrimary: true,
+                    OccurredOnUtc: DateTime.UtcNow));
+
+                await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
+
+                LogPrimaryChanged(_logger, account.Id, account.WalletId);
+                return MapToDto(account);
+            }, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            if (transaction != null)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
             LogPrimaryChangeFailure(_logger, accountId, ex);
             throw;
-        }
-        finally
-        {
-            if (transaction != null)
-            {
-                await transaction.DisposeAsync().ConfigureAwait(false);
-            }
         }
     }
 

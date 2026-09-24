@@ -91,116 +91,115 @@ public sealed partial class PaymentReconciliationService : IPaymentReconciliatio
         }
 
         // Apply state transition in DB transaction
-        await using var dbTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var dbAttempt = await _dbContext.PaymentAttempts
-                .FirstOrDefaultAsync(p => p.Id == paymentAttemptId, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (dbAttempt == null || dbAttempt.Status == PaymentAttemptStatus.Succeeded)
+            return await _dbContext.ExecuteInTransactionAsync(async ct =>
             {
-                await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                return queryResult;
-            }
+                var dbAttempt = await _dbContext.PaymentAttempts
+                    .FirstOrDefaultAsync(p => p.Id == paymentAttemptId, ct)
+                    .ConfigureAwait(false);
 
-            var bankTransfer = await _dbContext.BankTransfers
-                .FirstOrDefaultAsync(b => b.LedgerTransactionId == dbAttempt.LedgerTransactionId, cancellationToken)
-                .ConfigureAwait(false);
+                if (dbAttempt == null || dbAttempt.Status == PaymentAttemptStatus.Succeeded)
+                {
+                    return queryResult;
+                }
 
-            var prevStatus = dbAttempt.Status;
+                var bankTransfer = await _dbContext.BankTransfers
+                    .FirstOrDefaultAsync(b => b.LedgerTransactionId == dbAttempt.LedgerTransactionId, ct)
+                    .ConfigureAwait(false);
 
-            switch (queryResult.Status)
-            {
-                case PaymentProviderResultStatus.Success:
-                    dbAttempt.MarkSucceeded(queryResult.ProviderReference ?? providerRef, safeMetadata: queryResult.SafeMetadata);
+                var prevStatus = dbAttempt.Status;
 
-                    if (bankTransfer != null && bankTransfer.Status != BankTransferStatus.Completed)
-                    {
-                        bankTransfer.MarkCompleted(DateTime.UtcNow, queryResult.ProviderReference ?? providerRef);
+                switch (queryResult.Status)
+                {
+                    case PaymentProviderResultStatus.Success:
+                        dbAttempt.MarkSucceeded(queryResult.ProviderReference ?? providerRef, safeMetadata: queryResult.SafeMetadata);
 
-                        _outboxService.Write(new BankTransferCompletedEvent(
-                            TransferId: bankTransfer.Id,
-                            TransactionReference: bankTransfer.Reference,
+                        if (bankTransfer != null && bankTransfer.Status != BankTransferStatus.Completed)
+                        {
+                            bankTransfer.MarkCompleted(DateTime.UtcNow, queryResult.ProviderReference ?? providerRef);
+
+                            _outboxService.Write(new BankTransferCompletedEvent(
+                                TransferId: bankTransfer.Id,
+                                TransactionReference: bankTransfer.Reference,
+                                ProviderReference: queryResult.ProviderReference ?? providerRef,
+                                OccurredOnUtc: DateTime.UtcNow));
+
+                            RecordAudit(AuditActions.BankTransferCompleted, AuditResourceTypes.BankTransfer, bankTransfer.Id.ToString(),
+                                JsonSerializer.Serialize(new { bankTransfer.Reference, ProviderReference = queryResult.ProviderReference }));
+                        }
+
+                        _outboxService.Write(new PaymentAttemptReconciledEvent(
+                            PaymentAttemptId: dbAttempt.Id,
+                            LedgerTransactionId: dbAttempt.LedgerTransactionId,
+                            Provider: dbAttempt.Provider,
+                            AttemptNumber: dbAttempt.AttemptNumber,
+                            PreviousStatus: prevStatus,
+                            NewStatus: PaymentAttemptStatus.Succeeded,
                             ProviderReference: queryResult.ProviderReference ?? providerRef,
                             OccurredOnUtc: DateTime.UtcNow));
 
-                        RecordAudit(AuditActions.BankTransferCompleted, AuditResourceTypes.BankTransfer, bankTransfer.Id.ToString(),
-                            JsonSerializer.Serialize(new { bankTransfer.Reference, ProviderReference = queryResult.ProviderReference }));
-                    }
+                        var prevStatusStr = prevStatus.ToString();
+                        RecordAudit(AuditActions.PaymentAttemptReconciled, AuditResourceTypes.PaymentAttempt, dbAttempt.Id.ToString(),
+                            JsonSerializer.Serialize(new { AttemptId = dbAttempt.Id, PreviousStatus = prevStatusStr, NewStatus = "Succeeded" }));
+                        break;
 
-                    _outboxService.Write(new PaymentAttemptReconciledEvent(
-                        PaymentAttemptId: dbAttempt.Id,
-                        LedgerTransactionId: dbAttempt.LedgerTransactionId,
-                        Provider: dbAttempt.Provider,
-                        AttemptNumber: dbAttempt.AttemptNumber,
-                        PreviousStatus: prevStatus,
-                        NewStatus: PaymentAttemptStatus.Succeeded,
-                        ProviderReference: queryResult.ProviderReference ?? providerRef,
-                        OccurredOnUtc: DateTime.UtcNow));
+                    case PaymentProviderResultStatus.BusinessFailure:
+                        var failReason = queryResult.FailureReason ?? "Reconciliation confirmed failure";
+                        dbAttempt.MarkFailed(queryResult.FailureCode, failReason, safeMetadata: queryResult.SafeMetadata);
 
-                    var prevStatusStr = prevStatus.ToString();
-                    RecordAudit(AuditActions.PaymentAttemptReconciled, AuditResourceTypes.PaymentAttempt, dbAttempt.Id.ToString(),
-                        JsonSerializer.Serialize(new { AttemptId = dbAttempt.Id, PreviousStatus = prevStatusStr, NewStatus = "Succeeded" }));
-                    break;
+                        if (bankTransfer != null && bankTransfer.Status != BankTransferStatus.Failed)
+                        {
+                            await _ledgerPostingService.PostBankTransferReversalCoreAsync(bankTransfer.Id, failReason, ct).ConfigureAwait(false);
 
-                case PaymentProviderResultStatus.BusinessFailure:
-                    var failReason = queryResult.FailureReason ?? "Reconciliation confirmed failure";
-                    dbAttempt.MarkFailed(queryResult.FailureCode, failReason, safeMetadata: queryResult.SafeMetadata);
+                            _outboxService.Write(new BankTransferFailedEvent(
+                                TransferId: bankTransfer.Id,
+                                TransactionReference: bankTransfer.Reference,
+                                Reason: failReason,
+                                OccurredOnUtc: DateTime.UtcNow));
 
-                    if (bankTransfer != null && bankTransfer.Status != BankTransferStatus.Failed)
-                    {
-                        await _ledgerPostingService.PostBankTransferReversalCoreAsync(bankTransfer.Id, failReason, cancellationToken).ConfigureAwait(false);
+                            RecordAudit(AuditActions.BankTransferReversed, AuditResourceTypes.BankTransfer, bankTransfer.Id.ToString(),
+                                JsonSerializer.Serialize(new { bankTransfer.Reference, Reason = failReason }));
+                        }
 
-                        _outboxService.Write(new BankTransferFailedEvent(
-                            TransferId: bankTransfer.Id,
-                            TransactionReference: bankTransfer.Reference,
-                            Reason: failReason,
+                        _outboxService.Write(new PaymentAttemptReconciledEvent(
+                            PaymentAttemptId: dbAttempt.Id,
+                            LedgerTransactionId: dbAttempt.LedgerTransactionId,
+                            Provider: dbAttempt.Provider,
+                            AttemptNumber: dbAttempt.AttemptNumber,
+                            PreviousStatus: prevStatus,
+                            NewStatus: PaymentAttemptStatus.Failed,
+                            ProviderReference: queryResult.ProviderReference ?? providerRef,
                             OccurredOnUtc: DateTime.UtcNow));
 
-                        RecordAudit(AuditActions.BankTransferReversed, AuditResourceTypes.BankTransfer, bankTransfer.Id.ToString(),
-                            JsonSerializer.Serialize(new { bankTransfer.Reference, Reason = failReason }));
-                    }
+                        var prevStatusFailureStr = prevStatus.ToString();
+                        RecordAudit(AuditActions.PaymentAttemptReconciled, AuditResourceTypes.PaymentAttempt, dbAttempt.Id.ToString(),
+                            JsonSerializer.Serialize(new { AttemptId = dbAttempt.Id, PreviousStatus = prevStatusFailureStr, NewStatus = "Failed", failReason }));
+                        break;
 
-                    _outboxService.Write(new PaymentAttemptReconciledEvent(
-                        PaymentAttemptId: dbAttempt.Id,
-                        LedgerTransactionId: dbAttempt.LedgerTransactionId,
-                        Provider: dbAttempt.Provider,
-                        AttemptNumber: dbAttempt.AttemptNumber,
-                        PreviousStatus: prevStatus,
-                        NewStatus: PaymentAttemptStatus.Failed,
-                        ProviderReference: queryResult.ProviderReference ?? providerRef,
-                        OccurredOnUtc: DateTime.UtcNow));
+                    case PaymentProviderResultStatus.TechnicalFailure:
+                        // A technical failure during status polling (e.g. gateway 5xx/timeout) does not mean
+                        // the transfer failed on the external banking network. UNKNOWN and TechnicalFailure
+                        // must preserve established financial state. Do NOT execute a blind ledger reversal.
+                        var techReason = queryResult.FailureReason ?? "Reconciliation status check encountered technical gateway error";
+                        dbAttempt.MarkUnknown(techReason, safeMetadata: queryResult.SafeMetadata);
+                        break;
 
-                    var prevStatusFailureStr = prevStatus.ToString();
-                    RecordAudit(AuditActions.PaymentAttemptReconciled, AuditResourceTypes.PaymentAttempt, dbAttempt.Id.ToString(),
-                        JsonSerializer.Serialize(new { AttemptId = dbAttempt.Id, PreviousStatus = prevStatusFailureStr, NewStatus = "Failed", failReason }));
-                    break;
+                    case PaymentProviderResultStatus.Unknown:
+                    default:
+                        dbAttempt.MarkUnknown(queryResult.FailureReason ?? "Status still unknown", safeMetadata: queryResult.SafeMetadata);
+                        break;
+                }
 
-                case PaymentProviderResultStatus.TechnicalFailure:
-                    // A technical failure during status polling (e.g. gateway 5xx/timeout) does not mean
-                    // the transfer failed on the external banking network. UNKNOWN and TechnicalFailure
-                    // must preserve established financial state. Do NOT execute a blind ledger reversal.
-                    var techReason = queryResult.FailureReason ?? "Reconciliation status check encountered technical gateway error";
-                    dbAttempt.MarkUnknown(techReason, safeMetadata: queryResult.SafeMetadata);
-                    break;
+                await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                case PaymentProviderResultStatus.Unknown:
-                default:
-                    dbAttempt.MarkUnknown(queryResult.FailureReason ?? "Status still unknown", safeMetadata: queryResult.SafeMetadata);
-                    break;
-            }
-
-            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await dbTx.CommitAsync(cancellationToken).ConfigureAwait(false);
-
-            var queryResultStatusStr = queryResult.Status.ToString();
-            LogReconciliationCompleted(_logger, attempt.Id, queryResultStatusStr);
-            return queryResult;
+                var queryResultStatusStr = queryResult.Status.ToString();
+                LogReconciliationCompleted(_logger, attempt.Id, queryResultStatusStr);
+                return queryResult;
+            }, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
             LogReconciliationException(_logger, attempt.Id, ex);
             throw;
         }

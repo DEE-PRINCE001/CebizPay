@@ -1312,42 +1312,13 @@ public sealed partial class WebhookProcessor : IWebhookProcessor
         Func<CancellationToken, Task> operation,
         CancellationToken cancellationToken)
     {
-        var strategy = _dbContext.Database.CreateExecutionStrategy();
-        return strategy.ExecuteAsync(async ct =>
-        {
-            await using var tx = await _dbContext.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
-            try
-            {
-                await operation(ct).ConfigureAwait(false);
-                await tx.CommitAsync(ct).ConfigureAwait(false);
-            }
-            catch
-            {
-                await tx.RollbackAsync(ct).ConfigureAwait(false);
-                throw;
-            }
-        }, cancellationToken);
+        return _dbContext.ExecuteInTransactionAsync(operation, cancellationToken);
     }
 
     private Task<TResult> ExecuteInTransactionAsync<TResult>(
         Func<CancellationToken, Task<TResult>> operation,
         CancellationToken cancellationToken)
     {
-        var strategy = _dbContext.Database.CreateExecutionStrategy();
-        return strategy.ExecuteAsync(async ct =>
-        {
-            await using var tx = await _dbContext.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
-            try
-            {
-                var result = await operation(ct).ConfigureAwait(false);
-                await tx.CommitAsync(ct).ConfigureAwait(false);
-                return result;
-            }
-            catch
-            {
-                await tx.RollbackAsync(ct).ConfigureAwait(false);
-                throw;
-            }
-        }, cancellationToken);
+        return _dbContext.ExecuteInTransactionAsync(operation, cancellationToken);
     }
 }

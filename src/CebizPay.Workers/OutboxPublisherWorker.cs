@@ -60,65 +60,64 @@ public sealed partial class OutboxPublisherWorker : BackgroundService
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         var eventPublisher = scope.ServiceProvider.GetRequiredService<IEventPublisher>();
 
-        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        List<OutboxMessage> messages;
-
-        if (dbContext.Database.IsNpgsql())
+        return await dbContext.ExecuteInTransactionAsync(async ct =>
         {
-            messages = await dbContext.OutboxMessages
-                .FromSqlRaw("SELECT * FROM \"OutboxMessages\" WHERE \"ProcessedOnUtc\" IS NULL AND \"DeadLetteredOnUtc\" IS NULL ORDER BY \"OccurredOnUtc\" LIMIT 20 FOR UPDATE SKIP LOCKED")
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
-        else
-        {
-            messages = await dbContext.OutboxMessages
-                .Where(m => m.ProcessedOnUtc == null && m.DeadLetteredOnUtc == null)
-                .OrderBy(m => m.OccurredOnUtc)
-                .Take(20)
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
+            List<OutboxMessage> messages;
 
-        if (messages.Count == 0)
-        {
-            await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return 0;
-        }
-
-        LogProcessingBatch(_logger, messages.Count);
-
-        foreach (var message in messages)
-        {
-            try
+            if (dbContext.Database.IsNpgsql())
             {
-                await eventPublisher.PublishAsync(message.Content, cancellationToken).ConfigureAwait(false);
-                message.ProcessedOnUtc = DateTime.UtcNow;
-                message.LastAttemptedOnUtc = DateTime.UtcNow;
-                message.Error = null;
+                messages = await dbContext.OutboxMessages
+                    .FromSqlRaw("SELECT * FROM \"OutboxMessages\" WHERE \"ProcessedOnUtc\" IS NULL AND \"DeadLetteredOnUtc\" IS NULL ORDER BY \"OccurredOnUtc\" LIMIT 20 FOR UPDATE SKIP LOCKED")
+                    .ToListAsync(ct)
+                    .ConfigureAwait(false);
             }
-            catch (Exception ex)
+            else
             {
-                message.RetryCount++;
-                message.LastAttemptedOnUtc = DateTime.UtcNow;
-                message.Error = ex.Message;
+                messages = await dbContext.OutboxMessages
+                    .Where(m => m.ProcessedOnUtc == null && m.DeadLetteredOnUtc == null)
+                    .OrderBy(m => m.OccurredOnUtc)
+                    .Take(20)
+                    .ToListAsync(ct)
+                    .ConfigureAwait(false);
+            }
 
-                if (message.RetryCount >= MaxRetryLimit)
+            if (messages.Count == 0)
+            {
+                return 0;
+            }
+
+            LogProcessingBatch(_logger, messages.Count);
+
+            foreach (var message in messages)
+            {
+                try
                 {
-                    message.DeadLetteredOnUtc = DateTime.UtcNow;
-                    LogMessageDeadLettered(_logger, message.Id, message.Type, message.RetryCount, ex);
+                    await eventPublisher.PublishAsync(message.Content, ct).ConfigureAwait(false);
+                    message.ProcessedOnUtc = DateTime.UtcNow;
+                    message.LastAttemptedOnUtc = DateTime.UtcNow;
+                    message.Error = null;
                 }
-                else
+                catch (Exception ex)
                 {
-                    LogMessageProcessingError(_logger, message.Id, message.Type, message.RetryCount, ex);
+                    message.RetryCount++;
+                    message.LastAttemptedOnUtc = DateTime.UtcNow;
+                    message.Error = ex.Message;
+
+                    if (message.RetryCount >= MaxRetryLimit)
+                    {
+                        message.DeadLetteredOnUtc = DateTime.UtcNow;
+                        LogMessageDeadLettered(_logger, message.Id, message.Type, message.RetryCount, ex);
+                    }
+                    else
+                    {
+                        LogMessageProcessingError(_logger, message.Id, message.Type, message.RetryCount, ex);
+                    }
                 }
             }
-        }
 
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return messages.Count;
+            await dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
+            return messages.Count;
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     [LoggerMessage(EventId = 1, Level = LogLevel.Information, Message = "OutboxPublisherWorker started.")]

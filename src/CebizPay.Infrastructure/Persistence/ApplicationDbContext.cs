@@ -422,6 +422,16 @@ public class ApplicationDbContext
         Func<CancellationToken, Task> operation,
         CancellationToken cancellationToken = default)
     {
+        if (!Database.IsRelational())
+        {
+            await operation(cancellationToken).ConfigureAwait(false);
+            if (ChangeTracker.HasChanges())
+            {
+                await SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return;
+        }
+
         var strategy = Database.CreateExecutionStrategy();
         await strategy.ExecuteAsync(async ct =>
         {
@@ -448,6 +458,16 @@ public class ApplicationDbContext
         Func<CancellationToken, Task<TResult>> operation,
         CancellationToken cancellationToken = default)
     {
+        if (!Database.IsRelational())
+        {
+            var result = await operation(cancellationToken).ConfigureAwait(false);
+            if (ChangeTracker.HasChanges())
+            {
+                await SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+            return result;
+        }
+
         var strategy = Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async ct =>
         {

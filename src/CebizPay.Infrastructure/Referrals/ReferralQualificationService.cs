@@ -83,121 +83,120 @@ public sealed partial class ReferralQualificationService : IReferralQualificatio
         }
 
         // 4. Concurrency-safe qualification transaction
-        await using var transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-
         try
         {
-            // Reload relationship within transaction
-            var currentRel = await _dbContext.ReferralRelationships
-                .FirstOrDefaultAsync(r => r.Id == relationship.Id, cancellationToken);
-
-            if (currentRel == null || currentRel.QualificationStatus != ReferralQualificationStatus.Pending)
+            return await _dbContext.ExecuteInTransactionAsync(async ct =>
             {
-                return new ReferralQualificationEvaluationResult(false, false, "Referral relationship is no longer pending.");
-            }
+                // Reload relationship within transaction
+                var currentRel = await _dbContext.ReferralRelationships
+                    .FirstOrDefaultAsync(r => r.Id == relationship.Id, ct);
 
-            // Load active configuration snapshot
-            var setting = await _dbContext.ReferralSettings
-                .FirstOrDefaultAsync(s => s.IsActive, cancellationToken);
-
-            var rewardAmount = setting?.RewardAmountPerSuccessfulReferral ?? 500.00m;
-            var maxReferrals = setting?.MaximumSuccessfulReferralsPerUser ?? 10;
-
-            // Count existing qualified referrals for the referring user
-            var qualifiedCount = await _dbContext.ReferralRelationships
-                .CountAsync(r => r.ReferrerUserId == currentRel.ReferrerUserId &&
-                                 r.QualificationStatus == ReferralQualificationStatus.Qualified, cancellationToken);
-
-            var now = DateTime.UtcNow;
-            ReferralRewardEligibility eligibility;
-            ReferralRewardStatus rewardStatus;
-            string? riskNote = null;
-
-            if (qualifiedCount >= maxReferrals)
-            {
-                // Referral capacity reached: track qualification milestone but exceed reward capacity
-                eligibility = ReferralRewardEligibility.CapacityExceeded;
-                rewardStatus = ReferralRewardStatus.Rejected;
-                riskNote = $"Referring user has reached maximum successful referral cap of {maxReferrals}.";
-                LogCapacityReached(_logger, currentRel.ReferrerUserId, maxReferrals);
-            }
-            else
-            {
-                // Identity anti-abuse collision check
-                var referrerUser = await _dbContext.Users
-                    .FirstOrDefaultAsync(u => u.Id == currentRel.ReferrerUserId, cancellationToken);
-                var referredUser = await _dbContext.Users
-                    .FirstOrDefaultAsync(u => u.Id == currentRel.ReferredUserId, cancellationToken);
-
-                bool hasPhoneCollision = false;
-                if (referrerUser != null && referredUser != null &&
-                    !string.IsNullOrWhiteSpace(referrerUser.PhoneNumber) &&
-                    !string.IsNullOrWhiteSpace(referredUser.PhoneNumber))
+                if (currentRel == null || currentRel.QualificationStatus != ReferralQualificationStatus.Pending)
                 {
-                    var canonicalReferrer = CebizPay.Application.Common.Utils.PhoneNormalizer.NormalizeE164(referrerUser.PhoneNumber);
-                    var canonicalReferred = CebizPay.Application.Common.Utils.PhoneNormalizer.NormalizeE164(referredUser.PhoneNumber);
-                    hasPhoneCollision = !string.IsNullOrEmpty(canonicalReferrer) && canonicalReferrer == canonicalReferred;
+                    return new ReferralQualificationEvaluationResult(false, false, "Referral relationship is no longer pending.");
                 }
 
-                bool hasEmailCollision = referrerUser != null && referredUser != null &&
-                    !string.IsNullOrWhiteSpace(referrerUser.Email) &&
-                    referrerUser.Email.Equals(referredUser.Email, StringComparison.OrdinalIgnoreCase);
+                // Load active configuration snapshot
+                var setting = await _dbContext.ReferralSettings
+                    .FirstOrDefaultAsync(s => s.IsActive, ct);
 
-                bool hasCollision = hasPhoneCollision || hasEmailCollision;
+                var rewardAmount = setting?.RewardAmountPerSuccessfulReferral ?? 500.00m;
+                var maxReferrals = setting?.MaximumSuccessfulReferralsPerUser ?? 10;
 
-                if (hasCollision)
+                // Count existing qualified referrals for the referring user
+                var qualifiedCount = await _dbContext.ReferralRelationships
+                    .CountAsync(r => r.ReferrerUserId == currentRel.ReferrerUserId &&
+                                     r.QualificationStatus == ReferralQualificationStatus.Qualified, ct);
+
+                var now = DateTime.UtcNow;
+                ReferralRewardEligibility eligibility;
+                ReferralRewardStatus rewardStatus;
+                string? riskNote = null;
+
+                if (qualifiedCount >= maxReferrals)
                 {
-                    eligibility = ReferralRewardEligibility.HeldForRiskReview;
-                    rewardStatus = ReferralRewardStatus.HeldForRiskReview;
-                    riskNote = "Identity collision detected between referrer and referred user.";
-                    LogCollisionDetected(_logger, currentRel.ReferrerUserId, currentRel.ReferredUserId);
+                    // Referral capacity reached: track qualification milestone but exceed reward capacity
+                    eligibility = ReferralRewardEligibility.CapacityExceeded;
+                    rewardStatus = ReferralRewardStatus.Rejected;
+                    riskNote = $"Referring user has reached maximum successful referral cap of {maxReferrals}.";
+                    LogCapacityReached(_logger, currentRel.ReferrerUserId, maxReferrals);
                 }
                 else
                 {
-                    eligibility = ReferralRewardEligibility.Eligible;
-                    rewardStatus = ReferralRewardStatus.Eligible;
+                    // Identity anti-abuse collision check
+                    var referrerUser = await _dbContext.Users
+                        .FirstOrDefaultAsync(u => u.Id == currentRel.ReferrerUserId, ct);
+                    var referredUser = await _dbContext.Users
+                        .FirstOrDefaultAsync(u => u.Id == currentRel.ReferredUserId, ct);
+
+                    bool hasPhoneCollision = false;
+                    if (referrerUser != null && referredUser != null &&
+                        !string.IsNullOrWhiteSpace(referrerUser.PhoneNumber) &&
+                        !string.IsNullOrWhiteSpace(referredUser.PhoneNumber))
+                    {
+                        var canonicalReferrer = CebizPay.Application.Common.Utils.PhoneNormalizer.NormalizeE164(referrerUser.PhoneNumber);
+                        var canonicalReferred = CebizPay.Application.Common.Utils.PhoneNormalizer.NormalizeE164(referredUser.PhoneNumber);
+                        hasPhoneCollision = !string.IsNullOrEmpty(canonicalReferrer) && canonicalReferrer == canonicalReferred;
+                    }
+
+                    bool hasEmailCollision = referrerUser != null && referredUser != null &&
+                        !string.IsNullOrWhiteSpace(referrerUser.Email) &&
+                        referrerUser.Email.Equals(referredUser.Email, StringComparison.OrdinalIgnoreCase);
+
+                    bool hasCollision = hasPhoneCollision || hasEmailCollision;
+
+                    if (hasCollision)
+                    {
+                        eligibility = ReferralRewardEligibility.HeldForRiskReview;
+                        rewardStatus = ReferralRewardStatus.HeldForRiskReview;
+                        riskNote = "Identity collision detected between referrer and referred user.";
+                        LogCollisionDetected(_logger, currentRel.ReferrerUserId, currentRel.ReferredUserId);
+                    }
+                    else
+                    {
+                        eligibility = ReferralRewardEligibility.Eligible;
+                        rewardStatus = ReferralRewardStatus.Eligible;
+                    }
                 }
-            }
 
-            currentRel.Qualify(
-                depositAmount: qualifyingDeposit.Amount,
-                depositReference: qualifyingDeposit.ProviderTransactionReference,
-                eligibility: eligibility,
-                now: now,
-                riskNotes: riskNote);
+                currentRel.Qualify(
+                    depositAmount: qualifyingDeposit.Amount,
+                    depositReference: qualifyingDeposit.ProviderTransactionReference,
+                    eligibility: eligibility,
+                    now: now,
+                    riskNotes: riskNote);
 
-            // Create future reward entitlement record (strictly non-financial in Phase 6D)
-            var reward = ReferralReward.Create(
-                referralRelationshipId: currentRel.Id,
-                referrerUserId: currentRel.ReferrerUserId,
-                referredUserId: currentRel.ReferredUserId,
-                amount: rewardAmount,
-                initialStatus: rewardStatus,
-                now: now);
+                // Create future reward entitlement record (strictly non-financial in Phase 6D)
+                var reward = ReferralReward.Create(
+                    referralRelationshipId: currentRel.Id,
+                    referrerUserId: currentRel.ReferrerUserId,
+                    referredUserId: currentRel.ReferredUserId,
+                    amount: rewardAmount,
+                    initialStatus: rewardStatus,
+                    now: now);
 
-            _dbContext.ReferralRewards.Add(reward);
+                _dbContext.ReferralRewards.Add(reward);
 
-            _outboxService?.Write(new ReferralQualifiedDomainEvent(
-                RelationshipId: currentRel.Id,
-                ReferrerUserId: currentRel.ReferrerUserId,
-                ReferredUserId: currentRel.ReferredUserId,
-                RewardAmount: rewardAmount,
-                Eligibility: eligibility,
-                OccurredOnUtc: now));
+                _outboxService?.Write(new ReferralQualifiedDomainEvent(
+                    RelationshipId: currentRel.Id,
+                    ReferrerUserId: currentRel.ReferrerUserId,
+                    ReferredUserId: currentRel.ReferredUserId,
+                    RewardAmount: rewardAmount,
+                    Eligibility: eligibility,
+                    OccurredOnUtc: now));
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+                await _dbContext.SaveChangesAsync(ct);
 
-            LogReferralQualified(_logger, currentRel.Id, currentRel.ReferrerUserId, eligibility);
+                LogReferralQualified(_logger, currentRel.Id, currentRel.ReferrerUserId, eligibility);
 
-            return new ReferralQualificationEvaluationResult(
-                IsQualified: true,
-                RewardEligible: eligibility == ReferralRewardEligibility.Eligible,
-                Message: "Referral qualification milestones successfully satisfied.");
+                return new ReferralQualificationEvaluationResult(
+                    IsQualified: true,
+                    RewardEligible: eligibility == ReferralRewardEligibility.Eligible,
+                    Message: "Referral qualification milestones successfully satisfied.");
+            }, cancellationToken);
         }
         catch (Exception ex)
         {
-            await transaction.RollbackAsync(cancellationToken);
             LogQualificationError(_logger, userId, ex);
             throw;
         }

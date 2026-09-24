@@ -132,22 +132,20 @@ public sealed partial class ReconciliationEngine : IReconciliationEngine, IPayme
         }
 
         // Apply state transition in DB transaction
-        await using var dbTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        try
+        return await _dbContext.ExecuteInTransactionAsync(async ct =>
         {
             var dbAttempt = await _dbContext.PaymentAttempts
-                .FirstOrDefaultAsync(p => p.Id == paymentAttemptId, cancellationToken)
+                .FirstOrDefaultAsync(p => p.Id == paymentAttemptId, ct)
                 .ConfigureAwait(false);
 
             if (dbAttempt == null)
             {
-                await dbTx.RollbackAsync(cancellationToken);
                 return UnifiedReconciliationResult.ErrorResult(paymentAttemptId.ToString(), providerName, "PaymentAttempt not found in transaction.");
             }
 
             var prevStatus = dbAttempt.Status;
             var bankTransfer = await _dbContext.BankTransfers
-                .FirstOrDefaultAsync(b => b.LedgerTransactionId == dbAttempt.LedgerTransactionId, cancellationToken)
+                .FirstOrDefaultAsync(b => b.LedgerTransactionId == dbAttempt.LedgerTransactionId, ct)
                 .ConfigureAwait(false);
 
             // CRITICAL UNKNOWN RULE: UNKNOWN never triggers failover or reversal
@@ -164,8 +162,7 @@ public sealed partial class ReconciliationEngine : IReconciliationEngine, IPayme
                     afterJson: JsonSerializer.Serialize(new { dbAttempt.Id, Provider = providerName, Reason = queryResult.FailureReason }));
                 _dbContext.AuditLogs.Add(auditUnknown);
 
-                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                await dbTx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
 
                 return UnifiedReconciliationResult.StillUnresolved(dbAttempt.RequestReference, providerName, queryResult.FailureReason ?? "Status is unknown / pending.");
             }
@@ -182,7 +179,7 @@ public sealed partial class ReconciliationEngine : IReconciliationEngine, IPayme
                 }
 
                 var ledgerTx = await _dbContext.LedgerTransactions
-                    .FirstOrDefaultAsync(l => l.Id == dbAttempt.LedgerTransactionId, cancellationToken)
+                    .FirstOrDefaultAsync(l => l.Id == dbAttempt.LedgerTransactionId, ct)
                     .ConfigureAwait(false);
 
                 if (ledgerTx != null && ledgerTx.Status != LedgerTransactionStatus.Completed)
@@ -208,8 +205,7 @@ public sealed partial class ReconciliationEngine : IReconciliationEngine, IPayme
                     ProviderReference: effectiveProviderRef,
                     OccurredOnUtc: DateTime.UtcNow));
 
-                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                await dbTx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
 
                 return UnifiedReconciliationResult.Succeeded(
                     dbAttempt.RequestReference,
@@ -243,16 +239,10 @@ public sealed partial class ReconciliationEngine : IReconciliationEngine, IPayme
                 ProviderReference: dbAttempt.ProviderReference,
                 OccurredOnUtc: DateTime.UtcNow));
 
-            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            await dbTx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
 
             return UnifiedReconciliationResult.Failed(dbAttempt.RequestReference, providerName, failReason, queryResult.SafeMetadata);
-        }
-        catch
-        {
-            await dbTx.RollbackAsync(cancellationToken);
-            throw;
-        }
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc/>

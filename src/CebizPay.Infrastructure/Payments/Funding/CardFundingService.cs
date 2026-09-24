@@ -510,57 +510,57 @@ public sealed partial class CardFundingService : ICardFundingService
                 feeBearer = feePolicy.FeeBearer;
             }
 
-            await using var dbTx = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                var (txn, funding) = await _ledgerPosting.PostCardFundingCreditCoreAsync(
-                    walletId: fundingTx.WalletId,
-                    grossAmount: fundingTx.Amount,
-                    feeAmount: feeAmount,
-                    netCreditedAmount: netCreditedAmount,
-                    providerFeeAmount: 0m,
-                    currency: fundingTx.Currency,
-                    provider: fundingTx.Provider,
-                    providerTransactionReference: fundingTx.ProviderTransactionReference,
-                    providerEventReference: null,
-                    feePolicyId: feePolicyId,
-                    feePolicyVersion: feePolicyVersion,
-                    feeBearer: feeBearer,
-                    description: $"Card deposit reconciliation {fundingTx.ProviderTransactionReference}",
-                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                return await _dbContext.ExecuteInTransactionAsync(async ct =>
+                {
+                    var (txn, funding) = await _ledgerPosting.PostCardFundingCreditCoreAsync(
+                        walletId: fundingTx.WalletId,
+                        grossAmount: fundingTx.Amount,
+                        feeAmount: feeAmount,
+                        netCreditedAmount: netCreditedAmount,
+                        providerFeeAmount: 0m,
+                        currency: fundingTx.Currency,
+                        provider: fundingTx.Provider,
+                        providerTransactionReference: fundingTx.ProviderTransactionReference,
+                        providerEventReference: null,
+                        feePolicyId: feePolicyId,
+                        feePolicyVersion: feePolicyVersion,
+                        feeBearer: feeBearer,
+                        description: $"Card deposit reconciliation {fundingTx.ProviderTransactionReference}",
+                        cancellationToken: ct).ConfigureAwait(false);
 
-                var audit = AuditLog.Create(
-                    actorId: "SYSTEM",
-                    action: AuditActions.CardFundingCompleted,
-                    resourceType: AuditResourceTypes.FundingTransaction,
-                    resourceId: fundingTx.Id.ToString(),
-                    afterJson: JsonSerializer.Serialize(new
-                    {
-                        ProviderReference = fundingTx.ProviderTransactionReference,
-                        GrossAmount = fundingTx.Amount,
-                        FeeAmount = feeAmount,
-                        NetCreditedAmount = netCreditedAmount
-                    }));
-                _dbContext.AuditLogs.Add(audit);
+                    var audit = AuditLog.Create(
+                        actorId: "SYSTEM",
+                        action: AuditActions.CardFundingCompleted,
+                        resourceType: AuditResourceTypes.FundingTransaction,
+                        resourceId: fundingTx.Id.ToString(),
+                        afterJson: JsonSerializer.Serialize(new
+                        {
+                            ProviderReference = fundingTx.ProviderTransactionReference,
+                            GrossAmount = fundingTx.Amount,
+                            FeeAmount = feeAmount,
+                            NetCreditedAmount = netCreditedAmount
+                        }));
+                    _dbContext.AuditLogs.Add(audit);
 
-                _outbox.Write(new CardFundingCompletedDomainEvent(
-                    FundingTransactionId: fundingTx.Id,
-                    WalletId: fundingTx.WalletId,
-                    LedgerTransactionId: txn.Id,
-                    Amount: fundingTx.Amount,
-                    Currency: fundingTx.Currency,
-                    Provider: fundingTx.Provider,
-                    ProviderTransactionReference: fundingTx.ProviderTransactionReference,
-                    OccurredOnUtc: DateTime.UtcNow));
+                    _outbox.Write(new CardFundingCompletedDomainEvent(
+                        FundingTransactionId: fundingTx.Id,
+                        WalletId: fundingTx.WalletId,
+                        LedgerTransactionId: txn.Id,
+                        Amount: fundingTx.Amount,
+                        Currency: fundingTx.Currency,
+                        Provider: fundingTx.Provider,
+                        ProviderTransactionReference: fundingTx.ProviderTransactionReference,
+                        OccurredOnUtc: DateTime.UtcNow));
 
-                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                await dbTx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                    await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
 
-                return PaymentProviderResult.Success(fundingTx.ProviderTransactionReference);
+                    return PaymentProviderResult.Success(fundingTx.ProviderTransactionReference);
+                }, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                await dbTx.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 LogCardFundingCreditException(_logger, fundingTransactionId, ex);
                 throw;
             }

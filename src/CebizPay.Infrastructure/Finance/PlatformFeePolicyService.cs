@@ -76,91 +76,73 @@ public sealed partial class PlatformFeePolicyService : IPlatformFeePolicyService
         DateTime effectiveFromUtc,
         CancellationToken cancellationToken = default)
     {
-        Microsoft.EntityFrameworkCore.Storage.IDbContextTransaction? transaction = null;
-        if (_dbContext.Database.IsRelational())
-        {
-            transaction = await _dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-        }
-
         try
         {
-            // Determine next version number for this specific operation type
-            var maxVersion = await _dbContext.PlatformFeePolicies
-                .Where(p => p.OperationType == operationType)
-                .MaxAsync(p => (int?)p.Version, cancellationToken)
-                .ConfigureAwait(false) ?? 0;
-
-            var nextVersion = maxVersion + 1;
-
-            // Deactivate any currently active policy for this operation type
-            var currentlyActive = await _dbContext.PlatformFeePolicies
-                .Where(p => p.OperationType == operationType && p.IsEnabled)
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
-
-            if (currentlyActive.Count > 0)
+            return await _dbContext.ExecuteInTransactionAsync(async ct =>
             {
-                foreach (var activePolicy in currentlyActive)
+                // Determine next version number for this specific operation type
+                var maxVersion = await _dbContext.PlatformFeePolicies
+                    .Where(p => p.OperationType == operationType)
+                    .MaxAsync(p => (int?)p.Version, ct)
+                    .ConfigureAwait(false) ?? 0;
+
+                var nextVersion = maxVersion + 1;
+
+                // Deactivate any currently active policy for this operation type
+                var currentlyActive = await _dbContext.PlatformFeePolicies
+                    .Where(p => p.OperationType == operationType && p.IsEnabled)
+                    .ToListAsync(ct)
+                    .ConfigureAwait(false);
+
+                if (currentlyActive.Count > 0)
                 {
-                    activePolicy.Deactivate();
+                    foreach (var activePolicy in currentlyActive)
+                    {
+                        activePolicy.Deactivate();
 
-                    _outboxService.Write(new PlatformFeePolicyDeactivatedDomainEvent(
-                        PolicyId: activePolicy.Id,
-                        OperationType: activePolicy.OperationType,
-                        Version: activePolicy.Version,
-                        OccurredOnUtc: DateTime.UtcNow));
+                        _outboxService.Write(new PlatformFeePolicyDeactivatedDomainEvent(
+                            PolicyId: activePolicy.Id,
+                            OperationType: activePolicy.OperationType,
+                            Version: activePolicy.Version,
+                            OccurredOnUtc: DateTime.UtcNow));
+                    }
+                    await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
                 }
-                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            }
 
-            // Create and persist the new version
-            var newPolicy = PlatformFeePolicy.Create(
-                operationType: operationType,
-                calculationMethod: calculationMethod,
-                feeBearer: feeBearer,
-                fixedAmount: fixedAmount,
-                percentageRate: percentageRate,
-                minimumFee: minimumFee,
-                maximumFee: maximumFee,
-                currency: currency,
-                version: nextVersion,
-                createdByUserId: createdByUserId,
-                effectiveFromUtc: effectiveFromUtc);
+                // Create and persist the new version
+                var newPolicy = PlatformFeePolicy.Create(
+                    operationType: operationType,
+                    calculationMethod: calculationMethod,
+                    feeBearer: feeBearer,
+                    fixedAmount: fixedAmount,
+                    percentageRate: percentageRate,
+                    minimumFee: minimumFee,
+                    maximumFee: maximumFee,
+                    currency: currency,
+                    version: nextVersion,
+                    createdByUserId: createdByUserId,
+                    effectiveFromUtc: effectiveFromUtc);
 
-            _dbContext.PlatformFeePolicies.Add(newPolicy);
+                _dbContext.PlatformFeePolicies.Add(newPolicy);
 
-            _outboxService.Write(new PlatformFeePolicyCreatedDomainEvent(
-                PolicyId: newPolicy.Id,
-                OperationType: newPolicy.OperationType,
-                Version: newPolicy.Version,
-                CalculationMethod: newPolicy.CalculationMethod,
-                FeeBearer: newPolicy.FeeBearer,
-                OccurredOnUtc: DateTime.UtcNow));
+                _outboxService.Write(new PlatformFeePolicyCreatedDomainEvent(
+                    PolicyId: newPolicy.Id,
+                    OperationType: newPolicy.OperationType,
+                    Version: newPolicy.Version,
+                    CalculationMethod: newPolicy.CalculationMethod,
+                    FeeBearer: newPolicy.FeeBearer,
+                    OccurredOnUtc: DateTime.UtcNow));
 
-            await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            if (transaction != null)
-            {
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
+                await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
 
-            LogPolicyCreated(_logger, newPolicy.OperationType, newPolicy.Version, newPolicy.CalculationMethod);
-            return newPolicy;
+                LogPolicyCreated(_logger, newPolicy.OperationType, newPolicy.Version, newPolicy.CalculationMethod);
+                return newPolicy;
+            }, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            if (transaction != null)
-            {
-                await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            }
             LogPolicyCreationFailure(_logger, operationType, ex);
             throw;
-        }
-        finally
-        {
-            if (transaction != null)
-            {
-                await transaction.DisposeAsync().ConfigureAwait(false);
-            }
         }
     }
 
