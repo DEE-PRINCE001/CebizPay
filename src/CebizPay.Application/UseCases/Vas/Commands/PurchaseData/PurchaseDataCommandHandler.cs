@@ -203,7 +203,7 @@ public sealed class PurchaseDataCommandHandler : IRequestHandler<PurchaseDataCom
                     return (Guid.Empty, string.Empty, default(DateTime), cached);
                 }
 
-                if (idempotencyRecord.Status == IdempotencyStatus.Processing)
+                if (idempotencyRecord.Status == IdempotencyStatus.Processing && !idempotencyRecord.IsNewlyCreated)
                 {
                     throw new IdempotencyConflictException(
                         request.IdempotencyKey,

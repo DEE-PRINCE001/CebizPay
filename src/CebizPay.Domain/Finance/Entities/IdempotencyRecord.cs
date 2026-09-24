@@ -37,6 +37,10 @@ public class IdempotencyRecord
     /// <summary>Completion timestamp.</summary>
     public DateTime? CompletedAtUtc { get; private set; }
 
+    /// <summary>Indicates if this record was just created in the current transaction. Not persisted to database.</summary>
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public bool IsNewlyCreated { get; set; }
+
     private IdempotencyRecord() { } // EF Core
 
     /// <summary>
@@ -59,6 +63,7 @@ public class IdempotencyRecord
         OrganizationId = organizationId;
         Status = IdempotencyStatus.Processing;
         CreatedAtUtc = DateTime.UtcNow;
+        IsNewlyCreated = true;
     }
 
     /// <summary>

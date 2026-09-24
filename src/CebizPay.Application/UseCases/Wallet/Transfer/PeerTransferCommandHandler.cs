@@ -248,7 +248,7 @@ public sealed class PeerTransferCommandHandler : IRequestHandler<PeerTransferCom
                         ?? throw new InvalidOperationException("Failed to deserialize cached idempotency response.");
                 }
 
-                if (idempotencyRecord.Status == IdempotencyStatus.Processing)
+                if (idempotencyRecord.Status == IdempotencyStatus.Processing && !idempotencyRecord.IsNewlyCreated)
                 {
                     throw new IdempotencyConflictException(request.IdempotencyKey,
                         $"A request with idempotency key '{request.IdempotencyKey}' is currently being processed.");

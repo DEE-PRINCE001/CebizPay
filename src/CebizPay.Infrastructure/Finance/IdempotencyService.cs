@@ -78,6 +78,8 @@ public sealed class IdempotencyService : IIdempotencyService
 
         if (existing != null)
         {
+            existing.IsNewlyCreated = false;
+
             if (existing.RequestHash != requestHash)
             {
                 throw new IdempotencyConflictException(key, $"Idempotency key conflict: key '{key}' was previously used with a different request payload.");
@@ -98,6 +100,7 @@ public sealed class IdempotencyService : IIdempotencyService
         }
 
         var record = new IdempotencyRecord(key, op, requestHash, userId, organizationId);
+        record.IsNewlyCreated = true;
         _dbContext.IdempotencyRecords.Add(record);
 
         if (autoSave)
@@ -119,6 +122,8 @@ public sealed class IdempotencyService : IIdempotencyService
 
                 if (existingRetry != null)
                 {
+                    existingRetry.IsNewlyCreated = false;
+
                     if (existingRetry.RequestHash != requestHash)
                     {
                         throw new IdempotencyConflictException(key, $"Idempotency key conflict: key '{key}' was previously used with a different request payload.");

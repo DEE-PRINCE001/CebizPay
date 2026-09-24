@@ -180,6 +180,97 @@ public sealed class BankTransferCommandHandlerTests
         var ex = await Assert.ThrowsAsync<ComplianceRestrictedException>(() => _handler.Handle(command, CancellationToken.None));
         Assert.Equal("Your account has been suspended. Outbound bank transfers are blocked. Please contact support.", ex.Message);
     }
+
+    [Fact]
+    public async Task Handle_ConcurrentProcessingIdempotencyKey_ThrowsIdempotencyConflictException()
+    {
+        // Arrange
+        var userId = "user-concurrent";
+        _currentUserService.UserId.Returns(userId);
+
+        var profile = new IndividualProfile(userId, "Jane", "Doe");
+        profile.SetKycStatus(KycStatus.Verified);
+
+        var wallet = Wallet.CreateIndividualWallet(userId, Currency.NGN);
+        wallet.Credit(100000m);
+
+        _dbContext.IndividualProfiles.Returns(new InMemoryEntitySet<IndividualProfile>(new List<IndividualProfile> { profile }));
+        _dbContext.Wallets.Returns(new InMemoryEntitySet<Wallet>(new List<Wallet> { wallet }));
+
+        _accountResolver.ResolveAsync("058", "0123456789", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new BankAccountResolutionResult(true, "Jane Doe", "058", "0123456789")));
+
+        _pinService.VerifyPinAsync(userId, "1234", Arg.Any<CancellationToken>())
+            .Returns((true, false, null));
+
+        _feePolicyService.GetActivePolicyAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<BankTransferFeePolicy?>(null));
+
+        _dbContext.ExecuteInTransactionAsync(Arg.Any<Func<CancellationToken, Task<(BankTransferResponseDto, bool)>>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.Arg<Func<CancellationToken, Task<(BankTransferResponseDto, bool)>>>()(CancellationToken.None));
+
+        // Existing in-flight record has IsNewlyCreated = false
+        var inFlightRecord = new IdempotencyRecord("key-conflict", "Transfer.OutboundBank", "hash", userId)
+        {
+            IsNewlyCreated = false
+        };
+        _idempotencyService.CreateRecordAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(inFlightRecord);
+
+        var command = new BankTransferCommand("058", "0123456789", 5000m, "NGN", "1234", "key-conflict");
+
+        // Act & Assert
+        var ex = await Assert.ThrowsAsync<IdempotencyConflictException>(() => _handler.Handle(command, CancellationToken.None));
+        Assert.Equal("IDEMPOTENCY_KEY_CONFLICT", ex.Code);
+        Assert.Contains("currently being processed", ex.Message);
+    }
+
+    [Fact]
+    public async Task Handle_CompletedIdempotencyKey_ReturnsCachedResponse()
+    {
+        // Arrange
+        var userId = "user-cached";
+        _currentUserService.UserId.Returns(userId);
+
+        var profile = new IndividualProfile(userId, "Jane", "Doe");
+        profile.SetKycStatus(KycStatus.Verified);
+
+        var wallet = Wallet.CreateIndividualWallet(userId, Currency.NGN);
+        wallet.Credit(100000m);
+
+        _dbContext.IndividualProfiles.Returns(new InMemoryEntitySet<IndividualProfile>(new List<IndividualProfile> { profile }));
+        _dbContext.Wallets.Returns(new InMemoryEntitySet<Wallet>(new List<Wallet> { wallet }));
+
+        _accountResolver.ResolveAsync("058", "0123456789", Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult(new BankAccountResolutionResult(true, "Jane Doe", "058", "0123456789")));
+
+        _pinService.VerifyPinAsync(userId, "1234", Arg.Any<CancellationToken>())
+            .Returns((true, false, null));
+
+        _feePolicyService.GetActivePolicyAsync(Arg.Any<CancellationToken>())
+            .Returns(Task.FromResult<BankTransferFeePolicy?>(null));
+
+        _dbContext.ExecuteInTransactionAsync(Arg.Any<Func<CancellationToken, Task<(BankTransferResponseDto, bool)>>>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo => callInfo.Arg<Func<CancellationToken, Task<(BankTransferResponseDto, bool)>>>()(CancellationToken.None));
+
+        var completedRecord = new IdempotencyRecord("key-replay", "Transfer.OutboundBank", "hash", userId);
+        var expectedDto = new BankTransferResponseDto(
+            "CBZBT-12345", "PENDING", 5000m, "NGN", 0m, 5000m, "058", "0123456789",
+            "Jane Doe", null, DateTime.UtcNow);
+        completedRecord.Complete(JsonSerializer.Serialize(expectedDto));
+
+        _idempotencyService.CreateRecordAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<Guid?>(), Arg.Any<bool>(), Arg.Any<CancellationToken>())
+            .Returns(completedRecord);
+
+        var command = new BankTransferCommand("058", "0123456789", 5000m, "NGN", "1234", "key-replay");
+
+        // Act
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        Assert.Equal(expectedDto.TransactionReference, result.TransactionReference);
+        Assert.Equal(expectedDto.Amount, result.Amount);
+    }
 }
 
 

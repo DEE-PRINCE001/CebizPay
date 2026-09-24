@@ -42,6 +42,14 @@ public sealed class IdempotencyLifecycleIntegrationTests : IClassFixture<Infrast
         // Act 1: Initial record creation
         var record = await service.CreateRecordAsync(key, "Wallet.PeerTransfer", payload, userId: userId);
         Assert.Equal(IdempotencyStatus.Processing, record.Status);
+        Assert.True(record.IsNewlyCreated);
+
+        // Act 1b: Concurrent in-flight request before completion
+        await using var concurrentDb = CreateDbContext();
+        var concurrentService = new IdempotencyService(concurrentDb);
+        var inFlightRecord = await concurrentService.CreateRecordAsync(key, "Wallet.PeerTransfer", payload, userId: userId);
+        Assert.Equal(IdempotencyStatus.Processing, inFlightRecord.Status);
+        Assert.False(inFlightRecord.IsNewlyCreated);
 
         // Complete record
         var responseJson = "{\"status\": \"COMPLETED\", \"reference\": \"CBZPT-12345\"}";
@@ -53,6 +61,7 @@ public sealed class IdempotencyLifecycleIntegrationTests : IClassFixture<Infrast
         // Assert
         Assert.Equal(IdempotencyStatus.Completed, replayRecord.Status);
         Assert.Equal(responseJson, replayRecord.ResponseJson);
+        Assert.False(replayRecord.IsNewlyCreated);
     }
 
     [Fact]

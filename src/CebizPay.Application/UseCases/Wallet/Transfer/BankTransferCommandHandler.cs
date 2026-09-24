@@ -247,7 +247,7 @@ public sealed class BankTransferCommandHandler : IRequestHandler<BankTransferCom
                     return (cachedResponse, false);
                 }
 
-                if (idempotencyRecord.Status == IdempotencyStatus.Processing)
+                if (idempotencyRecord.Status == IdempotencyStatus.Processing && !idempotencyRecord.IsNewlyCreated)
                 {
                     throw new IdempotencyConflictException(
                         request.IdempotencyKey,
